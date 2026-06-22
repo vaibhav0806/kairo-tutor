@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, process::Command};
-use tauri::{Emitter, LogicalPosition, LogicalSize, Manager};
+use std::{fs, process::Command, sync::Mutex};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 
 #[cfg(target_os = "macos")]
 use block2::RcBlock;
@@ -101,6 +101,11 @@ struct OverlayTarget {
 struct OverlayPayload {
     display_bounds: OverlayDisplayBounds,
     targets: Vec<OverlayTarget>,
+}
+
+#[derive(Default)]
+struct OverlayState {
+    current_payload: Mutex<Option<OverlayPayload>>,
 }
 
 #[cfg(target_os = "macos")]
@@ -510,7 +515,10 @@ fn overlay_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String
         .ok_or_else(|| "Kairo overlay window was not created.".to_string())
 }
 
-fn configure_overlay_window(window: &tauri::WebviewWindow, payload: &OverlayPayload) -> Result<(), String> {
+fn configure_overlay_window(
+    window: &tauri::WebviewWindow,
+    payload: &OverlayPayload,
+) -> Result<(), String> {
     window
         .set_focusable(false)
         .map_err(|error| format!("Failed to keep overlay non-focusable: {error}"))?;
@@ -540,32 +548,69 @@ fn configure_overlay_window(window: &tauri::WebviewWindow, payload: &OverlayPayl
     Ok(())
 }
 
-fn emit_overlay_payload(window: &tauri::WebviewWindow, payload: OverlayPayload) -> Result<(), String> {
+fn emit_overlay_payload(
+    window: &tauri::WebviewWindow,
+    payload: OverlayPayload,
+) -> Result<(), String> {
     window
         .emit("overlay:update", payload)
         .map_err(|error| format!("Failed to update overlay targets: {error}"))
 }
 
-#[tauri::command]
-fn show_overlay(app: tauri::AppHandle, payload: OverlayPayload) -> Result<(), String> {
-    let window = overlay_window(&app)?;
-    configure_overlay_window(&window, &payload)?;
-    emit_overlay_payload(&window, payload)?;
-    window
-        .show()
-        .map_err(|error| format!("Failed to show overlay: {error}"))
+fn store_overlay_payload(
+    state: &State<'_, OverlayState>,
+    payload: Option<OverlayPayload>,
+) -> Result<(), String> {
+    let mut current_payload = state
+        .current_payload
+        .lock()
+        .map_err(|_| "Failed to lock overlay payload state.".to_string())?;
+    *current_payload = payload;
+    Ok(())
 }
 
 #[tauri::command]
-fn update_overlay(app: tauri::AppHandle, payload: OverlayPayload) -> Result<(), String> {
+fn show_overlay(
+    app: tauri::AppHandle,
+    state: State<'_, OverlayState>,
+    payload: OverlayPayload,
+) -> Result<(), String> {
     let window = overlay_window(&app)?;
     configure_overlay_window(&window, &payload)?;
+    store_overlay_payload(&state, Some(payload.clone()))?;
+    window
+        .show()
+        .map_err(|error| format!("Failed to show overlay: {error}"))?;
     emit_overlay_payload(&window, payload)
 }
 
 #[tauri::command]
-fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
+fn update_overlay(
+    app: tauri::AppHandle,
+    state: State<'_, OverlayState>,
+    payload: OverlayPayload,
+) -> Result<(), String> {
     let window = overlay_window(&app)?;
+    configure_overlay_window(&window, &payload)?;
+    store_overlay_payload(&state, Some(payload.clone()))?;
+    emit_overlay_payload(&window, payload)
+}
+
+#[tauri::command]
+fn get_current_overlay_payload(
+    state: State<'_, OverlayState>,
+) -> Result<Option<OverlayPayload>, String> {
+    state
+        .current_payload
+        .lock()
+        .map(|payload| payload.clone())
+        .map_err(|_| "Failed to lock overlay payload state.".to_string())
+}
+
+#[tauri::command]
+fn hide_overlay(app: tauri::AppHandle, state: State<'_, OverlayState>) -> Result<(), String> {
+    let window = overlay_window(&app)?;
+    store_overlay_payload(&state, None)?;
     window
         .hide()
         .map_err(|error| format!("Failed to hide overlay: {error}"))
@@ -599,6 +644,7 @@ fn log_window_startup(window: &tauri::WebviewWindow) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(OverlayState::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
@@ -634,6 +680,7 @@ pub fn run() {
             capture_screen,
             show_overlay,
             update_overlay,
+            get_current_overlay_payload,
             hide_overlay
         ])
         .run(tauri::generate_context!())

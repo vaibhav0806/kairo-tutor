@@ -167,8 +167,6 @@ describe('createNativeBridge', () => {
   });
 
   test('sends tutor overlay payloads to the native overlay window commands', async () => {
-    const invoke = vi.fn(async () => undefined) as unknown as NativeInvoke;
-    const bridge = createNativeBridge(invoke);
     const payload = {
       displayBounds: {
         x: 0,
@@ -192,13 +190,23 @@ describe('createNativeBridge', () => {
         }
       ]
     };
+    const invoke = vi.fn(async (command: string) => {
+      if (command === 'get_current_overlay_payload') {
+        return payload;
+      }
+
+      return undefined;
+    }) as unknown as NativeInvoke;
+    const bridge = createNativeBridge(invoke);
 
     await expect(bridge.showOverlay(payload)).resolves.toBeUndefined();
     await expect(bridge.updateOverlay(payload)).resolves.toBeUndefined();
+    await expect(bridge.getCurrentOverlayPayload()).resolves.toEqual(payload);
     await expect(bridge.hideOverlay()).resolves.toBeUndefined();
 
     expect(invoke).toHaveBeenCalledWith('show_overlay', { payload });
     expect(invoke).toHaveBeenCalledWith('update_overlay', { payload });
+    expect(invoke).toHaveBeenCalledWith('get_current_overlay_payload');
     expect(invoke).toHaveBeenCalledWith('hide_overlay');
   });
 

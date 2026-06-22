@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import type { ScreenDimensions, VisualTarget } from '../core/types';
+import { createNativeBridge } from '../native/nativeBridge';
+import { subscribeToOverlayPayload } from './overlayEvents';
 import { VisualOverlay } from './VisualOverlay';
 
 type OverlayDisplayBounds = ScreenDimensions & {
@@ -16,6 +18,7 @@ export type OverlayPayload = {
 
 export function OverlayApp() {
   const [payload, setPayload] = useState<OverlayPayload | null>(null);
+  const nativeBridge = useMemo(() => createNativeBridge(), []);
 
   useEffect(() => {
     document.documentElement.classList.add('overlay-document');
@@ -31,9 +34,13 @@ export function OverlayApp() {
     let isMounted = true;
     let unlisten: (() => void) | undefined;
 
-    void listen<OverlayPayload>('overlay:update', (event) => {
-      if (isMounted) {
-        setPayload(event.payload);
+    void subscribeToOverlayPayload({
+      listen,
+      readCurrentPayload: () => nativeBridge.getCurrentOverlayPayload(),
+      onPayload: (nextPayload) => {
+        if (isMounted) {
+          setPayload(nextPayload);
+        }
       }
     })
       .then((nextUnlisten) => {
@@ -47,7 +54,7 @@ export function OverlayApp() {
       isMounted = false;
       unlisten?.();
     };
-  }, []);
+  }, [nativeBridge]);
 
   return (
     <main className="overlay-shell" aria-label="Kairo visual overlay">

@@ -67,6 +67,7 @@ export type NativeBridge = {
   captureScreen(): Promise<NativeScreenCapture>;
   showOverlay(payload: NativeOverlayPayload): Promise<void>;
   updateOverlay(payload: NativeOverlayPayload): Promise<void>;
+  getCurrentOverlayPayload(): Promise<NativeOverlayPayload | null>;
   hideOverlay(): Promise<void>;
   registerActivationShortcut(onActivated: () => void): Promise<NativeShortcutRegistration>;
 };
@@ -238,6 +239,14 @@ export function createNativeBridge(
         await invoke<void>('update_overlay', { payload });
       } catch {
         // Browser previews do not have a native overlay window.
+      }
+    },
+
+    async getCurrentOverlayPayload() {
+      try {
+        return await invoke<NativeOverlayPayload | null>('get_current_overlay_payload');
+      } catch {
+        return null;
       }
     },
 
