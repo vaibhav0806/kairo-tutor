@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, process::Command, sync::Mutex, time::Duration};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
+use tauri_plugin_global_shortcut::ShortcutState;
+
+const KAIRO_ACTIVATION_SHORTCUT: &str = "CommandOrControl+Shift+Space";
 
 #[cfg(target_os = "macos")]
 use block2::RcBlock;
@@ -659,6 +662,50 @@ fn store_notch_payload(
     Ok(())
 }
 
+fn store_notch_payload_inner(
+    state: &NotchState,
+    payload: Option<NotchPayload>,
+) -> Result<(), String> {
+    let mut current_payload = state
+        .current_payload
+        .lock()
+        .map_err(|_| "Failed to lock notch payload state.".to_string())?;
+    *current_payload = payload;
+    Ok(())
+}
+
+fn show_notch_with_payload(
+    app: &tauri::AppHandle,
+    state: &NotchState,
+    payload: Option<NotchPayload>,
+) -> Result<(), String> {
+    let window = ensure_notch_window(app)?;
+    configure_notch_window(&window)?;
+    if let Some(payload) = payload {
+        store_notch_payload_inner(state, Some(payload.clone()))?;
+        emit_notch_payload(&window, payload)?;
+    }
+    window
+        .show()
+        .map_err(|error| format!("Failed to show notch: {error}"))?;
+
+    let window_to_hide = window.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(4500));
+        let _ = window_to_hide.hide();
+    });
+
+    Ok(())
+}
+
+fn listening_notch_payload() -> NotchPayload {
+    NotchPayload {
+        state: "listening".to_string(),
+        title: "Kairo is listening".to_string(),
+        detail: "Capturing the current screen".to_string(),
+    }
+}
+
 #[tauri::command]
 fn show_overlay(
     app: tauri::AppHandle,
@@ -714,23 +761,7 @@ fn show_notch(
     state: State<'_, NotchState>,
     payload: Option<NotchPayload>,
 ) -> Result<(), String> {
-    let window = ensure_notch_window(&app)?;
-    configure_notch_window(&window)?;
-    if let Some(payload) = payload {
-        store_notch_payload(&state, Some(payload.clone()))?;
-        emit_notch_payload(&window, payload)?;
-    }
-    window
-        .show()
-        .map_err(|error| format!("Failed to show notch: {error}"))?;
-
-    let window_to_hide = window.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(4500));
-        let _ = window_to_hide.hide();
-    });
-
-    Ok(())
+    show_notch_with_payload(&app, state.inner(), payload)
 }
 
 #[tauri::command]
@@ -793,10 +824,29 @@ fn log_window_startup(window: &tauri::WebviewWindow) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let global_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
+        .with_shortcut(KAIRO_ACTIVATION_SHORTCUT)
+        .expect("failed to parse Kairo activation shortcut")
+        .with_handler(|app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+
+            let notch_state = app.state::<NotchState>();
+            if let Err(error) =
+                show_notch_with_payload(app, notch_state.inner(), Some(listening_notch_payload()))
+            {
+                eprintln!("Kairo Tutor activation shortcut failed to show notch: {error}");
+            }
+
+            let _ = app.emit("activation:shortcut", ());
+        })
+        .build();
+
     tauri::Builder::default()
         .manage(OverlayState::default())
         .manage(NotchState::default())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(global_shortcut_plugin)
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(debug_assertions)]

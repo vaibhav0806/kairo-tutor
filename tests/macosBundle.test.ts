@@ -82,4 +82,14 @@ describe('macOS bundle permissions', () => {
 
     expect(capability.windows).toEqual(expect.arrayContaining(['main', 'overlay', 'notch']));
   });
+
+  test('owns the activation shortcut in the native app shell', () => {
+    const nativeSource = readFileSync('src-tauri/src/lib.rs', 'utf8');
+
+    expect(nativeSource).toContain(
+      'const KAIRO_ACTIVATION_SHORTCUT: &str = "CommandOrControl+Shift+Space";'
+    );
+    expect(nativeSource).toContain('.with_shortcut(KAIRO_ACTIVATION_SHORTCUT)');
+    expect(nativeSource).toContain('app.emit("activation:shortcut", ())');
+  });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import {
   type AnnotationPoint,
   type AnnotationTool,
@@ -169,9 +170,9 @@ export function App() {
   const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
   const annotationSequence = useRef(0);
   const [activationShortcut, setActivationShortcut] = useState<NativeShortcutRegistration>({
-    registered: false,
+    registered: true,
     shortcut: 'CommandOrControl+Shift+Space',
-    reason: 'Shortcut not registered yet.'
+    reason: 'Registered by native app shell.'
   });
   const [response, setResponse] = useState<TutorResponse>(() =>
     planner.createIdleResponse(env.defaultSkill)
@@ -295,6 +296,26 @@ export function App() {
     setPermissions(await nativeBridge.getPermissionStatus());
   }, [nativeBridge]);
 
+  const handleActivationShortcut = useCallback(async () => {
+    const listeningState = reduceActivationState('idle', { type: 'shortcut_pressed' });
+    await showActivationState(listeningState);
+    setIsOverlayActive(false);
+    void nativeBridge.hideOverlay();
+    const [nextActiveApp, nextPermissions, nextScreenCapture] = await Promise.all([
+      nativeBridge.getActiveApp(),
+      nativeBridge.getPermissionStatus(),
+      nativeBridge.captureScreen()
+    ]);
+    setActiveApp(nextActiveApp);
+    setPermissions(nextPermissions);
+    setScreenCapture(nextScreenCapture);
+    await showActivationState(
+      reduceActivationState(listeningState, {
+        type: nextScreenCapture.captured ? 'capture_complete' : 'capture_failed'
+      })
+    );
+  }, [nativeBridge, showActivationState]);
+
   async function captureNativeScreen() {
     setScreenCapture(await nativeBridge.captureScreen());
   }
@@ -317,39 +338,41 @@ export function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let unlisten: (() => void) | undefined;
 
     void refreshNativeContext();
 
-    nativeBridge
-      .registerActivationShortcut(async () => {
-        const listeningState = reduceActivationState('idle', { type: 'shortcut_pressed' });
-        await showActivationState(listeningState);
-        setIsOverlayActive(false);
-        void nativeBridge.hideOverlay();
-        const [nextActiveApp, nextPermissions, nextScreenCapture] = await Promise.all([
-          nativeBridge.getActiveApp(),
-          nativeBridge.getPermissionStatus(),
-          nativeBridge.captureScreen()
-        ]);
-        setActiveApp(nextActiveApp);
-        setPermissions(nextPermissions);
-        setScreenCapture(nextScreenCapture);
-        await showActivationState(
-          reduceActivationState(listeningState, {
-            type: nextScreenCapture.captured ? 'capture_complete' : 'capture_failed'
-          })
-        );
-      })
-      .then((registration) => {
+    void listen('activation:shortcut', () => {
+      void handleActivationShortcut();
+    })
+      .then((nextUnlisten) => {
+        unlisten = nextUnlisten;
         if (isMounted) {
-          setActivationShortcut(registration);
+          setActivationShortcut({
+            registered: true,
+            shortcut: 'CommandOrControl+Shift+Space',
+            reason: 'Registered by native app shell.'
+          });
+        }
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setActivationShortcut({
+            registered: false,
+            shortcut: 'CommandOrControl+Shift+Space',
+            reason:
+              error instanceof Error
+                ? error.message
+                : 'Native activation listener is unavailable in this environment.'
+          });
         }
       });
 
     return () => {
       isMounted = false;
+      unlisten?.();
     };
-  }, [nativeBridge, refreshNativeContext, showActivationState]);
+  }, [handleActivationShortcut, refreshNativeContext]);
 
   const missingPermissions = requiredPermissions.filter(
     (permission) => !isPermissionGranted(permissions, permission.key)
