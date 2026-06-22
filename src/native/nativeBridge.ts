@@ -55,6 +55,7 @@ export type NativeScreenCapture = {
 export type NativeOverlayDisplayBounds = NonNullable<NativeScreenCapture['displayBounds']>;
 
 export type NativeOverlayPayload = {
+  mode?: 'visual' | 'annotate';
   displayBounds: NativeOverlayDisplayBounds;
   targets: VisualTarget[];
 };
@@ -66,6 +67,7 @@ export type NativeBridge = {
   openPermissionSettings(permission: NativePermissionKey): Promise<void>;
   captureScreen(): Promise<NativeScreenCapture>;
   showOverlay(payload: NativeOverlayPayload): Promise<void>;
+  showAnnotationOverlay(displayBounds: NativeOverlayDisplayBounds): Promise<void>;
   updateOverlay(payload: NativeOverlayPayload): Promise<void>;
   getCurrentOverlayPayload(): Promise<NativeOverlayPayload | null>;
   hideOverlay(): Promise<void>;
@@ -232,6 +234,20 @@ export function createNativeBridge(
     async showOverlay(payload) {
       try {
         await invoke<void>('show_overlay', { payload });
+      } catch {
+        // Browser previews do not have a native overlay window.
+      }
+    },
+
+    async showAnnotationOverlay(displayBounds) {
+      try {
+        await invoke<void>('show_overlay', {
+          payload: {
+            mode: 'annotate',
+            displayBounds,
+            targets: []
+          }
+        });
       } catch {
         // Browser previews do not have a native overlay window.
       }

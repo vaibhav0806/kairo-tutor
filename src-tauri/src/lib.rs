@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, process::Command, sync::Mutex, time::Duration};
+use std::{fs, process::Command, sync::Mutex};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 use tauri_plugin_global_shortcut::ShortcutState;
 
@@ -102,6 +102,7 @@ struct OverlayTarget {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OverlayPayload {
+    mode: Option<String>,
     display_bounds: OverlayDisplayBounds,
     targets: Vec<OverlayTarget>,
 }
@@ -560,8 +561,9 @@ fn configure_overlay_window(
     window: &tauri::WebviewWindow,
     payload: &OverlayPayload,
 ) -> Result<(), String> {
+    let is_annotation_mode = payload.mode.as_deref() == Some("annotate");
     window
-        .set_focusable(false)
+        .set_focusable(is_annotation_mode)
         .map_err(|error| format!("Failed to keep overlay non-focusable: {error}"))?;
     window
         .set_always_on_top(true)
@@ -570,7 +572,7 @@ fn configure_overlay_window(
         .set_skip_taskbar(true)
         .map_err(|error| format!("Failed to keep overlay out of the taskbar: {error}"))?;
     window
-        .set_ignore_cursor_events(true)
+        .set_ignore_cursor_events(!is_annotation_mode)
         .map_err(|error| format!("Failed to keep overlay click-through: {error}"))?;
     let _ = window.set_shadow(false);
     window
@@ -598,11 +600,17 @@ fn emit_overlay_payload(
         .map_err(|error| format!("Failed to update overlay targets: {error}"))
 }
 
-fn configure_notch_window(window: &tauri::WebviewWindow) -> Result<(), String> {
-    let width = 380.0;
-    let height = 78.0;
+fn configure_notch_window(
+    window: &tauri::WebviewWindow,
+    payload: Option<&NotchPayload>,
+) -> Result<(), String> {
+    let is_prompt_mode = payload
+        .map(|payload| payload.state == "captured")
+        .unwrap_or(false);
+    let width = if is_prompt_mode { 560.0 } else { 380.0 };
+    let height = if is_prompt_mode { 132.0 } else { 78.0 };
     window
-        .set_focusable(false)
+        .set_focusable(is_prompt_mode)
         .map_err(|error| format!("Failed to keep notch non-focusable: {error}"))?;
     window
         .set_always_on_top(true)
@@ -611,7 +619,7 @@ fn configure_notch_window(window: &tauri::WebviewWindow) -> Result<(), String> {
         .set_skip_taskbar(true)
         .map_err(|error| format!("Failed to keep notch out of the taskbar: {error}"))?;
     window
-        .set_ignore_cursor_events(true)
+        .set_ignore_cursor_events(!is_prompt_mode)
         .map_err(|error| format!("Failed to keep notch click-through: {error}"))?;
     let _ = window.set_shadow(false);
     window
@@ -680,7 +688,11 @@ fn show_notch_with_payload(
     payload: Option<NotchPayload>,
 ) -> Result<(), String> {
     let window = ensure_notch_window(app)?;
-    configure_notch_window(&window)?;
+    let is_prompt_mode = payload
+        .as_ref()
+        .map(|payload| payload.state == "captured")
+        .unwrap_or(false);
+    configure_notch_window(&window, payload.as_ref())?;
     if let Some(payload) = payload {
         store_notch_payload_inner(state, Some(payload.clone()))?;
         emit_notch_payload(&window, payload)?;
@@ -688,12 +700,9 @@ fn show_notch_with_payload(
     window
         .show()
         .map_err(|error| format!("Failed to show notch: {error}"))?;
-
-    let window_to_hide = window.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(4500));
-        let _ = window_to_hide.hide();
-    });
+    if is_prompt_mode {
+        let _ = window.set_focus();
+    }
 
     Ok(())
 }
@@ -718,6 +727,9 @@ fn show_overlay(
     window
         .show()
         .map_err(|error| format!("Failed to show overlay: {error}"))?;
+    if payload.mode.as_deref() == Some("annotate") {
+        let _ = window.set_focus();
+    }
     emit_overlay_payload(&window, payload)
 }
 

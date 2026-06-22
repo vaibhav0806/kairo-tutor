@@ -361,6 +361,15 @@ input {
   width: 100%;
 }
 
+.notch-card[data-state="captured"] {
+  border-radius: 28px;
+  display: grid;
+  gap: 10px 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  height: 112px;
+  padding: 14px 16px;
+}
+
 .notch-card strong,
 .notch-card span {
   display: block;
@@ -376,6 +385,10 @@ input {
   color: #aeb9c2;
   font-size: 0.78rem;
   margin-top: 4px;
+}
+
+.notch-copy {
+  min-width: 0;
 }
 
 .notch-orb {
@@ -400,6 +413,91 @@ input {
 .notch-card[data-state="showing_step"] .notch-orb {
   background: #8fd694;
   box-shadow: 0 0 0 6px rgb(143 214 148 / 0.16);
+}
+
+.notch-prompt {
+  display: grid;
+  gap: 8px;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.notch-prompt input {
+  background: rgb(255 255 255 / 0.1);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 999px;
+  color: #f6f8f9;
+  min-width: 0;
+  outline: none;
+  padding: 9px 12px;
+}
+
+.notch-prompt input::placeholder {
+  color: #8f9ca6;
+}
+
+.notch-prompt button {
+  background: #58dbc9;
+  border: 0;
+  border-radius: 999px;
+  color: #0f171a;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.notch-prompt .notch-secondary {
+  background: rgb(255 255 255 / 0.12);
+  color: #f6f8f9;
+}
+
+.annotation-overlay-mode {
+  inset: 0;
+  pointer-events: auto;
+  position: fixed;
+}
+
+.annotation-overlay-toolbar {
+  align-items: center;
+  background: rgb(18 20 23 / 0.92);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 999px;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 0.28);
+  display: flex;
+  gap: 8px;
+  left: 50%;
+  padding: 8px;
+  position: absolute;
+  top: 18px;
+  transform: translateX(-50%);
+  z-index: 4;
+}
+
+.annotation-overlay-toolbar button {
+  background: rgb(255 255 255 / 0.1);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 999px;
+  color: #f6f8f9;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 10px;
+  text-transform: capitalize;
+}
+
+.annotation-overlay-toolbar button.selected {
+  background: #58dbc9;
+  color: #0f171a;
+}
+
+.annotation-overlay-canvas {
+  cursor: crosshair;
+  height: 100%;
+  inset: 0;
+  position: absolute;
+  touch-action: none;
+  width: 100%;
+  z-index: 3;
 }
 
 .timeline {

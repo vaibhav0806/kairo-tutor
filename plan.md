@@ -126,11 +126,13 @@ Run typecheck, tests, and production build.
 - [x] Coordinate normalization for Retina scale and multiple displays.
 - [x] Attach annotations to the next tutor request.
 - [x] Render mock tutor targets as overlay elements on the screen preview.
+- [x] Add interactive real-screen annotation mode from the captured notch flow.
 
 **Acceptance Criteria:**
 - Mock tutor targets render as overlays on the active display.
 - User annotations are captured as typed region objects.
 - Overlay coordinates remain stable after window resize and scale changes.
+- Real-screen annotations can be drawn after shortcut capture and are attached to the next tutor request.
 
 ### Milestone 4: Real AI Orchestrator
 

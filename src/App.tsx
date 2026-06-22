@@ -26,6 +26,7 @@ import {
 } from './native/nativeBridge';
 import { normalizeRegionToPercent } from './overlay/coordinates';
 import { VisualOverlay } from './overlay/VisualOverlay';
+import type { NotchAskPayload } from './notch/prompt';
 import { resolveScreenPreview } from './screenPreview';
 
 const demoContext = {
@@ -187,13 +188,13 @@ export function App() {
     [nativeBridge]
   );
 
-  async function askTutor() {
+  const askTutor = useCallback(async (nextQuery = query) => {
     const nextThinkingState = reduceActivationState(activationState, { type: 'thinking_started' });
     await showActivationState(nextThinkingState);
     const nextResponse = await orchestrator.runTextTurn({
       request: {
         ...activeApp,
-        userQuery: query,
+        userQuery: nextQuery,
         annotations
       },
       screenCapture,
@@ -209,7 +210,17 @@ export function App() {
       void nativeBridge.hideOverlay();
     }
     await showActivationState(reduceActivationState(nextThinkingState, { type: 'response_ready' }));
-  }
+  }, [
+    activationState,
+    activeApp,
+    annotations,
+    env.defaultSkill,
+    nativeBridge,
+    orchestrator,
+    query,
+    screenCapture,
+    showActivationState
+  ]);
 
   function pointFromPointerEvent(event: PointerEvent<HTMLElement>): AnnotationPoint {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -373,6 +384,55 @@ export function App() {
       unlisten?.();
     };
   }, [handleActivationShortcut, refreshNativeContext]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const unlisteners: Array<() => void> = [];
+
+    void Promise.all([
+      listen<NotchAskPayload>('notch:ask', (event) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setQuery(event.payload.query);
+        void askTutor(event.payload.query);
+      }),
+      listen('annotation:start', () => {
+        if (!isMounted || !screenCapture?.displayBounds) {
+          return;
+        }
+
+        void nativeBridge.hideNotch();
+        void nativeBridge.showAnnotationOverlay(screenCapture.displayBounds);
+      }),
+      listen<UserAnnotation>('annotation:add', (event) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setAnnotations((currentAnnotations) => [...currentAnnotations, event.payload]);
+      }),
+      listen('annotation:done', () => {
+        if (!isMounted) {
+          return;
+        }
+
+        void showActivationState('captured');
+      })
+    ])
+      .then((nextUnlisteners) => {
+        unlisteners.push(...nextUnlisteners);
+      })
+      .catch(() => {
+        // Browser preview runs without the native event bus.
+      });
+
+    return () => {
+      isMounted = false;
+      unlisteners.forEach((unlisten) => unlisten());
+    };
+  }, [askTutor, nativeBridge, screenCapture?.displayBounds, showActivationState]);
 
   const missingPermissions = requiredPermissions.filter(
     (permission) => !isPermissionGranted(permissions, permission.key)
@@ -591,7 +651,7 @@ export function App() {
 
           <div className="ask-row">
             <input value={query} onChange={(event) => setQuery(event.target.value)} />
-            <button type="button" onClick={askTutor}>
+            <button type="button" onClick={() => void askTutor()}>
               Ask
             </button>
           </div>
