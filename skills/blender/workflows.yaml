@@ -1,0 +1,20 @@
+first_blender_animation:
+  title: "Make your first animation in Blender"
+  difficulty: beginner
+  estimated_time_minutes: 15
+  steps:
+    - id: select_cube
+      goal: "Select the cube"
+      instruction: "Click the cube in the viewport."
+      expected_screen_state: "cube_selected"
+      highlight_target: "default_cube"
+    - id: go_to_frame_1
+      goal: "Move to frame 1"
+      instruction: "Click frame 1 in the timeline."
+      expected_screen_state: "frame_1_active"
+      highlight_target: "timeline_frame_1"
+    - id: insert_first_keyframe
+      goal: "Insert first keyframe"
+      instruction: "Press I and choose Location."
+      expected_screen_state: "location_keyframe_inserted"
+      highlight_target: "keyframe_menu_location"

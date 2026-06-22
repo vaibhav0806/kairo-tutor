@@ -1,0 +1,9 @@
+keyframe:
+  simple_explanation: "A saved position or setting at a specific point in time."
+  hindi_explanation: "Keyframe matlab kisi object ki position ya setting ko ek specific time par save karna."
+  example: "If the cube is at the left on frame 1 and at the right on frame 40, Blender animates the movement between those frames."
+
+viewport:
+  simple_explanation: "The main area where you see and edit your 3D scene."
+  hindi_explanation: "Viewport woh main area hai jahan aap apna 3D scene dekhte aur edit karte ho."
+  example: "The cube, camera, and light are visible in the viewport."

@@ -1,0 +1,27 @@
+render_is_black:
+  symptoms:
+    - "render output is black"
+    - "nothing visible after render"
+    - "my render is blank"
+  check:
+    - "Is there a light?"
+    - "Is the camera pointing at the object?"
+    - "Is the object hidden?"
+    - "Is the render engine configured?"
+  response_style:
+    - "Check one cause at a time."
+    - "Start with light and camera."
+    - "Use visual highlights for the camera and light."
+
+object_not_moving:
+  symptoms:
+    - "object is not moving"
+    - "cube will not move"
+    - "transform does not work"
+  check:
+    - "Is the object selected?"
+    - "Is the learner in Object Mode?"
+    - "Is transform lock enabled?"
+  response_style:
+    - "Start by confirming selection."
+    - "Point at Object Mode and the selected object outline."

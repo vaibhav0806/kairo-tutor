@@ -1,0 +1,15 @@
+requires_confirmation:
+  - delete_object
+  - overwrite_file
+  - install_plugin
+  - run_script
+  - submit_assignment
+  - export_final_file
+  - upload_file
+  - share_screen_recording
+
+forbidden:
+  - bypass_license
+  - crack_software
+  - cheat_on_exam
+  - submit_work_as_student_without_learning

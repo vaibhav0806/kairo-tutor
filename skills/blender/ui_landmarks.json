@@ -1,0 +1,22 @@
+{
+  "viewport": {
+    "description": "Main area where the learner sees and edits the 3D scene.",
+    "common_location": "center",
+    "visual_clues": ["grid floor", "3D cube", "camera", "light"]
+  },
+  "timeline": {
+    "description": "Horizontal animation timeline used to scrub frames and playback animation.",
+    "common_location": "bottom",
+    "visual_clues": ["frame numbers", "play button", "timeline scrubber"]
+  },
+  "outliner": {
+    "description": "Scene hierarchy panel listing objects such as Camera, Cube, and Light.",
+    "common_location": "top right",
+    "visual_clues": ["Scene Collection", "Camera", "Cube", "Light"]
+  },
+  "properties_panel": {
+    "description": "Panel for object, material, render, and scene settings.",
+    "common_location": "right",
+    "visual_clues": ["vertical tabs", "render properties", "object properties"]
+  }
+}
