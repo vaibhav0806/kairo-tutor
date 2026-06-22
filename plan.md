@@ -145,10 +145,10 @@ Run typecheck, tests, and production build.
 - [x] Replace boot-time mock Blender guidance with a real idle/background state.
 - [x] Add a tutor turn orchestrator boundary that packages screenshot context, app metadata, annotations, skill-pack content, and response constraints for a planner adapter.
 - [x] Keep `mock` as the default local provider through the orchestrator adapter.
-- [ ] Add provider adapters for STT, vision, tutor planning, and TTS.
-- [ ] Wire OpenAI-compatible vision/planning behind explicit env selection.
-- [ ] Wire Sarvam/ElevenLabs speech adapters behind explicit env selection.
-- [ ] Add provider confidence states and safety checks around real model responses.
+- [x] Add provider adapters for STT, vision, tutor planning, and TTS.
+- [x] Wire OpenAI-compatible vision/planning behind explicit env selection.
+- [x] Wire Sarvam/ElevenLabs speech adapters behind explicit env selection.
+- [x] Add provider confidence states and safety checks around real model responses.
 
 **Acceptance Criteria:**
 - Provider selection is controlled only by env.

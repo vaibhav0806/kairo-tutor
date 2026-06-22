@@ -1,6 +1,18 @@
+export type OpenRouterTextContent = {
+  type: 'text';
+  text: string;
+};
+
+export type OpenRouterImageContent = {
+  type: 'image_url';
+  image_url: {
+    url: string;
+  };
+};
+
 export type OpenRouterMessage = {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | Array<OpenRouterTextContent | OpenRouterImageContent>;
 };
 
 export type OpenRouterClientConfig = {

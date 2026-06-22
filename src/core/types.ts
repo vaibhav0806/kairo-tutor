@@ -55,6 +55,10 @@ export type TutorResponse = {
   screenText: string;
   visualTargets: VisualTarget[];
   expectedNextState: string;
+  providerMetadata?: {
+    confidenceState: 'high' | 'medium' | 'low';
+    warnings: string[];
+  };
 };
 
 export type UiLandmark = {

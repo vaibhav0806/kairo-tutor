@@ -34,7 +34,10 @@ Tauri desktop shell
 
 Provider utilities
   - OpenRouter chat client
-  - Sarvam voice env contract
+  - OpenAI-compatible tutor planner adapter
+  - Sarvam STT/TTS adapter
+  - ElevenLabs STT/TTS adapter
+  - Env-selected provider adapter factory
   - Local provider smoke test
 ```
 
@@ -47,8 +50,10 @@ The likely production backend shape is a small proxy service, probably Cloudflar
 - OpenRouter chat/vision planning
 - Sarvam speech-to-text
 - Sarvam text-to-speech
+- ElevenLabs speech-to-text
+- ElevenLabs text-to-speech
 
-Until that backend exists, do not put provider secrets into browser-exposed env variables.
+Until that backend exists, do not put provider secrets into browser-exposed env variables. Real provider adapters live under [src/server/providers](./src/server/providers) and are designed to be called from a server-side or native-secret context, then passed into the existing tutor orchestrator.
 
 ## Product Scope
 
@@ -114,6 +119,17 @@ SARVAM_STT_MODE=transcribe
 SARVAM_TTS_MODEL=bulbul:v3
 SARVAM_TTS_LANGUAGE_CODE=en-IN
 SARVAM_TTS_SPEAKER=shubh
+```
+
+Alternative ElevenLabs speech:
+
+```env
+KAIRO_STT_PROVIDER=elevenlabs
+KAIRO_TTS_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=...
+ELEVENLABS_STT_MODEL=scribe_v1
+ELEVENLABS_TTS_MODEL=eleven_multilingual_v2
+ELEVENLABS_VOICE_ID=...
 ```
 
 Local UI development can use mock providers:

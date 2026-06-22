@@ -50,15 +50,25 @@ describe('loadKairoEnv', () => {
     ).toThrow('SARVAM_API_KEY is required when Sarvam speech is selected');
   });
 
+  test('requires ElevenLabs key when ElevenLabs handles speech', () => {
+    expect(() =>
+      loadKairoEnv({
+        KAIRO_AI_PROVIDER: 'mock',
+        KAIRO_STT_PROVIDER: 'mock',
+        KAIRO_TTS_PROVIDER: 'elevenlabs'
+      })
+    ).toThrow('ELEVENLABS_API_KEY is required when ElevenLabs speech is selected');
+  });
+
   test('loads public app configuration without requiring browser-exposed vendor keys', () => {
     const env = loadKairoPublicEnv({
       KAIRO_AI_PROVIDER: 'openrouter',
       KAIRO_STT_PROVIDER: 'sarvam',
-      KAIRO_TTS_PROVIDER: 'sarvam'
+      KAIRO_TTS_PROVIDER: 'elevenlabs'
     });
 
     expect(env.aiProvider).toBe('openrouter');
     expect(env.sttProvider).toBe('sarvam');
-    expect(env.ttsProvider).toBe('sarvam');
+    expect(env.ttsProvider).toBe('elevenlabs');
   });
 });

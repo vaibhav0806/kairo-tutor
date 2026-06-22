@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const providerSchema = z.enum(['mock', 'openrouter']);
-const speechProviderSchema = z.enum(['mock', 'sarvam']);
+const speechProviderSchema = z.enum(['mock', 'sarvam', 'elevenlabs']);
 
 const rawEnvSchema = z.object({
   KAIRO_APP_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -21,14 +21,19 @@ const rawEnvSchema = z.object({
   SARVAM_STT_MODE: z.string().default('transcribe'),
   SARVAM_TTS_MODEL: z.string().default('bulbul:v3'),
   SARVAM_TTS_LANGUAGE_CODE: z.string().default('en-IN'),
-  SARVAM_TTS_SPEAKER: z.string().default('shubh')
+  SARVAM_TTS_SPEAKER: z.string().default('shubh'),
+  ELEVENLABS_API_KEY: z.string().optional(),
+  ELEVENLABS_BASE_URL: z.string().url().default('https://api.elevenlabs.io'),
+  ELEVENLABS_STT_MODEL: z.string().default('scribe_v1'),
+  ELEVENLABS_TTS_MODEL: z.string().default('eleven_multilingual_v2'),
+  ELEVENLABS_VOICE_ID: z.string().default('EXAVITQu4vr4xnSDxMaL')
 });
 
 export type KairoEnv = {
   appEnv: 'development' | 'test' | 'production';
   aiProvider: 'mock' | 'openrouter';
-  sttProvider: 'mock' | 'sarvam';
-  ttsProvider: 'mock' | 'sarvam';
+  sttProvider: 'mock' | 'sarvam' | 'elevenlabs';
+  ttsProvider: 'mock' | 'sarvam' | 'elevenlabs';
   defaultSkill: string;
   enableWebResearch: boolean;
   openRouterModel: string;
@@ -41,6 +46,10 @@ export type KairoEnv = {
   sarvamTtsModel: string;
   sarvamTtsLanguageCode: string;
   sarvamTtsSpeaker: string;
+  elevenLabsBaseUrl: string;
+  elevenLabsSttModel: string;
+  elevenLabsTtsModel: string;
+  elevenLabsVoiceId: string;
 };
 
 type LoadKairoEnvOptions = {
@@ -66,6 +75,14 @@ export function loadKairoEnv(
     throw new Error('SARVAM_API_KEY is required when Sarvam speech is selected');
   }
 
+  if (
+    requireProviderKeys &&
+    (parsed.KAIRO_STT_PROVIDER === 'elevenlabs' || parsed.KAIRO_TTS_PROVIDER === 'elevenlabs') &&
+    !parsed.ELEVENLABS_API_KEY
+  ) {
+    throw new Error('ELEVENLABS_API_KEY is required when ElevenLabs speech is selected');
+  }
+
   return {
     appEnv: parsed.KAIRO_APP_ENV,
     aiProvider: parsed.KAIRO_AI_PROVIDER,
@@ -82,7 +99,11 @@ export function loadKairoEnv(
     sarvamSttMode: parsed.SARVAM_STT_MODE,
     sarvamTtsModel: parsed.SARVAM_TTS_MODEL,
     sarvamTtsLanguageCode: parsed.SARVAM_TTS_LANGUAGE_CODE,
-    sarvamTtsSpeaker: parsed.SARVAM_TTS_SPEAKER
+    sarvamTtsSpeaker: parsed.SARVAM_TTS_SPEAKER,
+    elevenLabsBaseUrl: parsed.ELEVENLABS_BASE_URL,
+    elevenLabsSttModel: parsed.ELEVENLABS_STT_MODEL,
+    elevenLabsTtsModel: parsed.ELEVENLABS_TTS_MODEL,
+    elevenLabsVoiceId: parsed.ELEVENLABS_VOICE_ID
   };
 }
 
