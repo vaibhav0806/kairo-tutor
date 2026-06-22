@@ -206,6 +206,10 @@ Tauri commands:
 - `show_overlay`: positions the hidden transparent overlay window over the active display, sends typed visual targets, and shows it.
 - `update_overlay`: refreshes visual targets without focusing the overlay window.
 - `hide_overlay`: hides the native overlay window.
+- `show_notch`: shows the compact notch assistant window.
+- `get_current_notch_payload`: returns the latest notch payload for newly created notch windows.
+- `hide_notch`: hides the notch assistant window.
+- `run_tutor_turn`: calls the configured OpenRouter model from the native process using private `OPENROUTER_*` env values, then returns raw planner content to the WebView safety parser.
 
 Pending native work:
 

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::{fs, process::Command, sync::Mutex};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 use tauri_plugin_global_shortcut::ShortcutState;
@@ -123,6 +124,62 @@ struct NotchPayload {
 #[derive(Default)]
 struct NotchState {
     current_payload: Mutex<Option<NotchPayload>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TutorActiveAppContext {
+    active_app: String,
+    bundle_id: Option<String>,
+    window_title: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TutorScreenPoint {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TutorAnnotation {
+    id: String,
+    #[serde(rename = "type")]
+    annotation_type: String,
+    screen_region: ScreenRegion,
+    points: Option<Vec<TutorScreenPoint>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TutorScreenInput {
+    captured: bool,
+    reason: Option<String>,
+    image_mime_type: Option<String>,
+    image_base64: Option<String>,
+    byte_length: Option<usize>,
+    display_bounds: Option<OverlayDisplayBounds>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TutorSkillPack {
+    slug: String,
+    display_name: String,
+    app_identifiers: Vec<String>,
+    landmarks: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TutorTurnInput {
+    user_query: String,
+    active_app: TutorActiveAppContext,
+    annotations: Vec<TutorAnnotation>,
+    screen: TutorScreenInput,
+    skill: TutorSkillPack,
+    constraints: Vec<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -715,6 +772,147 @@ fn listening_notch_payload() -> NotchPayload {
     }
 }
 
+fn openrouter_env(name: &str, fallback: &str) -> String {
+    std::env::var(name).unwrap_or_else(|_| fallback.to_string())
+}
+
+fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {
+    [
+        "You are Kairo Tutor, a screen-native software tutor.".to_string(),
+        "Return only JSON that matches this TypeScript shape:".to_string(),
+        "{ mode: \"idle\" | \"stuck_help\" | \"guided_lesson\", skillSlug: string, voiceText: string, screenText: string, visualTargets: VisualTarget[], expectedNextState: string }".to_string(),
+        "VisualTarget kind must be one of highlight_box, ghost_cursor, arrow, underline, spotlight.".to_string(),
+        "Use screenRegion pixel coordinates only for visible UI areas you are confident about.".to_string(),
+        "Give exactly one short next step. Do not invent app state.".to_string(),
+        format!("Skill: {} ({}).", input.skill.display_name, input.skill.slug),
+        format!("Constraints: {}", input.constraints.join(" ")),
+    ]
+    .join("\n")
+}
+
+fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
+    serde_json::to_string_pretty(&json!({
+        "userQuery": input.user_query,
+        "activeApp": input.active_app,
+        "annotations": input.annotations,
+        "screen": {
+            "captured": input.screen.captured,
+            "reason": input.screen.reason,
+            "imageMimeType": input.screen.image_mime_type,
+            "byteLength": input.screen.byte_length,
+            "displayBounds": input.screen.display_bounds,
+        },
+        "skillLandmarks": input.skill.landmarks,
+    }))
+    .map_err(|error| format!("Failed to build tutor prompt: {error}"))
+}
+
+fn build_openrouter_messages(input: &TutorTurnInput) -> Result<Value, String> {
+    let user_prompt = build_tutor_user_prompt(input)?;
+    let system_prompt = build_tutor_system_prompt(input);
+
+    if input.screen.captured {
+        if let (Some(mime_type), Some(image_base64)) =
+            (&input.screen.image_mime_type, &input.screen.image_base64)
+        {
+            return Ok(json!([
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": user_prompt,
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": format!("data:{mime_type};base64,{image_base64}"),
+                            },
+                        },
+                    ],
+                },
+            ]));
+        }
+    }
+
+    Ok(json!([
+        {
+            "role": "system",
+            "content": system_prompt,
+        },
+        {
+            "role": "user",
+            "content": user_prompt,
+        },
+    ]))
+}
+
+#[tauri::command]
+async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, String> {
+    let provider = openrouter_env("KAIRO_AI_PROVIDER", "mock");
+    if provider != "openrouter" {
+        return Err("Native tutor provider is only configured for KAIRO_AI_PROVIDER=openrouter.".to_string());
+    }
+
+    let api_key = std::env::var("OPENROUTER_API_KEY")
+        .map_err(|_| "OPENROUTER_API_KEY is required for native OpenRouter tutor turns.".to_string())?;
+    let model = openrouter_env("OPENROUTER_MODEL", "~openai/gpt-latest");
+    let base_url = openrouter_env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1");
+    let site_url = std::env::var("OPENROUTER_SITE_URL").ok();
+    let app_title = openrouter_env("OPENROUTER_APP_TITLE", "Kairo Tutor");
+    let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
+    let mut request = reqwest::Client::new()
+        .post(endpoint)
+        .bearer_auth(api_key)
+        .header("Content-Type", "application/json")
+        .header("X-OpenRouter-Title", app_title);
+
+    if let Some(site_url) = site_url {
+        request = request.header("HTTP-Referer", site_url);
+    }
+
+    let response = request
+        .json(&json!({
+            "model": model,
+            "messages": build_openrouter_messages(&input)?,
+            "temperature": 0.2,
+            "max_tokens": 700,
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("OpenRouter request failed: {error}"))?;
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("OpenRouter response was not JSON: {error}"))?;
+
+    if !status.is_success() {
+        let message = payload
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+            .or_else(|| payload.get("message").and_then(Value::as_str))
+            .unwrap_or("OpenRouter request failed");
+        return Err(message.to_string());
+    }
+
+    payload
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .ok_or_else(|| "OpenRouter response did not include assistant content.".to_string())
+}
+
 #[tauri::command]
 fn show_overlay(
     app: tauri::AppHandle,
@@ -890,7 +1088,8 @@ pub fn run() {
             hide_overlay,
             show_notch,
             get_current_notch_payload,
-            hide_notch
+            hide_notch,
+            run_tutor_turn
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kairo Tutor");

@@ -1,6 +1,7 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { register as registerGlobalShortcut } from '@tauri-apps/plugin-global-shortcut';
 import type { VisualTarget } from '../core/types';
+import type { TutorTurnInput } from '../core/orchestrator';
 import type { NotchPayload } from '../notch/types';
 
 export type NativeInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -74,6 +75,7 @@ export type NativeBridge = {
   showNotch(payload?: NotchPayload): Promise<void>;
   getCurrentNotchPayload(): Promise<NotchPayload | null>;
   hideNotch(): Promise<void>;
+  runTutorTurn(input: TutorTurnInput): Promise<string | null>;
   registerActivationShortcut(onActivated: () => void | Promise<void>): Promise<NativeShortcutRegistration>;
 };
 
@@ -298,6 +300,14 @@ export function createNativeBridge(
         await invoke<void>('hide_notch');
       } catch {
         // Browser previews do not have a native notch window.
+      }
+    },
+
+    async runTutorTurn(input) {
+      try {
+        return await invoke<string>('run_tutor_turn', { input });
+      } catch {
+        return null;
       }
     },
 

@@ -234,6 +234,28 @@ describe('createNativeBridge', () => {
     expect(invoke).toHaveBeenCalledWith('hide_notch');
   });
 
+  test('sends tutor turns to the native provider proxy', async () => {
+    const input = {
+      userQuery: 'What should I click?',
+      activeApp: { activeApp: 'Blender' },
+      annotations: [],
+      screen: { captured: false, reason: 'No capture' },
+      skill: {
+        slug: 'blender',
+        displayName: 'Blender',
+        appIdentifiers: ['org.blenderfoundation.blender'],
+        landmarks: {}
+      },
+      constraints: ['Return one short tutor step.']
+    };
+    const invoke = vi.fn(async () => '{"voiceText":"Click the cube."}') as unknown as NativeInvoke;
+    const bridge = createNativeBridge(invoke);
+
+    await expect(bridge.runTutorTurn(input)).resolves.toBe('{"voiceText":"Click the cube."}');
+
+    expect(invoke).toHaveBeenCalledWith('run_tutor_turn', { input });
+  });
+
   test('registers activation shortcut without foregrounding the desktop debug window', async () => {
     let shortcutHandler: ((event: { state: string; shortcut: string }) => void) | undefined;
     const callOrder: string[] = [];

@@ -17,6 +17,7 @@ import {
 import { loadBrowserEnv } from './config/env';
 import { createMockTutorPlanner } from './core/mockTutor';
 import { createTutorOrchestrator } from './core/orchestrator';
+import { createRuntimeTutorPlanner } from './core/runtimePlanner';
 import type { ScreenDimensions, TutorResponse, UserAnnotation } from './core/types';
 import {
   createNativeBridge,
@@ -132,20 +133,19 @@ function AnnotationLayer({
 
 export function App() {
   const env = loadBrowserEnv();
+  const nativeBridge = useMemo(() => createNativeBridge(), []);
   const planner = useMemo(() => createMockTutorPlanner(), []);
   const orchestrator = useMemo(
     () =>
       createTutorOrchestrator({
-        planner: async (input) =>
-          planner.planNextStep({
-            ...input.activeApp,
-            userQuery: input.userQuery,
-            annotations: input.annotations
-          })
+        planner: createRuntimeTutorPlanner({
+          aiProvider: env.aiProvider,
+          nativeBridge,
+          mockPlanner: planner
+        })
       }),
-    [planner]
+    [env.aiProvider, nativeBridge, planner]
   );
-  const nativeBridge = useMemo(() => createNativeBridge(), []);
   const requiredPermissions = useMemo(
     () =>
       [
