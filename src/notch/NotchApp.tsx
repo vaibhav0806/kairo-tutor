@@ -16,7 +16,11 @@ import {
 import type { NotchPayload } from './types';
 import {
   blobToBase64,
-  selectAudioMimeType,
+  createVoiceRecorder,
+  encodeWavFromFloat32Chunks,
+  rmsFromTimeDomainData,
+  shouldStopVoiceCapture,
+  voiceFilenameForMimeType,
   voiceStatusCopy,
   type VoiceCaptureState
 } from './voiceRecorder';
@@ -56,9 +60,14 @@ export function NotchApp() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState>('idle');
   const isSubmittingRef = useRef(false);
+  const voiceCaptureStateRef = useRef<VoiceCaptureState>('idle');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const answerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceMonitorCleanupRef = useRef<(() => void) | null>(null);
+  const pcmCaptureCleanupRef = useRef<(() => void) | null>(null);
+  const pcmChunksRef = useRef<Float32Array[]>([]);
+  const pcmSampleRateRef = useRef<number>(24_000);
   const audioChunksRef = useRef<Blob[]>([]);
   const voiceCancelledRef = useRef(false);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
@@ -75,6 +84,21 @@ export function NotchApp() {
     mediaStreamRef.current = null;
   }, []);
 
+  const updateVoiceCaptureState = useCallback((state: VoiceCaptureState) => {
+    voiceCaptureStateRef.current = state;
+    setVoiceCaptureState(state);
+  }, []);
+
+  const stopVoiceMonitor = useCallback(() => {
+    voiceMonitorCleanupRef.current?.();
+    voiceMonitorCleanupRef.current = null;
+  }, []);
+
+  const stopPcmCapture = useCallback(() => {
+    pcmCaptureCleanupRef.current?.();
+    pcmCaptureCleanupRef.current = null;
+  }, []);
+
   const stopAnswerPlayback = useCallback(() => {
     if (!answerAudioRef.current) {
       return;
@@ -84,6 +108,97 @@ export function NotchApp() {
     answerAudioRef.current.src = '';
     answerAudioRef.current = null;
   }, []);
+
+  const stopActiveRecording = useCallback(
+    (cancelled = false) => {
+      voiceCancelledRef.current = cancelled;
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.stop();
+        return true;
+      }
+
+      stopVoiceMonitor();
+      stopPcmCapture();
+      stopVoiceTracks();
+      updateVoiceCaptureState('idle');
+      return false;
+    },
+    [stopPcmCapture, stopVoiceMonitor, stopVoiceTracks, updateVoiceCaptureState]
+  );
+
+  const startVoiceMonitor = useCallback(
+    (stream: MediaStream, recorder: MediaRecorder) => {
+      stopVoiceMonitor();
+
+      const AudioContextConstructor = globalThis.AudioContext;
+      if (!AudioContextConstructor || !globalThis.requestAnimationFrame) {
+        const timeout = window.setTimeout(() => {
+          if (recorder.state !== 'inactive') {
+            recorder.stop();
+          }
+        }, 18_000);
+        voiceMonitorCleanupRef.current = () => window.clearTimeout(timeout);
+        return;
+      }
+
+      const audioContext = new AudioContextConstructor();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      const data = new Uint8Array(analyser.fftSize);
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      let heardSpeech = false;
+      let silenceStartedAt: number | null = null;
+      const startedAt = performance.now();
+      let frame = 0;
+      const maxTimeout = window.setTimeout(() => {
+        if (recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      }, 18_000);
+
+      const tick = (now: number) => {
+        if (recorder.state === 'inactive') {
+          return;
+        }
+
+        analyser.getByteTimeDomainData(data);
+        const rms = rmsFromTimeDomainData(data);
+        if (rms >= 0.018) {
+          heardSpeech = true;
+          silenceStartedAt = null;
+        } else if (heardSpeech && silenceStartedAt === null) {
+          silenceStartedAt = now;
+        }
+
+        const silenceMs = silenceStartedAt === null ? 0 : now - silenceStartedAt;
+        if (
+          shouldStopVoiceCapture({
+            elapsedMs: now - startedAt,
+            heardSpeech,
+            silenceMs,
+            rms
+          })
+        ) {
+          recorder.stop();
+          return;
+        }
+
+        frame = requestAnimationFrame(tick);
+      };
+
+      frame = requestAnimationFrame(tick);
+      voiceMonitorCleanupRef.current = () => {
+        cancelAnimationFrame(frame);
+        window.clearTimeout(maxTimeout);
+        source.disconnect();
+        void audioContext.close();
+      };
+    },
+    [stopVoiceMonitor]
+  );
 
   const playAnswerAudio = useCallback(
     async (text: string) => {
@@ -121,7 +236,7 @@ export function NotchApp() {
       stopAnswerPlayback();
       isSubmittingRef.current = true;
       setIsSubmitting(true);
-      setVoiceCaptureState('idle');
+      updateVoiceCaptureState('idle');
       setPayload(thinkingPayload);
       setQuery('');
       void nativeBridge.showNotch(thinkingPayload);
@@ -147,7 +262,15 @@ export function NotchApp() {
         setIsSubmitting(false);
       }
     },
-    [annotations, env.aiProvider, env.defaultSkill, nativeBridge, playAnswerAudio, stopAnswerPlayback]
+    [
+      annotations,
+      env.aiProvider,
+      env.defaultSkill,
+      nativeBridge,
+      playAnswerAudio,
+      stopAnswerPlayback,
+      updateVoiceCaptureState
+    ]
   );
 
   const startAnnotation = useCallback((tool: NotchAnnotationTool) => {
@@ -173,21 +296,29 @@ export function NotchApp() {
   const hideNotch = useCallback(() => {
     stopAnswerPlayback();
     voiceCancelledRef.current = true;
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
+    stopActiveRecording(true);
     mediaRecorderRef.current = null;
+    stopPcmCapture();
+    stopVoiceMonitor();
     stopVoiceTracks();
     isSubmittingRef.current = false;
     setIsSubmitting(false);
-    setVoiceCaptureState('idle');
+    updateVoiceCaptureState('idle');
     setPayload(defaultPayload);
     setQuery('');
     setAnnotations([]);
     setActiveAnnotationTool(null);
     void nativeBridge.hideOverlay();
     void nativeBridge.hideNotch();
-  }, [nativeBridge, stopAnswerPlayback, stopVoiceTracks]);
+  }, [
+    nativeBridge,
+    stopActiveRecording,
+    stopAnswerPlayback,
+    stopPcmCapture,
+    stopVoiceMonitor,
+    stopVoiceTracks,
+    updateVoiceCaptureState
+  ]);
 
   const setVoicePayload = useCallback(
     (state: VoiceCaptureState) => {
@@ -204,22 +335,68 @@ export function NotchApp() {
     [nativeBridge]
   );
 
+  const showVoiceError = useCallback(
+    (detail: string) => {
+      const nextPayload: NotchPayload = {
+        state: 'captured',
+        layout: 'prompt',
+        title: 'Voice unavailable',
+        detail
+      };
+      updateVoiceCaptureState('error');
+      setPayload(nextPayload);
+      void nativeBridge.showNotch(nextPayload);
+    },
+    [nativeBridge, updateVoiceCaptureState]
+  );
+
   const startVoiceCapture = useCallback(async () => {
     stopAnswerPlayback();
     if (!globalThis.navigator?.mediaDevices?.getUserMedia || !globalThis.MediaRecorder) {
-      setVoiceCaptureState('error');
-      setVoicePayload('error');
+      showVoiceError('Microphone recording is unavailable in this runtime.');
       return;
     }
 
     try {
       const stream = await globalThis.navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = selectAudioMimeType();
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const { recorder, mimeType } = createVoiceRecorder(stream);
+      const AudioContextConstructor = globalThis.AudioContext;
       voiceCancelledRef.current = false;
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
+      pcmChunksRef.current = [];
+
+      if (AudioContextConstructor) {
+        const audioContext = new AudioContextConstructor();
+        const source = audioContext.createMediaStreamSource(stream);
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        const sink = audioContext.createGain();
+        sink.gain.value = 0;
+
+        pcmSampleRateRef.current = audioContext.sampleRate;
+        processor.onaudioprocess = (event) => {
+          if (voiceCaptureStateRef.current !== 'recording') {
+            return;
+          }
+
+          const channel = event.inputBuffer.getChannelData(0);
+          pcmChunksRef.current.push(new Float32Array(channel));
+        };
+
+        source.connect(processor);
+        processor.connect(sink);
+        sink.connect(audioContext.destination);
+        void audioContext.resume().catch(() => {});
+
+        pcmCaptureCleanupRef.current = () => {
+          processor.onaudioprocess = null;
+          source.disconnect();
+          processor.disconnect();
+          sink.disconnect();
+          void audioContext.close().catch(() => {});
+        };
+      }
 
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -228,70 +405,94 @@ export function NotchApp() {
       };
 
       recorder.onstop = () => {
+        stopVoiceMonitor();
+        stopPcmCapture();
         const wasCancelled = voiceCancelledRef.current;
         const chunks = audioChunksRef.current;
+        const pcmChunks = pcmChunksRef.current;
+        const pcmSampleRate = pcmSampleRateRef.current;
         const recordingMimeType = recorder.mimeType || mimeType || 'audio/webm';
         mediaRecorderRef.current = null;
         stopVoiceTracks();
         audioChunksRef.current = [];
+        pcmChunksRef.current = [];
 
         if (wasCancelled) {
-          setVoiceCaptureState('idle');
+          updateVoiceCaptureState('idle');
           return;
         }
 
         void (async () => {
           if (chunks.length === 0) {
-            setVoiceCaptureState('error');
-            setVoicePayload('error');
+            showVoiceError('No speech was captured. Try again and speak after the shortcut.');
             return;
           }
 
-          setVoiceCaptureState('transcribing');
+          updateVoiceCaptureState('transcribing');
           setVoicePayload('transcribing');
           try {
-            const audioBase64 = await blobToBase64(new Blob(chunks, { type: recordingMimeType }));
+            const uploadBlob =
+              pcmChunks.length > 0
+                ? encodeWavFromFloat32Chunks(pcmChunks, pcmSampleRate)
+                : new Blob(chunks, { type: recordingMimeType });
+            const uploadMimeType = pcmChunks.length > 0 ? 'audio/wav' : recordingMimeType;
+            const audioBase64 = await blobToBase64(uploadBlob);
             const result = await nativeBridge.transcribeAudio({
               audioBase64,
-              mimeType: recordingMimeType,
-              filename: `kairo-voice.${recordingMimeType.includes('webm') ? 'webm' : 'wav'}`
+              mimeType: uploadMimeType,
+              filename: voiceFilenameForMimeType(uploadMimeType)
             });
             const transcript = result.text.trim();
             if (!transcript) {
-              setVoiceCaptureState('error');
-              setVoicePayload('error');
+              showVoiceError('No speech was detected. Try again and speak a little louder.');
               return;
             }
 
             setQuery(transcript);
             await submitQuery(transcript);
-          } catch {
-            setVoiceCaptureState('error');
-            setVoicePayload('error');
+          } catch (error) {
+            const detail =
+              error instanceof Error && error.message.trim()
+                ? error.message.trim()
+                : 'Voice transcription failed. Try again.';
+            showVoiceError(detail);
           }
         })();
       };
 
-      recorder.start();
-      setVoiceCaptureState('recording');
+      recorder.start(250);
+      startVoiceMonitor(stream, recorder);
+      updateVoiceCaptureState('recording');
       setVoicePayload('recording');
-    } catch {
+    } catch (error) {
       stopVoiceTracks();
-      setVoiceCaptureState('error');
-      setVoicePayload('error');
+      const detail =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : 'Check microphone access and try again.';
+      showVoiceError(detail);
     }
-  }, [nativeBridge, setVoicePayload, stopAnswerPlayback, stopVoiceTracks, submitQuery]);
+  }, [
+    nativeBridge,
+    setVoicePayload,
+    showVoiceError,
+    startVoiceMonitor,
+    stopAnswerPlayback,
+    stopPcmCapture,
+    stopVoiceTracks,
+    stopVoiceMonitor,
+    submitQuery,
+    updateVoiceCaptureState
+  ]);
 
   const toggleVoiceCapture = useCallback(() => {
-    if (voiceCaptureState === 'recording') {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
+    if (voiceCaptureStateRef.current === 'recording') {
+      stopActiveRecording(false);
       return;
     }
 
     void startVoiceCapture();
-  }, [startVoiceCapture, voiceCaptureState]);
+  }, [startVoiceCapture, stopActiveRecording]);
 
   useEffect(() => {
     document.documentElement.classList.add('notch-document');
@@ -312,18 +513,18 @@ export function NotchApp() {
       readCurrentPayload: () => nativeBridge.getCurrentNotchPayload(),
       onPayload: (nextPayload) => {
         if (isMounted) {
-          if (nextPayload.state === 'captured') {
+          if (nextPayload.state === 'captured' && !mediaRecorderRef.current) {
             isSubmittingRef.current = false;
             setQuery('');
             setIsSubmitting(false);
-            setVoiceCaptureState('idle');
+            updateVoiceCaptureState('idle');
           }
-          if (nextPayload.state === 'listening') {
+          if (nextPayload.state === 'listening' && !mediaRecorderRef.current) {
             isSubmittingRef.current = false;
             setAnnotations([]);
             setActiveAnnotationTool(null);
             setIsSubmitting(false);
-            setVoiceCaptureState('idle');
+            updateVoiceCaptureState('idle');
           }
           setPayload(nextPayload);
         }
@@ -340,7 +541,7 @@ export function NotchApp() {
       isMounted = false;
       unlisten?.();
     };
-  }, [nativeBridge]);
+  }, [nativeBridge, updateVoiceCaptureState]);
 
   useEffect(() => {
     let isMounted = true;
@@ -378,6 +579,11 @@ export function NotchApp() {
           return;
         }
 
+        if (voiceCaptureStateRef.current === 'recording') {
+          stopActiveRecording(false);
+          return;
+        }
+
         void startVoiceCapture();
       })
     ])
@@ -392,7 +598,7 @@ export function NotchApp() {
       isMounted = false;
       unlisteners.forEach((unlisten) => unlisten());
     };
-  }, [nativeBridge, startVoiceCapture]);
+  }, [nativeBridge, startVoiceCapture, stopActiveRecording]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -445,6 +651,11 @@ export function NotchApp() {
                 return;
               }
 
+              if (voiceCaptureStateRef.current === 'recording') {
+                stopActiveRecording(false);
+                return;
+              }
+
               submitQuery(query).catch(() => {
                 isSubmittingRef.current = false;
                 setIsSubmitting(false);
@@ -469,8 +680,8 @@ export function NotchApp() {
             >
               <span aria-hidden="true" className="notch-voice-icon" />
             </button>
-            <button disabled={!canUsePrompt} type="submit">
-              Ask
+            <button disabled={voiceCaptureState !== 'recording' && !canUsePrompt} type="submit">
+              {voiceCaptureState === 'recording' ? 'Send voice' : 'Ask'}
             </button>
           </form>
 

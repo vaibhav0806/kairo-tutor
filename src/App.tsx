@@ -12,6 +12,7 @@ import {
 import {
   type ActivationState,
   activationStateToNotchPayload,
+  captureFailureToNotchPayload,
   reduceActivationState,
   tutorResponseToNotchPayload
 } from './activation/activationState';
@@ -394,13 +395,16 @@ export function App() {
     setActiveApp(nextActiveApp);
     setPermissions(nextPermissions);
     setScreenCapture(nextScreenCapture);
-    const nextState = reduceActivationState(listeningState, {
-      type: nextScreenCapture.captured ? 'capture_complete' : 'capture_failed'
-    });
-    showActivationState(nextState);
     if (nextScreenCapture.captured) {
+      const nextState = reduceActivationState(listeningState, {
+        type: 'capture_complete'
+      });
+      showActivationState(nextState);
       void emit('voice:start', {});
+      return;
     }
+
+    await nativeBridge.showNotch(captureFailureToNotchPayload(nextScreenCapture.reason));
   }, [nativeBridge, showActivationState]);
 
   async function captureNativeScreen() {

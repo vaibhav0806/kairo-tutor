@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   activationStateToNotchPayload,
+  captureFailureToNotchPayload,
   tutorResponseToNotchPayload,
   reduceActivationState
 } from '../src/activation/activationState';
@@ -29,6 +30,15 @@ describe('activation state', () => {
       state: 'thinking',
       layout: 'compact',
       title: 'Kairo is thinking'
+    });
+  });
+
+  test('builds a prompt-visible capture failure payload', () => {
+    expect(captureFailureToNotchPayload('Screen tutoring is paused.')).toEqual({
+      state: 'captured',
+      layout: 'prompt',
+      title: 'Capture unavailable',
+      detail: 'Screen tutoring is paused.'
     });
   });
 

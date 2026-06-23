@@ -75,6 +75,15 @@ export function activationStateToNotchPayload(state: ActivationState): NotchPayl
   return payloads[state];
 }
 
+export function captureFailureToNotchPayload(reason?: string): NotchPayload {
+  return {
+    state: 'captured',
+    layout: 'prompt',
+    title: 'Capture unavailable',
+    detail: reason?.trim() || 'Screen capture failed. You can still ask with text or retry voice.'
+  };
+}
+
 function visibleResponseText(text: string) {
   const trimmedText = text.trim();
   if (!trimmedText.startsWith('{')) {
