@@ -170,8 +170,9 @@ function buildSystemPrompt(input: TutorTurnInput) {
     'When responding to a user question, prefer mode "stuck_help" or "guided_lesson"; reserve mode "idle" for no-op readiness.',
     'If annotations are present, use them as user-marked screen areas and inspect the screenshot to infer what those marked areas point to.',
     'Annotation IDs are internal coordinate references only. Never call them labels and never mention IDs like screen-annotation-1 in voiceText or screenText.',
-    'If the user asks about annotations, describe the marked screen content or location, not the annotation objects themselves.',
-    'Do not invent image labels or extra annotations.',
+    'Treat orange drawings, arrows, circles, and doodles as visual attention guides. Do not count, name, or describe the marks themselves unless the user explicitly asks about the drawing marks.',
+    'If the user asks about a marked area, answer what underlying screen content or UI element appears to be marked. If the drawing is ambiguous, say what it may be pointing to and ask a brief clarification.',
+    'Do not invent image labels or extra annotation objects.',
     `Selected skill context, when relevant: ${input.skill.displayName} (${input.skill.slug}).`,
     `Constraints: ${input.constraints.join(' ')}`
   ].join('\n');
@@ -182,14 +183,7 @@ function buildAnnotationSummary(input: TutorTurnInput) {
     return 'No user annotations.';
   }
 
-  const annotations = input.annotations
-    .map((annotation) => {
-      const region = annotation.screenRegion;
-      return `${annotation.id}: ${annotation.type} at x=${region.x}, y=${region.y}, width=${region.width}, height=${region.height}`;
-    })
-    .join('; ');
-
-  return `User annotations: exactly ${input.annotations.length}. Internal coordinate refs: ${annotations}. These IDs are not visible labels; do not mention them to the user. Use the screenshot pixels around each marked area to answer.`;
+  return 'The screenshot includes orange user markup drawn over the screen. Use the markup only as visual attention guidance for interpreting the screenshot. Do not count the marks or expose internal annotation IDs. Describe the underlying marked content, app UI, or likely user intent instead.';
 }
 
 function buildUserPrompt(input: TutorTurnInput) {
@@ -198,7 +192,6 @@ function buildUserPrompt(input: TutorTurnInput) {
       userQuery: input.userQuery,
       activeApp: input.activeApp,
       annotationSummary: buildAnnotationSummary(input),
-      annotations: input.annotations,
       screen: {
         captured: input.screen.captured,
         reason: input.screen.reason,

@@ -899,8 +899,9 @@ fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {
         "When responding to a user question, prefer mode \"stuck_help\" or \"guided_lesson\"; reserve mode \"idle\" for no-op readiness.".to_string(),
         "If annotations are present, use them as user-marked screen areas and inspect the screenshot to infer what those marked areas point to.".to_string(),
         "Annotation IDs are internal coordinate references only. Never call them labels and never mention IDs like screen-annotation-1 in voiceText or screenText.".to_string(),
-        "If the user asks about annotations, describe the marked screen content or location, not the annotation objects themselves.".to_string(),
-        "Do not invent image labels or extra annotations.".to_string(),
+        "Treat orange drawings, arrows, circles, and doodles as visual attention guides. Do not count, name, or describe the marks themselves unless the user explicitly asks about the drawing marks.".to_string(),
+        "If the user asks about a marked area, answer what underlying screen content or UI element appears to be marked. If the drawing is ambiguous, say what it may be pointing to and ask a brief clarification.".to_string(),
+        "Do not invent image labels or extra annotation objects.".to_string(),
         format!("Selected skill context, when relevant: {} ({}).", input.skill.display_name, input.skill.slug),
         format!("Constraints: {}", input.constraints.join(" ")),
     ]
@@ -912,28 +913,7 @@ fn build_annotation_summary(input: &TutorTurnInput) -> String {
         return "No user annotations.".to_string();
     }
 
-    let annotations = input
-        .annotations
-        .iter()
-        .map(|annotation| {
-            format!(
-                "{}: {} at x={}, y={}, width={}, height={}",
-                annotation.id,
-                annotation.annotation_type,
-                annotation.screen_region.x,
-                annotation.screen_region.y,
-                annotation.screen_region.width,
-                annotation.screen_region.height
-            )
-        })
-        .collect::<Vec<String>>()
-        .join("; ");
-
-    format!(
-        "User annotations: exactly {}. Internal coordinate refs: {}. These IDs are not visible labels; do not mention them to the user. Use the screenshot pixels around each marked area to answer.",
-        input.annotations.len(),
-        annotations
-    )
+    "The screenshot includes orange user markup drawn over the screen. Use the markup only as visual attention guidance for interpreting the screenshot. Do not count the marks or expose internal annotation IDs. Describe the underlying marked content, app UI, or likely user intent instead.".to_string()
 }
 
 fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
@@ -941,7 +921,6 @@ fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
         "userQuery": input.user_query,
         "activeApp": input.active_app,
         "annotationSummary": build_annotation_summary(input),
-        "annotations": input.annotations,
         "screen": {
             "captured": input.screen.captured,
             "reason": input.screen.reason,
@@ -1441,7 +1420,9 @@ mod tests {
         assert!(system_prompt.contains("Answer general user questions directly"));
         assert!(system_prompt.contains("Selected skill context, when relevant: Blender"));
         assert!(system_prompt.contains("Annotation IDs are internal coordinate references only"));
-        assert!(system_prompt.contains("describe the marked screen content or location"));
+        assert!(system_prompt.contains(
+            "Treat orange drawings, arrows, circles, and doodles as visual attention guides"
+        ));
         assert!(!system_prompt.contains("Skill: Blender"));
     }
 
@@ -1466,10 +1447,10 @@ mod tests {
             .expect("user prompt should be string");
 
         assert!(user_prompt.contains("\"annotationSummary\""));
-        assert!(user_prompt.contains("User annotations: exactly 1"));
-        assert!(user_prompt.contains("screen-annotation-1: pen"));
-        assert!(user_prompt.contains("These IDs are not visible labels"));
-        assert!(user_prompt.contains("Use the screenshot pixels around each marked area"));
+        assert!(user_prompt.contains("orange user markup"));
+        assert!(user_prompt.contains("visual attention guidance"));
+        assert!(!user_prompt.contains("User annotations: exactly 1"));
+        assert!(!user_prompt.contains("screen-annotation-1"));
     }
 
     #[test]

@@ -43,7 +43,7 @@ const tutorInput: TutorTurnInput = {
 };
 
 describe('OpenRouter tutor planner adapter', () => {
-  test('sends screenshot context and annotations through an OpenAI-compatible message payload', async () => {
+  test('sends screenshot context and annotation guidance through an OpenAI-compatible message payload', async () => {
     const chat = vi.fn(async () =>
       JSON.stringify({
         mode: 'guided_lesson',
@@ -81,10 +81,11 @@ describe('OpenRouter tutor planner adapter', () => {
         }
       ])
     );
-    expect(JSON.stringify(userMessage.content)).toContain('annotation-1');
     expect(JSON.stringify(userMessage.content)).toContain('annotationSummary');
-    expect(JSON.stringify(userMessage.content)).toContain('User annotations: exactly 1');
-    expect(JSON.stringify(userMessage.content)).toContain('annotation-1: rectangle');
+    expect(JSON.stringify(userMessage.content)).toContain('orange user markup');
+    expect(JSON.stringify(userMessage.content)).toContain('visual attention guidance');
+    expect(JSON.stringify(userMessage.content)).not.toContain('annotation-1');
+    expect(JSON.stringify(userMessage.content)).not.toContain('User annotations: exactly 1');
   });
 
   test('instructs providers to answer general questions instead of treating Blender as the only scope', async () => {
@@ -106,7 +107,7 @@ describe('OpenRouter tutor planner adapter', () => {
     expect(String(messages[0].content)).toContain('Answer general user questions directly');
     expect(String(messages[0].content)).toContain('Selected skill context, when relevant: Blender');
     expect(String(messages[0].content)).toContain('Annotation IDs are internal coordinate references only');
-    expect(String(messages[0].content)).toContain('describe the marked screen content or location');
+    expect(String(messages[0].content)).toContain('Treat orange drawings, arrows, circles, and doodles as visual attention guides');
     expect(String(messages[0].content)).not.toContain('Skill: Blender');
   });
 
