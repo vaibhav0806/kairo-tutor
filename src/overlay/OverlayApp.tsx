@@ -21,9 +21,10 @@ type OverlayDisplayBounds = ScreenDimensions & {
 };
 
 export type OverlayPayload = {
-  mode?: 'visual' | 'annotate';
+  mode?: 'visual' | 'annotate' | 'annotation_preview';
   displayBounds: OverlayDisplayBounds;
   targets: VisualTarget[];
+  annotations?: UserAnnotation[];
 };
 
 const annotationTools: OverlayAnnotationTool[] = [
@@ -91,7 +92,7 @@ function AnnotationOverlay({
   onDone
 }: {
   displayBounds: OverlayDisplayBounds;
-  onDone: () => void;
+  onDone: (annotations: UserAnnotation[]) => void;
 }) {
   const [tool, setTool] = useState<OverlayAnnotationTool>('rectangle');
   const [annotations, setAnnotations] = useState<UserAnnotation[]>([]);
@@ -225,7 +226,7 @@ function AnnotationOverlay({
             {nextTool}
           </button>
         ))}
-        <button type="button" onClick={onDone}>
+        <button type="button" onClick={() => onDone(annotations)}>
           Done
         </button>
       </div>
@@ -248,6 +249,26 @@ function AnnotationOverlay({
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function AnnotationPreview({
+  annotations,
+  displayBounds
+}: {
+  annotations: UserAnnotation[];
+  displayBounds: OverlayDisplayBounds;
+}) {
+  return (
+    <div className="annotation-preview-mode" aria-label="Kairo user annotations">
+      {annotations.map((annotation) => (
+        <OverlayAnnotationShape
+          annotation={annotation}
+          displayBounds={displayBounds}
+          key={annotation.id}
+        />
+      ))}
     </div>
   );
 }
@@ -297,10 +318,26 @@ export function OverlayApp() {
       {payload?.mode === 'annotate' ? (
         <AnnotationOverlay
           displayBounds={payload.displayBounds}
-          onDone={() => {
-            void emit('annotation:done', {});
-            void nativeBridge.hideOverlay();
+          onDone={(annotations) => {
+            const previewPayload: OverlayPayload = {
+              mode: 'annotation_preview',
+              displayBounds: payload.displayBounds,
+              targets: [],
+              annotations
+            };
+            void (async () => {
+              try {
+                await nativeBridge.updateOverlay(previewPayload);
+              } finally {
+                await emit('annotation:done', {});
+              }
+            })();
           }}
+        />
+      ) : payload?.mode === 'annotation_preview' ? (
+        <AnnotationPreview
+          annotations={payload.annotations ?? []}
+          displayBounds={payload.displayBounds}
         />
       ) : payload ? (
         <VisualOverlay

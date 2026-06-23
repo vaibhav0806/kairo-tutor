@@ -28,6 +28,7 @@ export function NotchApp() {
     setPayload(defaultPayload);
     setQuery('');
     setAnnotations([]);
+    void nativeBridge.hideOverlay();
     void nativeBridge.hideNotch();
   }, [nativeBridge]);
 

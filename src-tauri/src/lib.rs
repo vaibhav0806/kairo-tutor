@@ -113,6 +113,7 @@ struct OverlayPayload {
     mode: Option<String>,
     display_bounds: OverlayDisplayBounds,
     targets: Vec<OverlayTarget>,
+    annotations: Option<Vec<TutorAnnotation>>,
 }
 
 #[derive(Default)]
@@ -895,16 +896,47 @@ fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {
         "Answer general user questions directly. Do not refuse just because the question is outside the selected skill pack.".to_string(),
         "Use the selected skill pack only when it is relevant to the active app or user question.".to_string(),
         "When responding to a user question, prefer mode \"stuck_help\" or \"guided_lesson\"; reserve mode \"idle\" for no-op readiness.".to_string(),
+        "If annotations are present, treat them as user-marked screen areas. Mention only listed annotation IDs/types; do not invent image labels or extra annotations.".to_string(),
         format!("Selected skill context, when relevant: {} ({}).", input.skill.display_name, input.skill.slug),
         format!("Constraints: {}", input.constraints.join(" ")),
     ]
     .join("\n")
 }
 
+fn build_annotation_summary(input: &TutorTurnInput) -> String {
+    if input.annotations.is_empty() {
+        return "No user annotations.".to_string();
+    }
+
+    let annotations = input
+        .annotations
+        .iter()
+        .map(|annotation| {
+            format!(
+                "{}: {} at x={}, y={}, width={}, height={}",
+                annotation.id,
+                annotation.annotation_type,
+                annotation.screen_region.x,
+                annotation.screen_region.y,
+                annotation.screen_region.width,
+                annotation.screen_region.height
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("; ");
+
+    format!(
+        "User annotations: exactly {}. {}. Do not invent unlisted annotations.",
+        input.annotations.len(),
+        annotations
+    )
+}
+
 fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
     serde_json::to_string_pretty(&json!({
         "userQuery": input.user_query,
         "activeApp": input.active_app,
+        "annotationSummary": build_annotation_summary(input),
         "annotations": input.annotations,
         "screen": {
             "captured": input.screen.captured,
@@ -1303,8 +1335,8 @@ pub fn run() {
 mod tests {
     use super::{
         build_openrouter_messages, build_openrouter_request_body, notch_window_size,
-        parse_local_env, provider_timeout_ms, OverlayDisplayBounds, TutorActiveAppContext,
-        TutorScreenInput, TutorSkillPack, TutorTurnInput,
+        parse_local_env, provider_timeout_ms, OverlayDisplayBounds, ScreenRegion,
+        TutorActiveAppContext, TutorAnnotation, TutorScreenInput, TutorSkillPack, TutorTurnInput,
     };
     use serde_json::json;
 
@@ -1404,7 +1436,34 @@ mod tests {
 
         assert!(system_prompt.contains("Answer general user questions directly"));
         assert!(system_prompt.contains("Selected skill context, when relevant: Blender"));
+        assert!(system_prompt.contains("Mention only listed annotation IDs/types"));
         assert!(!system_prompt.contains("Skill: Blender"));
+    }
+
+    #[test]
+    fn openrouter_prompt_includes_exact_annotation_summary() {
+        let mut input = sample_tutor_turn_input();
+        input.annotations = vec![TutorAnnotation {
+            id: "screen-annotation-1".to_string(),
+            annotation_type: "pen".to_string(),
+            screen_region: ScreenRegion {
+                x: 120.0,
+                y: 140.0,
+                width: 180.0,
+                height: 90.0,
+            },
+            points: None,
+        }];
+        let body = build_openrouter_request_body(&input, "qwen/qwen3.6-flash", false)
+            .expect("body should build");
+        let user_prompt = body["messages"][1]["content"]
+            .as_str()
+            .expect("user prompt should be string");
+
+        assert!(user_prompt.contains("\"annotationSummary\""));
+        assert!(user_prompt.contains("User annotations: exactly 1"));
+        assert!(user_prompt.contains("screen-annotation-1: pen"));
+        assert!(user_prompt.contains("Do not invent unlisted annotations"));
     }
 
     #[test]

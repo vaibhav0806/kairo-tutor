@@ -515,6 +515,13 @@ input {
   position: fixed;
 }
 
+.annotation-preview-mode {
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  z-index: 3;
+}
+
 .annotation-overlay-toolbar {
   align-items: center;
   background: rgb(18 20 23 / 0.92);

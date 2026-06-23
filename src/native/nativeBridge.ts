@@ -1,6 +1,6 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { register as registerGlobalShortcut } from '@tauri-apps/plugin-global-shortcut';
-import type { VisualTarget } from '../core/types';
+import type { UserAnnotation, VisualTarget } from '../core/types';
 import type { TutorTurnInput } from '../core/orchestrator';
 import type { NotchPayload } from '../notch/types';
 
@@ -56,9 +56,10 @@ export type NativeScreenCapture = {
 export type NativeOverlayDisplayBounds = NonNullable<NativeScreenCapture['displayBounds']>;
 
 export type NativeOverlayPayload = {
-  mode?: 'visual' | 'annotate';
+  mode?: 'visual' | 'annotate' | 'annotation_preview';
   displayBounds: NativeOverlayDisplayBounds;
   targets: VisualTarget[];
+  annotations?: UserAnnotation[];
 };
 
 export type NativeBridge = {

@@ -201,6 +201,23 @@ describe('createNativeBridge', () => {
 
     await expect(bridge.showOverlay(payload)).resolves.toBeUndefined();
     await expect(bridge.showAnnotationOverlay(payload.displayBounds)).resolves.toBeUndefined();
+    const annotationPreviewPayload = {
+      mode: 'annotation_preview' as const,
+      displayBounds: payload.displayBounds,
+      targets: [],
+      annotations: [
+        {
+          id: 'screen-annotation-1',
+          type: 'pen' as const,
+          screenRegion: { x: 120, y: 140, width: 180, height: 90 },
+          points: [
+            { x: 120, y: 140 },
+            { x: 160, y: 180 }
+          ]
+        }
+      ]
+    };
+    await expect(bridge.updateOverlay(annotationPreviewPayload)).resolves.toBeUndefined();
     await expect(bridge.updateOverlay(payload)).resolves.toBeUndefined();
     await expect(bridge.getCurrentOverlayPayload()).resolves.toEqual(payload);
     await expect(bridge.hideOverlay()).resolves.toBeUndefined();
@@ -213,6 +230,7 @@ describe('createNativeBridge', () => {
         targets: []
       }
     });
+    expect(invoke).toHaveBeenCalledWith('update_overlay', { payload: annotationPreviewPayload });
     expect(invoke).toHaveBeenCalledWith('update_overlay', { payload });
     expect(invoke).toHaveBeenCalledWith('get_current_overlay_payload');
     expect(invoke).toHaveBeenCalledWith('hide_overlay');

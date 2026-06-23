@@ -140,9 +140,25 @@ function buildSystemPrompt(input: TutorTurnInput) {
     'Answer general user questions directly. Do not refuse just because the question is outside the selected skill pack.',
     'Use the selected skill pack only when it is relevant to the active app or user question.',
     'When responding to a user question, prefer mode "stuck_help" or "guided_lesson"; reserve mode "idle" for no-op readiness.',
+    'If annotations are present, treat them as user-marked screen areas. Mention only listed annotation IDs/types; do not invent image labels or extra annotations.',
     `Selected skill context, when relevant: ${input.skill.displayName} (${input.skill.slug}).`,
     `Constraints: ${input.constraints.join(' ')}`
   ].join('\n');
+}
+
+function buildAnnotationSummary(input: TutorTurnInput) {
+  if (input.annotations.length === 0) {
+    return 'No user annotations.';
+  }
+
+  const annotations = input.annotations
+    .map((annotation) => {
+      const region = annotation.screenRegion;
+      return `${annotation.id}: ${annotation.type} at x=${region.x}, y=${region.y}, width=${region.width}, height=${region.height}`;
+    })
+    .join('; ');
+
+  return `User annotations: exactly ${input.annotations.length}. ${annotations}. Do not invent unlisted annotations.`;
 }
 
 function buildUserPrompt(input: TutorTurnInput) {
@@ -150,6 +166,7 @@ function buildUserPrompt(input: TutorTurnInput) {
     {
       userQuery: input.userQuery,
       activeApp: input.activeApp,
+      annotationSummary: buildAnnotationSummary(input),
       annotations: input.annotations,
       screen: {
         captured: input.screen.captured,

@@ -82,6 +82,9 @@ describe('OpenRouter tutor planner adapter', () => {
       ])
     );
     expect(JSON.stringify(userMessage.content)).toContain('annotation-1');
+    expect(JSON.stringify(userMessage.content)).toContain('annotationSummary');
+    expect(JSON.stringify(userMessage.content)).toContain('User annotations: exactly 1');
+    expect(JSON.stringify(userMessage.content)).toContain('annotation-1: rectangle');
   });
 
   test('instructs providers to answer general questions instead of treating Blender as the only scope', async () => {
@@ -102,6 +105,7 @@ describe('OpenRouter tutor planner adapter', () => {
     const messages = (chat.mock.calls as unknown as Array<[OpenRouterMessage[]]>)[0][0];
     expect(String(messages[0].content)).toContain('Answer general user questions directly');
     expect(String(messages[0].content)).toContain('Selected skill context, when relevant: Blender');
+    expect(String(messages[0].content)).toContain('Mention only listed annotation IDs/types');
     expect(String(messages[0].content)).not.toContain('Skill: Blender');
   });
 
