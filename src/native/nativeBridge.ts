@@ -97,6 +97,7 @@ export type NativeBridgeDependencies = {
 };
 
 export const KAIRO_DEFAULT_ACTIVATION_SHORTCUT = 'CommandOrControl+Shift+Space';
+export const ANNOTATION_OVERLAY_RESERVED_TOP = 252;
 
 function fallbackActiveApp(): NativeActiveApp {
   return {
@@ -118,6 +119,21 @@ function fallbackScreenCapture(): NativeScreenCapture {
   return {
     captured: false,
     reason: 'Native screen capture is only available inside the Tauri desktop shell.'
+  };
+}
+
+export function createAnnotationOverlayBounds(
+  displayBounds: NativeOverlayDisplayBounds
+): NativeOverlayDisplayBounds {
+  const reservedTop = Math.min(
+    ANNOTATION_OVERLAY_RESERVED_TOP,
+    Math.max(0, displayBounds.height - 120)
+  );
+
+  return {
+    ...displayBounds,
+    y: displayBounds.y + reservedTop,
+    height: Math.max(120, displayBounds.height - reservedTop)
   };
 }
 
@@ -249,9 +265,10 @@ export function createNativeBridge(
 
     async showAnnotationOverlay(displayBounds, initialTool) {
       try {
+        const overlayDisplayBounds = createAnnotationOverlayBounds(displayBounds);
         const payload: NativeOverlayPayload = {
           mode: 'annotate',
-          displayBounds,
+          displayBounds: overlayDisplayBounds,
           targets: []
         };
         if (initialTool) {

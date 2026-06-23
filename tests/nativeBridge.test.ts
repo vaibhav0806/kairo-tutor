@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
+  ANNOTATION_OVERLAY_RESERVED_TOP,
+  createAnnotationOverlayBounds,
   createNativeBridge,
   type NativeInvoke,
   type NativeShortcutRegistrar,
@@ -202,6 +204,7 @@ describe('createNativeBridge', () => {
     await expect(bridge.showOverlay(payload)).resolves.toBeUndefined();
     await expect(bridge.showAnnotationOverlay(payload.displayBounds)).resolves.toBeUndefined();
     await expect(bridge.showAnnotationOverlay(payload.displayBounds, 'circle')).resolves.toBeUndefined();
+    const annotationDisplayBounds = createAnnotationOverlayBounds(payload.displayBounds);
     const annotationPreviewPayload = {
       mode: 'annotation_preview' as const,
       displayBounds: payload.displayBounds,
@@ -227,14 +230,14 @@ describe('createNativeBridge', () => {
     expect(invoke).toHaveBeenCalledWith('show_overlay', {
       payload: {
         mode: 'annotate',
-        displayBounds: payload.displayBounds,
+        displayBounds: annotationDisplayBounds,
         targets: []
       }
     });
     expect(invoke).toHaveBeenCalledWith('show_overlay', {
       payload: {
         mode: 'annotate',
-        displayBounds: payload.displayBounds,
+        displayBounds: annotationDisplayBounds,
         targets: [],
         initialTool: 'circle'
       }
@@ -243,6 +246,22 @@ describe('createNativeBridge', () => {
     expect(invoke).toHaveBeenCalledWith('update_overlay', { payload });
     expect(invoke).toHaveBeenCalledWith('get_current_overlay_payload');
     expect(invoke).toHaveBeenCalledWith('hide_overlay');
+  });
+
+  test('keeps annotation overlay below the notch controls', () => {
+    const displayBounds = {
+      x: 0,
+      y: 0,
+      width: 1800,
+      height: 1169,
+      scaleFactor: 1
+    };
+
+    expect(createAnnotationOverlayBounds(displayBounds)).toEqual({
+      ...displayBounds,
+      y: ANNOTATION_OVERLAY_RESERVED_TOP,
+      height: displayBounds.height - ANNOTATION_OVERLAY_RESERVED_TOP
+    });
   });
 
   test('shows and hides the native notch assistant window', async () => {

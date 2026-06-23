@@ -132,6 +132,21 @@ function AnnotationOverlay({
     };
   }, [onDone]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      event.preventDefault();
+      onDone(annotationsRef.current);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onDone]);
+
   const draftAnnotation = draftDrag
     ? createAnnotationFromDisplayDrag({
         id: 'draft-annotation',
