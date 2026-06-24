@@ -160,6 +160,9 @@ export function NotchApp() {
   // activation; `suppressed` skips auto-listen when returning from annotating.
   const autoListenStartedRef = useRef(false);
   const autoListenSuppressedRef = useRef(false);
+  // Call the latest startVoiceCapture without making it an effect dependency
+  // (otherwise the payload subscription re-subscribes on every render and loops).
+  const startVoiceCaptureRef = useRef<() => void>(() => {});
   const nativeBridge = useMemo(() => createNativeBridge(), []);
   const env = loadBrowserEnv();
   const interaction = getNotchInteractionState({
@@ -397,6 +400,8 @@ export function NotchApp() {
     stopPcmCapture();
     stopVoiceMonitor();
     stopVoiceTracks();
+    // Re-arm auto-listen so the next activation opens the mic again.
+    autoListenStartedRef.current = false;
     isSubmittingRef.current = false;
     setIsSubmitting(false);
     updateVoiceCaptureState('idle');
@@ -525,11 +530,11 @@ export function NotchApp() {
             return;
           }
 
-          if (!voiceHeardSpeechRef.current) {
-            showVoiceError('No speech was detected. Try again when you are ready to talk.');
-            return;
-          }
-
+          // Note: we intentionally do NOT gate on the local VAD (voiceHeardSpeech)
+          // here. The VAD uses an AudioContext that browsers keep suspended until
+          // a user gesture, so an auto-started capture (from the shortcut, no
+          // gesture) sees silence even though MediaRecorder captured real audio.
+          // Always transcribe; an empty transcript below is the real "no speech".
           updateVoiceCaptureState('transcribing');
           setVoicePayload('transcribing');
           try {
@@ -587,6 +592,10 @@ export function NotchApp() {
     updateVoiceCaptureState
   ]);
 
+  startVoiceCaptureRef.current = () => {
+    void startVoiceCapture();
+  };
+
   const toggleVoiceCapture = useCallback(() => {
     if (voiceCaptureStateRef.current === 'recording') {
       stopActiveRecording(false);
@@ -604,6 +613,24 @@ export function NotchApp() {
       document.documentElement.classList.remove('notch-document');
       document.body.classList.remove('notch-document');
     };
+  }, []);
+
+  // Warm the microphone once on mount: the very first getUserMedia after launch
+  // is cold (device + permission init) and drops the opening words, which showed
+  // up as "no speech detected" on the first capture. Acquiring and immediately
+  // releasing a stream initializes the device so the first real capture is warm.
+  useEffect(() => {
+    if (!globalThis.navigator?.mediaDevices?.getUserMedia) {
+      return;
+    }
+    void (async () => {
+      try {
+        const stream = await acquireMicrophoneStream();
+        stream.getTracks().forEach((track) => track.stop());
+      } catch {
+        // Permission denied / unavailable — real capture will surface errors.
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -646,7 +673,7 @@ export function NotchApp() {
           Boolean(globalThis.MediaRecorder)
         ) {
           autoListenStartedRef.current = true;
-          void startVoiceCapture();
+          startVoiceCaptureRef.current();
         }
         autoListenSuppressedRef.current = false;
       }
@@ -662,7 +689,7 @@ export function NotchApp() {
       isMounted = false;
       unlisten?.();
     };
-  }, [nativeBridge, startVoiceCapture, updateVoiceCaptureState]);
+  }, [nativeBridge, updateVoiceCaptureState]);
 
   useEffect(() => {
     let isMounted = true;

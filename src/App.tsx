@@ -382,28 +382,33 @@ export function App() {
     setPermissions(await nativeBridge.getPermissionStatus());
   }, [nativeBridge]);
 
-  const handleActivationShortcut = useCallback(async () => {
-    const listeningState = reduceActivationState('idle', { type: 'shortcut_pressed' });
-    showActivationState(listeningState);
+  const handleActivationShortcut = useCallback(() => {
     setIsOverlayActive(false);
     void nativeBridge.hideOverlay();
-    const [nextActiveApp, nextPermissions, nextScreenCapture] = await Promise.all([
+    // Show the ready state immediately so voice starts without waiting on the
+    // slow screen capture. The tutor turn captures the screen fresh on submit,
+    // so the activation capture only refreshes context — run it in the
+    // background instead of blocking the prompt/voice from appearing.
+    showActivationState(reduceActivationState('listening', { type: 'capture_complete' }));
+
+    void Promise.all([
       nativeBridge.getActiveApp(),
       nativeBridge.getPermissionStatus(),
       nativeBridge.captureScreen()
-    ]);
-    setActiveApp(nextActiveApp);
-    setPermissions(nextPermissions);
-    setScreenCapture(nextScreenCapture);
-    if (nextScreenCapture.captured) {
-      const nextState = reduceActivationState(listeningState, {
-        type: 'capture_complete'
+    ])
+      .then(([nextActiveApp, nextPermissions, nextScreenCapture]) => {
+        setActiveApp(nextActiveApp);
+        setPermissions(nextPermissions);
+        setScreenCapture(nextScreenCapture);
+        // Sensitive-app captures are blocked for safety — surface that even
+        // though the prompt already opened.
+        if (nextScreenCapture.blockedSensitiveApp) {
+          void nativeBridge.showNotch(captureFailureToNotchPayload(nextScreenCapture.reason));
+        }
+      })
+      .catch(() => {
+        // Background refresh is best-effort; the tutor turn re-captures on submit.
       });
-      showActivationState(nextState);
-      return;
-    }
-
-    await nativeBridge.showNotch(captureFailureToNotchPayload(nextScreenCapture.reason));
   }, [nativeBridge, showActivationState]);
 
   async function captureNativeScreen() {
@@ -637,6 +642,17 @@ export function App() {
             disabled={isRequestingPermissions}
           >
             {isRequestingPermissions ? 'Checking...' : 'Enable permissions'}
+          </button>
+          <p className="permission-hint">
+            Already granted them in System Settings? macOS only applies Screen Recording
+            and Accessibility after a restart — relaunch Kairo to detect them.
+          </p>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => void nativeBridge.restartApp()}
+          >
+            Restart Kairo
           </button>
         </section>
       ) : null}

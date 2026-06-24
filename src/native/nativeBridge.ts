@@ -90,6 +90,7 @@ export type NativeBridge = {
   getPermissionStatus(): Promise<NativePermissionStatus>;
   requestRequiredPermissions(): Promise<NativePermissionStatus>;
   openPermissionSettings(permission: NativePermissionKey): Promise<void>;
+  restartApp(): Promise<void>;
   captureScreen(): Promise<NativeScreenCapture>;
   showOverlay(payload: NativeOverlayPayload): Promise<void>;
   showAnnotationOverlay(
@@ -275,6 +276,14 @@ export function createNativeBridge(
         await invoke<void>('open_permission_settings', { permission });
       } catch {
         // Browser previews cannot open macOS System Settings.
+      }
+    },
+
+    async restartApp() {
+      try {
+        await invoke<void>('restart_app');
+      } catch {
+        // Browser previews cannot restart the native app.
       }
     },
 
