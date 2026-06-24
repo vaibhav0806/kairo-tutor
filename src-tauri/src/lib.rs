@@ -9,10 +9,26 @@ use std::{
     time::Duration,
 };
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
+use tauri_nspanel::{
+    tauri_panel, CollectionBehavior, ManagerExt, PanelHandle, PanelLevel, StyleMask,
+    WebviewWindowExt,
+};
 use tauri_plugin_global_shortcut::ShortcutState;
 
 const KAIRO_ACTIVATION_SHORTCUT: &str = "CommandOrControl+Shift+Space";
 const DEFAULT_OPENROUTER_VISION_MODEL: &str = "google/gemini-2.5-flash";
+
+// Non-activating NSPanel for the notch. A non-activating panel can receive
+// input without activating the app, so showing it does not pull the user out
+// of another app's full-screen Space (a plain NSWindow cannot do this).
+tauri_panel! {
+    panel!(NotchPanel {
+        config: {
+            can_become_key_window: true,
+            is_floating_panel: true
+        }
+    })
+}
 
 #[cfg(target_os = "macos")]
 use block2::RcBlock;
@@ -25,8 +41,6 @@ use core_foundation::{
 };
 #[cfg(target_os = "macos")]
 use core_graphics::display::CGDisplay;
-#[cfg(target_os = "macos")]
-use objc2::runtime::Bool;
 #[cfg(target_os = "macos")]
 use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
 
@@ -436,7 +450,7 @@ fn request_microphone_permission(app: tauri::AppHandle) -> PermissionState {
             let _ = sender.send(false);
             return;
         };
-        let handler = RcBlock::new(move |granted: Bool| {
+        let handler = RcBlock::new(move |granted: objc2::runtime::Bool| {
             let _ = sender.send(granted.as_bool());
         });
 
@@ -625,10 +639,6 @@ fn ensure_overlay_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow,
     ensure_configured_window(app, "overlay")
 }
 
-fn ensure_notch_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String> {
-    ensure_configured_window(app, "notch")
-}
-
 fn ensure_configured_window(
     app: &tauri::AppHandle,
     label: &str,
@@ -649,6 +659,66 @@ fn ensure_configured_window(
         .map_err(|error| format!("Failed to read {label} window config: {error}"))?
         .build()
         .map_err(|error| format!("Failed to create {label} window: {error}"))
+}
+
+// Tauri/tao's visibleOnAllWorkspaces only sets CanJoinAllSpaces, which is not
+// enough to draw over a macOS full-screen app's dedicated Space. Adding
+// FullScreenAuxiliary lets a non-activating window composite into the active
+// full-screen Space, and a raised window level keeps it above the full-screen
+// content (tao's always-on-top only uses NSFloatingWindowLevel, which is too low).
+#[cfg(target_os = "macos")]
+fn elevate_window_over_fullscreen(window: &tauri::WebviewWindow) {
+    let ns_window_ptr = match window.ns_window() {
+        Ok(ptr) => ptr,
+        Err(error) => {
+            eprintln!("[fs-diag] {} ns_window() error: {error}", window.label());
+            return;
+        }
+    };
+    if ns_window_ptr.is_null() {
+        eprintln!("[fs-diag] {} ns_window() returned null", window.label());
+        return;
+    }
+    eprintln!("[fs-diag] {} elevating (ptr ok)", window.label());
+    let ns_window: &objc2_app_kit::NSWindow =
+        unsafe { &*(ns_window_ptr as *const objc2_app_kit::NSWindow) };
+    let behavior = objc2_app_kit::NSWindowCollectionBehavior::CanJoinAllSpaces
+        | objc2_app_kit::NSWindowCollectionBehavior::FullScreenAuxiliary
+        | objc2_app_kit::NSWindowCollectionBehavior::Stationary;
+    ns_window.setCollectionBehavior(behavior);
+    // NSStatusWindowLevel (25) floats over normal windows but not over a
+    // full-screen app's content. NSScreenSaverWindowLevel (1000) sits above it.
+    ns_window.setLevel(1000);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn elevate_window_over_fullscreen(_window: &tauri::WebviewWindow) {}
+
+// Lazily create the notch window, convert it to a non-activating NSPanel, and
+// apply the level / style / collection behavior that let it float over
+// full-screen Spaces. Idempotent: returns the existing panel once converted.
+fn ensure_notch_panel(app: &tauri::AppHandle) -> Result<PanelHandle<tauri::Wry>, String> {
+    if let Ok(panel) = app.get_webview_panel("notch") {
+        return Ok(panel);
+    }
+
+    let window = ensure_configured_window(app, "notch")?;
+    let panel = window
+        .to_panel::<NotchPanel>()
+        .map_err(|error| format!("Failed to convert notch window to panel: {error}"))?;
+
+    panel.set_level(PanelLevel::Floating.value());
+    // Non-activating: take key/input without activating the app (no Space switch).
+    panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+    panel.set_collection_behavior(
+        CollectionBehavior::new()
+            .full_screen_auxiliary()
+            .can_join_all_spaces()
+            .stationary()
+            .into(),
+    );
+
+    Ok(panel)
 }
 
 fn configure_overlay_window(
@@ -682,6 +752,8 @@ fn configure_overlay_window(
         ))
         .map_err(|error| format!("Failed to size overlay: {error}"))?;
 
+    elevate_window_over_fullscreen(window);
+
     Ok(())
 }
 
@@ -702,12 +774,6 @@ fn configure_notch_window(
         payload.and_then(|payload| payload.layout.as_deref()),
         payload.map(|payload| payload.state.as_str()),
     );
-    window
-        .set_focusable(true)
-        .map_err(|error| format!("Failed to make notch focusable: {error}"))?;
-    window
-        .set_always_on_top(true)
-        .map_err(|error| format!("Failed to keep notch above other windows: {error}"))?;
     window
         .set_skip_taskbar(true)
         .map_err(|error| format!("Failed to keep notch out of the taskbar: {error}"))?;
@@ -786,7 +852,10 @@ fn show_notch_with_payload(
     state: &NotchState,
     payload: Option<NotchPayload>,
 ) -> Result<(), String> {
-    let window = ensure_notch_window(app)?;
+    let panel = ensure_notch_panel(app)?;
+    let window = panel
+        .to_window()
+        .ok_or_else(|| "Notch panel has no backing window.".to_string())?;
     let is_prompt_mode = payload
         .as_ref()
         .map(|payload| payload.state == "captured")
@@ -796,11 +865,12 @@ fn show_notch_with_payload(
         store_notch_payload_inner(state, Some(payload.clone()))?;
         emit_notch_payload(&window, payload)?;
     }
-    window
-        .show()
-        .map_err(|error| format!("Failed to show notch: {error}"))?;
+    // A non-activating panel can take key focus for typing without activating
+    // the app, so it stays on the user's current (possibly full-screen) Space.
     if is_prompt_mode {
-        let _ = window.set_focus();
+        panel.show_and_make_key();
+    } else {
+        panel.show();
     }
 
     Ok(())
@@ -1555,10 +1625,8 @@ fn get_current_notch_payload(state: State<'_, NotchState>) -> Result<Option<Notc
 #[tauri::command]
 fn hide_notch(app: tauri::AppHandle, state: State<'_, NotchState>) -> Result<(), String> {
     store_notch_payload(&state, None)?;
-    if let Some(window) = app.get_webview_window("notch") {
-        window
-            .hide()
-            .map_err(|error| format!("Failed to hide notch: {error}"))?;
+    if let Ok(panel) = app.get_webview_panel("notch") {
+        panel.hide();
     }
     Ok(())
 }
@@ -1626,6 +1694,7 @@ pub fn run() {
         .manage(OverlayState::default())
         .manage(NotchState::default())
         .plugin(global_shortcut_plugin)
+        .plugin(tauri_nspanel::init())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(debug_assertions)]
