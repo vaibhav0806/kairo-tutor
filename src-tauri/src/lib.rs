@@ -717,6 +717,11 @@ fn ensure_notch_panel(app: &tauri::AppHandle) -> Result<PanelHandle<tauri::Wry>,
             .stationary()
             .into(),
     );
+    // No macOS window drop shadow — the rounded card draws its own depth.
+    panel.set_has_shadow(false);
+    // Deliver mouse-moved events so CSS :hover works while the panel is shown
+    // over another (possibly full-screen) app without activating it.
+    panel.set_accepts_mouse_moved_events(true);
 
     Ok(panel)
 }
@@ -865,13 +870,11 @@ fn show_notch_with_payload(
         store_notch_payload_inner(state, Some(payload.clone()))?;
         emit_notch_payload(&window, payload)?;
     }
-    // A non-activating panel can take key focus for typing without activating
-    // the app, so it stays on the user's current (possibly full-screen) Space.
-    if is_prompt_mode {
-        panel.show_and_make_key();
-    } else {
-        panel.show();
-    }
+    // Always make the non-activating panel key: it can take keyboard focus and
+    // deliver hover/mouse-move events for the UI without activating the app, so
+    // it stays on the user's current (possibly full-screen) Space.
+    let _ = is_prompt_mode;
+    panel.show_and_make_key();
 
     Ok(())
 }
