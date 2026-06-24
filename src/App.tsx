@@ -157,14 +157,14 @@ export function App() {
     () =>
       [
         {
-          key: 'screenRecording' as const,
-          label: 'Screen Recording',
-          detail: 'Lets Kairo inspect the active screen before giving visual guidance.'
-        },
-        {
           key: 'accessibility' as const,
           label: 'Accessibility',
           detail: 'Lets Kairo identify the active app and focused window.'
+        },
+        {
+          key: 'screenRecording' as const,
+          label: 'Screen Recording',
+          detail: 'Lets Kairo inspect the active screen before giving visual guidance.'
         },
         ...(env.sttProvider === 'sarvam'
           ? [
