@@ -34,8 +34,13 @@ export async function askTutorFromNotch({
       mockPlanner
     });
     const orchestrator = createTutorOrchestrator({ planner });
+    // Use the fast voice-start screenshot when there are no annotations. If the
+    // user drew with the pen, those marks were added AFTER that capture, so
+    // re-capture now (at ask time) to include them in what the tutor sees.
     const screenCapture =
-      (providedCapture?.captured ? providedCapture : null) ?? (await nativeBridge.captureScreen());
+      annotations.length === 0 && providedCapture?.captured
+        ? providedCapture
+        : await nativeBridge.captureScreen();
     const activeApp = screenCapture.activeApp ?? (await nativeBridge.getActiveApp());
     const response = await orchestrator.runTextTurn({
       request: {

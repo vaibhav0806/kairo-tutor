@@ -10,7 +10,7 @@ use std::{
 };
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 use tauri_nspanel::{
-    tauri_panel, CollectionBehavior, PanelHandle, PanelLevel, StyleMask, WebviewWindowExt,
+    tauri_panel, CollectionBehavior, PanelHandle, StyleMask, WebviewWindowExt,
 };
 use tauri_plugin_global_shortcut::ShortcutState;
 
@@ -770,7 +770,9 @@ fn ensure_notch_panel(app: &tauri::AppHandle) -> Result<PanelHandle<tauri::Wry>,
         .to_panel::<NotchPanel>()
         .map_err(|error| format!("Failed to convert notch window to panel: {error}"))?;
 
-    panel.set_level(PanelLevel::Floating.value());
+    // Sit above the annotation overlay (level 1000) so the notch's annotation
+    // toolbar (pen/done/undo/clear) stays reachable while the user draws.
+    panel.set_level(1001);
     // Non-activating: take key/input without activating the app (no Space switch).
     panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
     panel.set_collection_behavior(
@@ -834,8 +836,8 @@ fn configure_overlay_window(
         .map_err(|error| format!("Failed to size overlay: {error}"))?;
 
     elevate_window_over_fullscreen(window);
-    // Keep the overlay (highlights/annotations) out of the tutor's screenshot.
-    exclude_window_from_screen_capture(window);
+    // NOTE: the overlay is intentionally NOT excluded from screen capture — the
+    // user's pen annotations live here and must appear in the tutor's screenshot.
 
     Ok(())
 }
@@ -1685,6 +1687,24 @@ fn debug_log(message: String) {
 }
 
 #[tauri::command]
+fn get_display_bounds() -> DisplayBounds {
+    #[cfg(target_os = "macos")]
+    {
+        main_display_bounds()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        DisplayBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            scale_factor: 1.0,
+        }
+    }
+}
+
+#[tauri::command]
 fn get_current_overlay_payload(
     state: State<'_, OverlayState>,
 ) -> Result<Option<OverlayPayload>, String> {
@@ -1841,6 +1861,7 @@ pub fn run() {
             open_permission_settings,
             restart_app,
             debug_log,
+            get_display_bounds,
             capture_screen,
             show_overlay,
             update_overlay,

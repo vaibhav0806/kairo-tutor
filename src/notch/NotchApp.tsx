@@ -4,7 +4,7 @@ import { activationStateToNotchPayload } from '../activation/activationState';
 import { loadBrowserEnv } from '../config/env';
 import type { UserAnnotation } from '../core/types';
 import { createNativeBridge, type NativeScreenCapture } from '../native/nativeBridge';
-import { createAnnotationStartPayload, type NotchAnnotationTool } from './annotationActions';
+import { type NotchAnnotationTool } from './annotationActions';
 import { buildAudioDataUrl } from './audioPlayback';
 import { subscribeToNotchPayload } from './notchEvents';
 import { askTutorFromNotch } from './notchTutor';
@@ -376,10 +376,18 @@ export function NotchApp() {
     ]
   );
 
-  const startAnnotation = useCallback((tool: NotchAnnotationTool) => {
-    setActiveAnnotationTool(tool);
-    void emit('annotation:start', createAnnotationStartPayload(tool));
-  }, []);
+  const startAnnotation = useCallback(
+    async (tool: NotchAnnotationTool) => {
+      setActiveAnnotationTool(tool);
+      // Show the drawing overlay from the notch (the main window's webview is
+      // hidden/suspended, so its listener can't be relied on). Reuse the
+      // voice-start screenshot's bounds, else fetch the display bounds natively.
+      const bounds =
+        capturedScreenRef.current?.displayBounds ?? (await nativeBridge.getDisplayBounds());
+      await nativeBridge.showAnnotationOverlay(bounds, tool);
+    },
+    [nativeBridge]
+  );
 
   const finishAnnotation = useCallback(() => {
     setActiveAnnotationTool(null);

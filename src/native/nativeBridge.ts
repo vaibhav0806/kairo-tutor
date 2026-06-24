@@ -93,6 +93,7 @@ export type NativeBridge = {
   restartApp(): Promise<void>;
   debugLog(message: string): Promise<void>;
   captureScreen(): Promise<NativeScreenCapture>;
+  getDisplayBounds(): Promise<NativeOverlayDisplayBounds>;
   showOverlay(payload: NativeOverlayPayload): Promise<void>;
   showAnnotationOverlay(
     displayBounds: NativeOverlayDisplayBounds,
@@ -247,6 +248,14 @@ export function createNativeBridge(
         return await invoke<NativeScreenCapture>('capture_screen');
       } catch {
         return fallbackScreenCapture();
+      }
+    },
+
+    async getDisplayBounds() {
+      try {
+        return await invoke<NativeOverlayDisplayBounds>('get_display_bounds');
+      } catch {
+        return { x: 0, y: 0, width: 0, height: 0, scaleFactor: 1 };
       }
     },
 
