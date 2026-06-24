@@ -10,8 +10,7 @@ use std::{
 };
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 use tauri_nspanel::{
-    tauri_panel, CollectionBehavior, ManagerExt, PanelHandle, PanelLevel, StyleMask,
-    WebviewWindowExt,
+    tauri_panel, CollectionBehavior, PanelHandle, PanelLevel, StyleMask, WebviewWindowExt,
 };
 use tauri_plugin_global_shortcut::ShortcutState;
 
@@ -150,6 +149,9 @@ struct NotchPayload {
 #[derive(Default)]
 struct NotchState {
     current_payload: Mutex<Option<NotchPayload>>,
+    // The crate's panel registry lookup (get_webview_panel) is unreliable across
+    // call sites, so we keep our own handle to show/hide the notch panel.
+    panel: Mutex<Option<PanelHandle<tauri::Wry>>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -522,8 +524,16 @@ fn open_permission_settings(permission: String) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
-    let output_path =
-        std::env::temp_dir().join(format!("kairo-screen-capture-{}.png", std::process::id()));
+    // Unique path per capture so concurrent activations don't clobber the same
+    // temp file (which could hang or corrupt a capture).
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static CAPTURE_SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = CAPTURE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let output_path = std::env::temp_dir().join(format!(
+        "kairo-screen-capture-{}-{}.png",
+        std::process::id(),
+        seq
+    ));
 
     let output = Command::new("screencapture")
         .arg("-x")
@@ -668,18 +678,12 @@ fn ensure_configured_window(
 // content (tao's always-on-top only uses NSFloatingWindowLevel, which is too low).
 #[cfg(target_os = "macos")]
 fn elevate_window_over_fullscreen(window: &tauri::WebviewWindow) {
-    let ns_window_ptr = match window.ns_window() {
-        Ok(ptr) => ptr,
-        Err(error) => {
-            eprintln!("[fs-diag] {} ns_window() error: {error}", window.label());
-            return;
-        }
+    let Ok(ns_window_ptr) = window.ns_window() else {
+        return;
     };
     if ns_window_ptr.is_null() {
-        eprintln!("[fs-diag] {} ns_window() returned null", window.label());
         return;
     }
-    eprintln!("[fs-diag] {} elevating (ptr ok)", window.label());
     let ns_window: &objc2_app_kit::NSWindow =
         unsafe { &*(ns_window_ptr as *const objc2_app_kit::NSWindow) };
     let behavior = objc2_app_kit::NSWindowCollectionBehavior::CanJoinAllSpaces
@@ -698,7 +702,13 @@ fn elevate_window_over_fullscreen(_window: &tauri::WebviewWindow) {}
 // apply the level / style / collection behavior that let it float over
 // full-screen Spaces. Idempotent: returns the existing panel once converted.
 fn ensure_notch_panel(app: &tauri::AppHandle) -> Result<PanelHandle<tauri::Wry>, String> {
-    if let Ok(panel) = app.get_webview_panel("notch") {
+    let notch_state = app.state::<NotchState>();
+    if let Some(panel) = notch_state
+        .panel
+        .lock()
+        .map_err(|_| "Failed to lock notch panel state.".to_string())?
+        .clone()
+    {
         return Ok(panel);
     }
 
@@ -722,6 +732,11 @@ fn ensure_notch_panel(app: &tauri::AppHandle) -> Result<PanelHandle<tauri::Wry>,
     // Deliver mouse-moved events so CSS :hover works while the panel is shown
     // over another (possibly full-screen) app without activating it.
     panel.set_accepts_mouse_moved_events(true);
+
+    *notch_state
+        .panel
+        .lock()
+        .map_err(|_| "Failed to lock notch panel state.".to_string())? = Some(panel.clone());
 
     Ok(panel)
 }
@@ -1607,6 +1622,14 @@ fn hide_overlay(app: tauri::AppHandle, state: State<'_, OverlayState>) -> Result
     Ok(())
 }
 
+// macOS caches Screen Recording (and accessibility) authorization per process,
+// so a grant made while running is only observed after a relaunch. Restarting
+// is the reliable way to re-read permissions during onboarding.
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.restart();
+}
+
 #[tauri::command]
 fn show_notch(
     app: tauri::AppHandle,
@@ -1626,9 +1649,14 @@ fn get_current_notch_payload(state: State<'_, NotchState>) -> Result<Option<Notc
 }
 
 #[tauri::command]
-fn hide_notch(app: tauri::AppHandle, state: State<'_, NotchState>) -> Result<(), String> {
+fn hide_notch(state: State<'_, NotchState>) -> Result<(), String> {
     store_notch_payload(&state, None)?;
-    if let Ok(panel) = app.get_webview_panel("notch") {
+    let panel = state
+        .panel
+        .lock()
+        .map_err(|_| "Failed to lock notch panel state.".to_string())?
+        .clone();
+    if let Some(panel) = panel {
         panel.hide();
     }
     Ok(())
@@ -1715,6 +1743,11 @@ pub fn run() {
                 #[cfg(debug_assertions)]
                 eprintln!("Kairo Tutor startup: main window was not created");
             }
+            // Pre-create the notch panel + webview at startup so the first
+            // shortcut press shows it instantly instead of building it lazily.
+            if let Err(error) = ensure_notch_panel(app.handle()) {
+                eprintln!("Kairo Tutor: failed to pre-create notch panel: {error}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1722,6 +1755,7 @@ pub fn run() {
             get_permission_status,
             request_required_permissions,
             open_permission_settings,
+            restart_app,
             capture_screen,
             show_overlay,
             update_overlay,
