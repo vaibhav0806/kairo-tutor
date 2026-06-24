@@ -67,6 +67,8 @@ const VIRTUAL_INPUT_RE =
   /blackhole|soundflower|loopback|aggregate|multi-?output|virtual|vb-?cable|\bcable\b|sound siphon|background music/i;
 const BUILTIN_INPUT_RE = /built-?in|macbook|imac|mac\s?mini|mac\s?studio|internal|microphone/i;
 
+let cachedMicDeviceId: string | null = null;
+
 export async function acquireMicrophoneStream(
   mediaDevices: MediaDevices | undefined = globalThis.navigator?.mediaDevices,
   log: (message: string) => void = () => {}
@@ -80,6 +82,18 @@ export async function acquireMicrophoneStream(
     noiseSuppression: true,
     autoGainControl: true
   };
+
+  // Fast path: reuse the device we already resolved (skips the default-acquire
+  // + enumerate + switch round-trip on every later recording).
+  if (cachedMicDeviceId) {
+    try {
+      return await mediaDevices.getUserMedia({
+        audio: { ...baseConstraints, deviceId: { exact: cachedMicDeviceId } }
+      });
+    } catch {
+      cachedMicDeviceId = null; // device went away — fall through to re-resolve
+    }
+  }
 
   // Acquire a default stream FIRST. Device labels are hidden until a getUserMedia
   // grant, so without this the first call can't identify the real built-in mic
@@ -109,6 +123,10 @@ export async function acquireMicrophoneStream(
       stream = await mediaDevices.getUserMedia({
         audio: { ...baseConstraints, deviceId: { exact: preferred.deviceId } }
       });
+      cachedMicDeviceId = preferred.deviceId;
+    } else if (preferred?.deviceId) {
+      // Default is already the real built-in mic.
+      cachedMicDeviceId = preferred.deviceId;
     }
   } catch (error) {
     log(`mic select error: ${String(error)}`);

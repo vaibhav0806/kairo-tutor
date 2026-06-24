@@ -1289,16 +1289,32 @@ impl OpenRouterChatError {
     }
 }
 
+// One pooled HTTP client shared across providers, so connections (TLS) stay
+// warm instead of a cold handshake on every STT/TTS/LLM call. Per-request
+// timeouts are applied at each call site.
+fn shared_http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .pool_idle_timeout(Duration::from_secs(90))
+            .build()
+            .expect("failed to build shared HTTP client")
+    })
+}
+
 async fn send_openrouter_chat_request(
     client: &reqwest::Client,
     endpoint: &str,
     api_key: &str,
     app_title: &str,
     site_url: Option<&str>,
+    timeout: Duration,
     body: Value,
 ) -> Result<String, OpenRouterChatError> {
     let mut request = client
         .post(endpoint)
+        .timeout(timeout)
         .bearer_auth(api_key)
         .header("Content-Type", "application/json")
         .header("X-OpenRouter-Title", app_title);
@@ -1367,13 +1383,10 @@ async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, String> {
     )));
     let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
-    let client = reqwest::Client::builder()
-        .timeout(timeout)
-        .build()
-        .map_err(|error| format!("Failed to build OpenRouter client: {error}"))?;
+    let client = shared_http_client();
     let site_url_ref = site_url.as_deref();
     let first_result =
-        send_openrouter_chat_request(&client, &endpoint, &api_key, &app_title, site_url_ref, {
+        send_openrouter_chat_request(client, &endpoint, &api_key, &app_title, site_url_ref, timeout, {
             let (request_model, include_screenshot) =
                 select_openrouter_request_model(&input, &model, &vision_model);
             build_openrouter_request_body(&input, &request_model, include_screenshot)?
@@ -1392,11 +1405,12 @@ async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, String> {
                 error.message
             );
             send_openrouter_chat_request(
-                &client,
+                client,
                 &endpoint,
                 &api_key,
                 &app_title,
                 site_url_ref,
+                timeout,
                 build_openrouter_request_body(&input, &model, false)?,
             )
             .await
@@ -1431,13 +1445,7 @@ async fn transcribe_audio(input: TranscribeAudioInput) -> Result<TranscriptionRe
         .file_name(filename)
         .mime_str(&input.mime_type)
         .map_err(|error| format!("Unsupported voice recording MIME type: {error}"))?;
-    let timeout = Duration::from_millis(provider_timeout_ms(provider_env_optional(
-        "KAIRO_STT_TIMEOUT_MS",
-    )));
-    let client = reqwest::Client::builder()
-        .timeout(timeout)
-        .build()
-        .map_err(|error| format!("Failed to build STT client: {error}"))?;
+    let client = shared_http_client();
 
     if provider == "sarvam" {
         let api_key = provider_env_optional("SARVAM_API_KEY")
@@ -1517,13 +1525,7 @@ async fn synthesize_speech(input: SynthesizeSpeechInput) -> Result<SpeechSynthes
         });
     }
 
-    let timeout = Duration::from_millis(provider_timeout_ms(provider_env_optional(
-        "KAIRO_TTS_TIMEOUT_MS",
-    )));
-    let client = reqwest::Client::builder()
-        .timeout(timeout)
-        .build()
-        .map_err(|error| format!("Failed to build TTS client: {error}"))?;
+    let client = shared_http_client();
 
     if provider == "sarvam" {
         let api_key = provider_env_optional("SARVAM_API_KEY")
