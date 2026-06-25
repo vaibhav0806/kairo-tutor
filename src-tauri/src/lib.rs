@@ -773,8 +773,11 @@ fn ensure_notch_panel(app: &tauri::AppHandle) -> Result<PanelHandle<tauri::Wry>,
     panel.set_accepts_mouse_moved_events(true);
     // Keep the panel alive across hide/show so the shortcut can reopen it.
     panel.set_released_when_closed(false);
-    // Keep the notch out of the tutor's screenshot of the user's screen.
-    exclude_window_from_screen_capture(&window);
+    // Hide the notch from all screen capture (screenshots/recordings + the tutor's
+    // own screenshot) unless KAIRO_SHOW_IN_CAPTURE is set (e.g. for a demo).
+    if !env_flag("KAIRO_SHOW_IN_CAPTURE") {
+        exclude_window_from_screen_capture(&window);
+    }
 
     *notch_state
         .window
@@ -821,6 +824,13 @@ fn ensure_overlay_panel(app: &tauri::AppHandle) -> Result<PanelHandle<tauri::Wry
     // Needed so pen drags (pointermove) fire while the panel is key over another app.
     panel.set_accepts_mouse_moved_events(true);
     panel.set_released_when_closed(false);
+    // Hide the overlay (annotations + AI pointer) from screen capture by default, so
+    // screenshots/recordings stay clean. The user still SEES it on screen (capture
+    // exclusion doesn't affect display). KAIRO_SHOW_IN_CAPTURE makes it captured —
+    // which also lets the tutor's own screenshot include the user's pen marks.
+    if !env_flag("KAIRO_SHOW_IN_CAPTURE") {
+        exclude_window_from_screen_capture(&window);
+    }
 
     *overlay_state
         .window
@@ -868,8 +878,8 @@ fn configure_overlay_window(
         ))
         .map_err(|error| format!("Failed to size overlay: {error}"))?;
 
-    // NOTE: the overlay is intentionally NOT excluded from screen capture — the
-    // user's pen annotations live here and must appear in the tutor's screenshot.
+    // Capture exclusion (default-on) is set once on the panel in ensure_overlay_panel,
+    // gated by KAIRO_SHOW_IN_CAPTURE.
 
     Ok(())
 }
@@ -1090,6 +1100,19 @@ fn provider_env_optional(name: &str) -> Option<String> {
 
 fn provider_env(name: &str, fallback: &str) -> String {
     provider_env_optional(name).unwrap_or_else(|| fallback.to_string())
+}
+
+// True when an env var is set to a truthy value (1/true/yes/on). Read at runtime
+// from the process env or the project .env, so a relaunch (no rebuild) applies it.
+fn env_flag(name: &str) -> bool {
+    provider_env_optional(name)
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 fn provider_timeout_ms(raw_value: Option<String>) -> u64 {

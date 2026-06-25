@@ -162,6 +162,16 @@ show a provider error instead of falling back to mock tutor guidance.
 Voice permissions are wired, but live speech-to-text is not yet part of the desktop question flow. Use
 the notch text prompt or Ask action for provider-backed tutor turns until STT is implemented.
 
+### Visual pointing & demo flag
+
+The tutor points at on-screen elements via Claude's Computer Use API (`ANTHROPIC_API_KEY`,
+`ANTHROPIC_COMPUTER_USE_MODEL`); without a key it falls back to OCR text grounding. By default **all Kairo
+UI — the notch, your pen annotations, and the AI pointer — is hidden from screenshots and screen
+recordings**, so captures of your screen stay clean (you still see everything live; only screen capture is
+affected). To record a demo where you *want* Kairo visible, set `KAIRO_SHOW_IN_CAPTURE=true` in
+`.env`/`.env.local` and relaunch (no rebuild needed). Note: while hidden, the tutor's own screenshot also
+can't see your pen annotations.
+
 ## Commands
 
 Run browser dev shell:
