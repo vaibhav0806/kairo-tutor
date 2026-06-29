@@ -15,8 +15,10 @@ body {
 
 :root.overlay-document,
 :root.notch-document,
+:root.cursor-document,
 body.overlay-document,
-body.notch-document {
+body.notch-document,
+body.cursor-document {
   background: transparent;
   height: 100%;
   overflow: hidden;
@@ -442,6 +444,33 @@ input {
     opacity: 0;
     transform: scale(2.8);
   }
+}
+
+/* Companion cursor window: a full-display, click-through layer holding one arrow
+   that the spring loop moves via `transform`. Pointer-events off everywhere so it
+   never blocks the user's clicks. */
+.kairo-cursor-shell {
+  background: transparent;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+}
+
+.kairo-cursor {
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  /* Position is driven entirely by `transform`; hint the compositor. */
+  will-change: transform;
+}
+
+.kairo-cursor-arrow {
+  display: block;
+  height: 100%;
+  width: 100%;
+  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.45)) drop-shadow(0 0 8px rgb(124 58 237 / 0.65));
 }
 
 .overlay-shell {
