@@ -23,15 +23,25 @@ const GLYPH_SIZE = 20;
 const TIP_AX = (28 / VIEWBOX) * GLYPH_SIZE;
 const TIP_AY = (4 / VIEWBOX) * GLYPH_SIZE;
 
+// Comet trail behind the tip during flight. TRAIL_BASE is its unscaled length;
+// the right edge is anchored at the tip (transform-origin 100% 50%) and it
+// stretches/​fades with speed. Default brand purple gradient.
+const TRAIL_BASE = 44;
+const TRAIL_H = 8;
+const DEFAULT_ARROW_FILL = 'url(#kairo-cursor-grad)';
+const DEFAULT_TRAIL = `linear-gradient(to left, #7c3aed, #7c3aed00)`;
+
 type CursorMode = 'shadow' | 'pointing';
 
 type MousePayload = { x: number; y: number };
-type PointPayload = { screenRegion: ScreenRegion; displayBounds: DisplayBounds };
+type PointPayload = { screenRegion: ScreenRegion; displayBounds: DisplayBounds; color?: string };
 
 export function CursorApp() {
   const nativeBridge = useMemo(() => createNativeBridge(), []);
 
   const elementRef = useRef<HTMLDivElement | null>(null);
+  const trailRef = useRef<HTMLDivElement | null>(null);
+  const arrowPathRef = useRef<SVGPathElement | null>(null);
 
   // Display origin/scale for converting global mouse points to window-local px.
   const boundsRef = useRef<DisplayBounds>({ x: 0, y: 0, width: 0, height: 0, scaleFactor: 1 });
@@ -99,6 +109,34 @@ export function CursorApp() {
       })`;
     };
 
+    // Comet trail behind the tip: length + opacity scale with spring speed, angle
+    // follows velocity. Transform/opacity only (GPU); hidden when slow or shadowing.
+    const writeTrail = () => {
+      const trail = trailRef.current;
+      if (!trail) {
+        return;
+      }
+      if (modeRef.current !== 'pointing') {
+        trail.style.opacity = '0';
+        return;
+      }
+      const vx = springX.current.velocity;
+      const vy = springY.current.velocity;
+      const speed = Math.hypot(vx, vy);
+      if (speed < 40) {
+        trail.style.opacity = '0';
+        return;
+      }
+      const angle = Math.atan2(vy, vx) * (180 / Math.PI);
+      const length = Math.min(speed * 0.05, 44);
+      const tipX = springX.current.value;
+      const tipY = springY.current.value;
+      trail.style.opacity = String(Math.min(speed / 1400, 0.65));
+      trail.style.transform = `translate(${tipX - TRAIL_BASE}px, ${
+        tipY - TRAIL_H / 2
+      }px) rotate(${angle}deg) scaleX(${length / TRAIL_BASE})`;
+    };
+
     const frame = (time: number) => {
       if (!isMounted) {
         return;
@@ -113,6 +151,7 @@ export function CursorApp() {
       stepSpring(springX.current, target.x, config, dt);
       stepSpring(springY.current, target.y, config, dt);
       writeTransform();
+      writeTrail();
 
       // Stop the loop once settled to keep an idle cursor free; events wake it.
       if (springAtRest(springX.current, target.x) && springAtRest(springY.current, target.y)) {
@@ -174,12 +213,27 @@ export function CursorApp() {
         }
         const tip = pointingTip(event.payload.screenRegion, event.payload.displayBounds);
         pointRef.current = tip;
+        const color = event.payload.color;
+        if (arrowPathRef.current) {
+          arrowPathRef.current.style.fill = color ?? DEFAULT_ARROW_FILL;
+        }
+        if (trailRef.current) {
+          trailRef.current.style.background = color
+            ? `linear-gradient(to left, ${color}, ${color}00)`
+            : DEFAULT_TRAIL;
+        }
         modeRef.current = 'pointing';
         wake();
       }),
       listen('cursor:release', () => {
         if (!isMounted) {
           return;
+        }
+        if (arrowPathRef.current) {
+          arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
+        }
+        if (trailRef.current) {
+          trailRef.current.style.opacity = '0';
         }
         modeRef.current = 'shadow';
         wake();
@@ -204,6 +258,7 @@ export function CursorApp() {
 
   return (
     <div className="kairo-cursor-shell" aria-hidden="true">
+      <div className="kairo-cursor-trail" ref={trailRef} aria-hidden="true" />
       <div
         className="kairo-cursor"
         ref={elementRef}
@@ -217,6 +272,7 @@ export function CursorApp() {
             </linearGradient>
           </defs>
           <path
+            ref={arrowPathRef}
             d="M28 4 L6 14 L15 17 L18 26 Z"
             fill="url(#kairo-cursor-grad)"
             stroke="#ffffff"

@@ -494,6 +494,24 @@ input {
   filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.45)) drop-shadow(0 0 8px rgb(124 58 237 / 0.65));
 }
 
+/* Comet trail behind the tip during flight. Length/opacity/angle are written each
+   frame from spring velocity; right edge (transform-origin 100% 50%) sits on the
+   tip. Transform + opacity only so it stays GPU-composited and lag-free. */
+.kairo-cursor-trail {
+  background: linear-gradient(to left, #7c3aed, rgb(124 58 237 / 0));
+  border-radius: 4px;
+  filter: blur(0.5px);
+  height: 8px;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  transform-origin: 100% 50%;
+  width: 44px;
+  will-change: transform, opacity;
+}
+
 /* Pulsing target ring: shown on the element the arrow points at (centered on the
    ring container's origin, which is translated to the target point). */
 .kairo-cursor-ring {

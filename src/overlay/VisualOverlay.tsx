@@ -1,9 +1,23 @@
+import type { CSSProperties } from 'react';
 import type { ScreenDimensions, VisualTarget } from '../core/types';
 import {
   type DisplayBounds,
   normalizeRegionToDisplayPercent,
   normalizeRegionToPercent
 } from './coordinates';
+
+// Relative luminance (0..1) of a #rrggbb hex — used to pick readable caption text.
+function hexLuminance(hex: string): number {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) {
+    return 0.5;
+  }
+  const value = parseInt(match[1], 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
 
 export function OverlayTarget({
   target,
@@ -56,12 +70,27 @@ export function OverlayTarget({
     );
   }
 
-  const style = {
+  const color = target.color;
+  const style: CSSProperties = {
     left: `${region.left}%`,
     top: `${region.top}%`,
     width: `${region.width}%`,
     height: `${region.height}%`
   };
+  // Dynamic accent: tint border + glow to the colour sampled behind the box.
+  if (color && target.kind === 'highlight_box') {
+    style.borderColor = color;
+    style.boxShadow = `0 0 0 9999px rgb(10 14 18 / 0.08), 0 0 24px ${color}59`;
+  }
+
+  const labelStyle: CSSProperties | undefined = color
+    ? {
+        background: color,
+        borderColor: 'rgb(255 255 255 / 0.4)',
+        boxShadow: `0 2px 10px ${color}73`,
+        color: hexLuminance(color) > 0.6 ? '#0a0e12' : '#ffffff'
+      }
+    : undefined;
 
   return (
     <div
@@ -71,7 +100,9 @@ export function OverlayTarget({
       title={`${target.label} (${Math.round(target.confidence * 100)}%)`}
     >
       {target.kind === 'highlight_box' && target.label ? (
-        <span className="overlay-box-label">{target.label}</span>
+        <span className="overlay-box-label" style={labelStyle}>
+          {target.label}
+        </span>
       ) : null}
     </div>
   );
