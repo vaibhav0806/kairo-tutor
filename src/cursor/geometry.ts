@@ -22,9 +22,9 @@ export type PointingTip = {
   flipY: boolean;
 };
 
-// Distance (per axis) from the ring center to the arrow tip, so the arrow hugs the
-// target without covering it.
-export const POINTING_STANDOFF = 15;
+// Distance (per axis) from the target point to the arrow tip, so the arrow hugs
+// the box corner closely without sitting on top of it.
+export const POINTING_STANDOFF = 8;
 // Rough on-screen reach of the glyph body from its tip; used to decide edge flips.
 export const GLYPH_REACH = 34;
 

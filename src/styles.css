@@ -289,24 +289,28 @@ input {
   position: absolute;
 }
 
+/* Purple to match the companion cursor (gradient #c79bff -> #7c3aed). */
 .overlay-target.highlight_box {
-  border: 3px solid #75e8db;
+  border: 3px solid #a777f0;
   border-radius: 8px;
   box-shadow:
     0 0 0 9999px rgb(10 14 18 / 0.08),
-    0 0 24px rgb(117 232 219 / 0.24);
+    0 0 24px rgb(124 58 237 / 0.32);
 }
 
-/* Caption pill anchored just above the box's top-left corner (Clicky-style). */
+/* Caption pill above the box's top-left corner — same purple-gradient theme as
+   the cursor, white text for readability. */
 .overlay-box-label {
-  background: rgb(10 14 18 / 0.92);
-  border: 1px solid rgb(117 232 219 / 0.55);
+  background: linear-gradient(135deg, #c79bff, #7c3aed);
+  border: 1px solid rgb(255 255 255 / 0.35);
   border-radius: 6px;
-  color: #d7fff8;
+  box-shadow: 0 2px 10px rgb(124 58 237 / 0.45);
+  color: #ffffff;
   font-size: 0.7rem;
   font-weight: 700;
   left: 0;
-  padding: 2px 7px;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
   pointer-events: none;
   position: absolute;
   top: 0;
