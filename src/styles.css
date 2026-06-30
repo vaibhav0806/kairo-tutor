@@ -297,6 +297,23 @@ input {
     0 0 24px rgb(117 232 219 / 0.24);
 }
 
+/* Caption pill anchored just above the box's top-left corner (Clicky-style). */
+.overlay-box-label {
+  background: rgb(10 14 18 / 0.92);
+  border: 1px solid rgb(117 232 219 / 0.55);
+  border-radius: 6px;
+  color: #d7fff8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  left: 0;
+  padding: 2px 7px;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  transform: translateY(-100%);
+  white-space: nowrap;
+}
+
 .overlay-target.ghost_cursor {
   height: 22px !important;
   transform: translate(-4px, -4px) rotate(-22deg);

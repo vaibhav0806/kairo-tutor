@@ -69,7 +69,11 @@ export function OverlayTarget({
       className={`overlay-target ${target.kind}`}
       style={style}
       title={`${target.label} (${Math.round(target.confidence * 100)}%)`}
-    />
+    >
+      {target.kind === 'highlight_box' && target.label ? (
+        <span className="overlay-box-label">{target.label}</span>
+      ) : null}
+    </div>
   );
 }
 
