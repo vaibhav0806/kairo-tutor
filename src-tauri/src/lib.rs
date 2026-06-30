@@ -1394,80 +1394,110 @@ fn ocr_tutor_screenshot(input: &TutorTurnInput) -> Vec<OcrElement> {
     ocr_screenshot(&bytes, bounds)
 }
 
-// A point on the user's screen, normalized [0,1] with a top-left origin.
+// A bounding box on the user's screen, normalized [0,1] with a top-left origin.
 #[derive(Debug, Clone)]
-struct DetectedPoint {
-    norm_x: f64,
-    norm_y_top: f64,
+struct DetectedBox {
+    norm_x1: f64,
+    norm_y1: f64,
+    norm_x2: f64,
+    norm_y2: f64,
+    label: String,
 }
 
-// Anthropic-recommended Computer Use resolutions (width, height). We pick the one
-// whose aspect ratio is closest to the display to avoid distorting the image
-// Claude sees, which improves coordinate accuracy (per Clicky's findings).
-const COMPUTER_USE_RESOLUTIONS: [(u32, u32); 3] = [(1024, 768), (1280, 800), (1366, 768)];
+// Longest edge (px) we downscale the screenshot to before sending it to Claude
+// vision. Aspect ratio is preserved so returned pixel boxes map back cleanly.
+// Tunable at runtime via KAIRO_VISION_MAX_EDGE (no rebuild) — raise toward 2576
+// for tiny pro-app icons (Blender/Photoshop).
+const DEFAULT_VISION_MAX_EDGE: u32 = 1568;
 
-// Locate the on-screen element the user is asking about using Claude's Computer
-// Use API. The computer tool definition activates Claude's specialized
-// pixel-counting training, which grounds far more reliably than asking a normal
-// vision model for coordinates — and works on ANY app/OS (icons, Blender, etc.),
-// not just text. Claude clicks the element's center -> a precise point. None if
-// nothing relevant / no key.
-async fn detect_element_point(
+// Locate the on-screen elements the user is asking about by asking Claude vision
+// for bounding boxes. This is a normal messages request (NOT the computer tool):
+// Claude vision returns multiple [x1,y1,x2,y2] pixel boxes + captions in one
+// call, which we draw as labeled rectangles. Works on ANY app/OS (icons,
+// Blender, diagrams). Returns the most relevant element first; empty when
+// nothing is relevant / no key.
+async fn detect_element_boxes(
     image_base64: &str,
     bounds: &OverlayDisplayBounds,
     user_query: &str,
-) -> Option<DetectedPoint> {
-    let api_key = provider_env_optional("ANTHROPIC_API_KEY")?;
-    if api_key.trim().is_empty() {
-        return None;
-    }
-    let model = provider_env("ANTHROPIC_COMPUTER_USE_MODEL", "claude-sonnet-4-6");
-    let base_url = provider_env("ANTHROPIC_BASE_URL", "https://api.anthropic.com");
-    let beta = provider_env("ANTHROPIC_COMPUTER_USE_BETA", "computer-use-2025-11-24");
-
-    // Pick the resolution closest to the display's aspect ratio, then stretch the
-    // screenshot to it. Claude points in that space; we map back proportionally.
-    let display_aspect = if bounds.height > 0.0 {
-        bounds.width / bounds.height
-    } else {
-        1.6
+) -> Vec<DetectedBox> {
+    let Some(api_key) = provider_env_optional("ANTHROPIC_API_KEY") else {
+        return Vec::new();
     };
-    let (target_w, target_h) = COMPUTER_USE_RESOLUTIONS
-        .iter()
-        .copied()
-        .min_by(|a, b| {
-            let da = (display_aspect - a.0 as f64 / a.1 as f64).abs();
-            let db = (display_aspect - b.0 as f64 / b.1 as f64).abs();
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .unwrap_or((1280, 800));
+    if api_key.trim().is_empty() {
+        return Vec::new();
+    }
+    let model = provider_env("ANTHROPIC_VISION_MODEL", "claude-opus-4-8");
+    let base_url = provider_env("ANTHROPIC_BASE_URL", "https://api.anthropic.com");
+    let max_edge = provider_env_optional("KAIRO_VISION_MAX_EDGE")
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|v| *v >= 256)
+        .unwrap_or(DEFAULT_VISION_MAX_EDGE);
+    let _ = bounds; // display bounds are applied later when mapping boxes to px
 
+    // Downscale aspect-preserving so the longest edge <= max_edge. Claude returns
+    // pixel boxes in THIS resized space; we normalize by (rw, rh) and map back.
     use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(image_base64)
-        .ok()?;
-    let image = image::load_from_memory(&bytes).ok()?;
-    let resized = image.resize_exact(target_w, target_h, image::imageops::FilterType::Triangle);
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(image_base64) else {
+        return Vec::new();
+    };
+    let Ok(image) = image::load_from_memory(&bytes) else {
+        return Vec::new();
+    };
+    let (ow, oh) = (image.width(), image.height());
+    if ow == 0 || oh == 0 {
+        return Vec::new();
+    }
+    let long = ow.max(oh);
+    let scale = if long > max_edge {
+        max_edge as f64 / long as f64
+    } else {
+        1.0
+    };
+    let rw = ((ow as f64 * scale).round() as u32).max(1);
+    let rh = ((oh as f64 * scale).round() as u32).max(1);
+    let resized = image.resize_exact(rw, rh, image::imageops::FilterType::Triangle);
     let mut out = std::io::Cursor::new(Vec::new());
-    resized
+    if resized
         .to_rgb8()
         .write_to(&mut out, image::ImageFormat::Jpeg)
-        .ok()?;
+        .is_err()
+    {
+        return Vec::new();
+    }
     let resized_base64 = base64::engine::general_purpose::STANDARD.encode(out.into_inner());
 
     let prompt = format!(
-        "The user asked this while looking at their screen: \"{user_query}\"\n\nIf there is a specific on-screen element (button, icon, menu item, tool, link, panel, label, etc.) the user is asking about or should look at, click on the exact center of that element. If the question is purely conceptual with no specific element to point to, reply with text saying \"no specific element\"."
+        "The user asked this while looking at their screen: \"{user_query}\".\n\nIdentify the on-screen elements the user is asking about or should look at. Return the most relevant element first, at most 4. Each element has a short 1-3 word \"label\" and a \"box\" of [x1, y1, x2, y2] in ABSOLUTE PIXELS of this {rw}x{rh} image (origin top-left, x increases right, y increases down). If nothing on screen is relevant, return an empty list."
     );
 
     let body = json!({
         "model": model,
-        "max_tokens": 256,
-        "tools": [{
-            "type": "computer_20251124",
-            "name": "computer",
-            "display_width_px": target_w,
-            "display_height_px": target_h,
-        }],
+        "max_tokens": 1024,
+        "output_config": {
+            "format": {
+                "type": "json_schema",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["elements"],
+                    "properties": {
+                        "elements": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["label", "box"],
+                                "properties": {
+                                    "label": { "type": "string" },
+                                    "box": { "type": "array", "items": { "type": "number" } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "messages": [{
             "role": "user",
             "content": [
@@ -1477,52 +1507,91 @@ async fn detect_element_point(
         }],
     });
 
-    let response = shared_http_client()
+    let response = match shared_http_client()
         .post(format!("{}/v1/messages", base_url.trim_end_matches('/')))
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
-        .header("anthropic-beta", beta)
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(25))
         .json(&body)
         .send()
         .await
-        .ok()?;
+    {
+        Ok(response) => response,
+        Err(_) => return Vec::new(),
+    };
 
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
         eprintln!(
-            "[cu-diag] computer-use API {status}: {}",
+            "[boxes-diag] vision API {status}: {}",
             text.chars().take(220).collect::<String>()
         );
-        return None;
+        return Vec::new();
     }
 
-    let payload: Value = response.json().await.ok()?;
-    let content = payload.get("content")?.as_array()?;
-    for block in content {
-        if block.get("type").and_then(Value::as_str) != Some("tool_use") {
-            continue;
-        }
-        let Some(coordinate) = block
-            .get("input")
-            .and_then(|input| input.get("coordinate"))
-            .and_then(Value::as_array)
-        else {
+    let Ok(payload) = response.json::<Value>().await else {
+        return Vec::new();
+    };
+    // Structured outputs put the JSON in the text block(s) — concatenate them.
+    let text = payload
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    let Ok(parsed) = serde_json::from_str::<Value>(json_body(&text)) else {
+        return Vec::new();
+    };
+    let Some(elements) = parsed.get("elements").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    let mut boxes = Vec::new();
+    for element in elements {
+        let label = element
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let Some(coords) = element.get("box").and_then(Value::as_array) else {
             continue;
         };
-        if coordinate.len() != 2 {
+        let nums: Vec<f64> = coords.iter().filter_map(Value::as_f64).collect();
+        if nums.len() != 4 {
             continue;
         }
-        let (Some(x), Some(y)) = (coordinate[0].as_f64(), coordinate[1].as_f64()) else {
+        let (mut x1, mut y1, mut x2, mut y2) = (nums[0], nums[1], nums[2], nums[3]);
+        if x2 < x1 {
+            std::mem::swap(&mut x1, &mut x2);
+        }
+        if y2 < y1 {
+            std::mem::swap(&mut y1, &mut y2);
+        }
+        let nx1 = (x1 / rw as f64).clamp(0.0, 1.0);
+        let ny1 = (y1 / rh as f64).clamp(0.0, 1.0);
+        let nx2 = (x2 / rw as f64).clamp(0.0, 1.0);
+        let ny2 = (y2 / rh as f64).clamp(0.0, 1.0);
+        if nx2 <= nx1 || ny2 <= ny1 {
             continue;
-        };
-        return Some(DetectedPoint {
-            norm_x: (x / target_w as f64).clamp(0.0, 1.0),
-            norm_y_top: (y / target_h as f64).clamp(0.0, 1.0),
+        }
+        boxes.push(DetectedBox {
+            norm_x1: nx1,
+            norm_y1: ny1,
+            norm_x2: nx2,
+            norm_y2: ny2,
+            label,
         });
+        if boxes.len() >= 4 {
+            break;
+        }
     }
-    None
+    boxes
 }
 
 // Strip a leading/trailing ```json ... ``` markdown fence if the model wrapped
@@ -1538,12 +1607,14 @@ fn json_body(content: &str) -> &str {
     inner.trim_matches(|c: char| c == '`' || c.is_whitespace())
 }
 
-// Replace the model's visualTargets with a single animated `pointer` anchored at
-// the exact point Claude clicked. The point is the ground truth; the frontend
-// draws a cool cursor whose tip sits on it (zero size error, works for anything).
-fn apply_point_target(
+// Replace the model's visualTargets with the grounded boxes: one labeled
+// `highlight_box` rectangle per detected element, plus a single `pointer` placed
+// at the bottom-left corner of the primary (first) box so the companion cursor
+// flies there. The boxes are the ground truth; the model's own targets (OCR
+// elementIds) are discarded.
+fn apply_box_targets(
     content: String,
-    point: &DetectedPoint,
+    boxes: &[DetectedBox],
     bounds: &OverlayDisplayBounds,
 ) -> String {
     let Ok(mut parsed) = serde_json::from_str::<Value>(json_body(&content)) else {
@@ -1554,35 +1625,55 @@ fn apply_point_target(
     } else {
         1.0
     };
-    let label = parsed
-        .get("visualTargets")
-        .and_then(Value::as_array)
-        .and_then(|targets| targets.first())
-        .and_then(|target| target.get("label"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_default();
 
-    // A small square centered on the point (square in physical px so the circle
-    // is round regardless of display aspect). The frontend draws a pulsating
-    // circle + cursor inside it, centered on the exact point.
-    let marker_px = bounds.width * scale_factor * 0.05;
-    let center_x = (bounds.x + point.norm_x * bounds.width) * scale_factor;
-    let center_y = (bounds.y + point.norm_y_top * bounds.height) * scale_factor;
-    let target = json!({
-        "kind": "pointer",
-        "targetId": "computer-use",
-        "label": label,
-        "confidence": 0.95,
-        "screenRegion": {
-            "x": center_x - marker_px / 2.0,
-            "y": center_y - marker_px / 2.0,
-            "width": marker_px,
-            "height": marker_px,
-        },
-    });
+    let to_px = |nx: f64, ny: f64| -> (f64, f64) {
+        (
+            (bounds.x + nx * bounds.width) * scale_factor,
+            (bounds.y + ny * bounds.height) * scale_factor,
+        )
+    };
+
+    let mut targets: Vec<Value> = Vec::new();
+
+    // Primary box (first = most relevant) → companion cursor at its bottom-left
+    // corner. A small square marker in physical px so the cursor anchors there.
+    if let Some(primary) = boxes.first() {
+        let (corner_x, corner_y) = to_px(primary.norm_x1, primary.norm_y2);
+        let marker_px = bounds.width * scale_factor * 0.05;
+        targets.push(json!({
+            "kind": "pointer",
+            "targetId": "vision-primary",
+            "label": primary.label,
+            "confidence": 0.95,
+            "screenRegion": {
+                "x": corner_x - marker_px / 2.0,
+                "y": corner_y - marker_px / 2.0,
+                "width": marker_px,
+                "height": marker_px,
+            },
+        }));
+    }
+
+    // Every box → a labeled highlight rectangle drawn in the overlay window.
+    for (index, b) in boxes.iter().enumerate() {
+        let (x, y) = to_px(b.norm_x1, b.norm_y1);
+        let (x2, y2) = to_px(b.norm_x2, b.norm_y2);
+        targets.push(json!({
+            "kind": "highlight_box",
+            "targetId": format!("vision-box-{index}"),
+            "label": b.label,
+            "confidence": 0.9,
+            "screenRegion": {
+                "x": x,
+                "y": y,
+                "width": (x2 - x).max(0.0),
+                "height": (y2 - y).max(0.0),
+            },
+        }));
+    }
+
     if let Some(object) = parsed.as_object_mut() {
-        object.insert("visualTargets".to_string(), Value::Array(vec![target]));
+        object.insert("visualTargets".to_string(), Value::Array(targets));
     }
     serde_json::to_string(&parsed).unwrap_or(content)
 }
@@ -2093,26 +2184,27 @@ async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, String> {
         }
     };
 
-    let point_future = async {
+    let boxes_future = async {
         if !input.screen.captured {
-            return None;
+            return Vec::new();
         }
         let (Some(image_base64), Some(bounds)) =
             (&input.screen.image_base64, &input.screen.display_bounds)
         else {
-            return None;
+            return Vec::new();
         };
-        detect_element_point(image_base64, bounds, &input.user_query).await
+        detect_element_boxes(image_base64, bounds, &input.user_query).await
     };
 
-    let (answer_result, detected_point) = tokio::join!(answer_future, point_future);
+    let (answer_result, detected_boxes) = tokio::join!(answer_future, boxes_future);
     let content = answer_result?;
 
-    // Prefer Claude's Computer Use point — it grounds any element (icons/non-text/
-    // any app), not just OCR'd text. Fall back to OCR Set-of-Mark when it found
-    // nothing (e.g. no ANTHROPIC_API_KEY, or a purely conceptual question).
-    match (detected_point, input.screen.display_bounds.as_ref()) {
-        (Some(point), Some(bounds)) => Ok(apply_point_target(content, &point, bounds)),
+    // Prefer Claude vision boxes — they ground any element (icons/non-text/any
+    // app) and give drawable labeled rectangles. Fall back to OCR Set-of-Mark
+    // when none were found (e.g. no ANTHROPIC_API_KEY, or a purely conceptual
+    // question with nothing on screen to box).
+    match (detected_boxes.is_empty(), input.screen.display_bounds.as_ref()) {
+        (false, Some(bounds)) => Ok(apply_box_targets(content, &detected_boxes, bounds)),
         _ => Ok(ground_visual_targets(content, &ocr_elements)),
     }
 }
