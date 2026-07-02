@@ -509,14 +509,13 @@ export function NotchApp() {
       await waitForNotchPaint();
 
       try {
-        // Phase 1: the gate (text-only). A pen drawing always implies a screen
-        // question, so skip the gate and look in that case.
-        const gate =
-          annotations.length > 0
-            ? { needsScreen: true, voiceText: '' }
-            : await runGate(trimmedQuery);
+        // Phase 1: the gate (text-only) ALWAYS runs — its spoken response is the
+        // "let me look" filler. A pen drawing MANDATES the second (vision) call
+        // regardless of what the gate decided.
+        const gate = await runGate(trimmedQuery);
+        const needsScreen = annotations.length > 0 || gate.needsScreen;
 
-        if (!gate.needsScreen && gate.voiceText.trim().length > 0) {
+        if (!needsScreen && gate.voiceText.trim().length > 0) {
           // Direct answer — no screenshot, no grounding, no vision cost.
           const directPayload: NotchPayload = {
             state: 'showing_step',
