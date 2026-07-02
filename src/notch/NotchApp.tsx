@@ -901,17 +901,15 @@ export function NotchApp() {
         }
         if (nextPayload.state === 'listening' && !mediaRecorderRef.current) {
           isSubmittingRef.current = false;
-          setAnnotations([]);
-          setActiveAnnotationTool(null);
           setIsSubmitting(false);
           updateVoiceCaptureState('idle');
-          // Clear any leftover annotation overlay from a previous session. The
-          // notch drives this (not the hidden/suspended main window) so a fresh
-          // shortcut press is a reliable reset even if the overlay was orphaned.
-          void nativeBridge.hideOverlay();
+          // Keep any pen drawing + its annotations through push-to-talk: finalize the
+          // stroke into preview (marks stay visible and are sent with the ask) but do
+          // NOT clear the overlay or the annotations. This is what lets "what did I
+          // circle?" work after drawing then holding ⌥⌃.
+          setActiveAnnotationTool(null);
+          void emit('annotation:finish', {});
           void nativeBridge.cursorRelease();
-          // New activation: re-arm auto-listen for the upcoming captured state.
-          autoListenStartedRef.current = false;
         }
         setPayload(nextPayload);
 
