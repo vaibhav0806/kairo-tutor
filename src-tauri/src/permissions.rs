@@ -1,0 +1,244 @@
+//! macOS permission checks/requests (screen recording, accessibility, microphone,
+//! input monitoring) and the setup-window gating helpers.
+
+use crate::types::{PermissionState, PermissionStatus};
+#[cfg(target_os = "macos")]
+use std::process::Command;
+
+#[cfg(target_os = "macos")]
+use block2::RcBlock;
+#[cfg(target_os = "macos")]
+use core_foundation::{
+    base::TCFType,
+    boolean::CFBoolean,
+    dictionary::{CFDictionary, CFDictionaryRef},
+    string::{CFString, CFStringRef},
+};
+#[cfg(target_os = "macos")]
+use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
+    static kAXTrustedCheckOptionPrompt: CFStringRef;
+}
+
+// Input Monitoring (kTCCServiceListenEvent) is a SEPARATE grant from Accessibility
+// and is what a keyboard-class event tap needs. These CoreGraphics C APIs (macOS
+// 10.15+) let us check it and trigger the system prompt — which also registers
+// Kairo in System Settings > Privacy & Security > Input Monitoring so the user can
+// find and enable it. CoreGraphics is already linked via the core-graphics crate.
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn CGPreflightListenEventAccess() -> bool;
+    fn CGRequestListenEventAccess() -> bool;
+}
+
+#[tauri::command]
+pub(crate) fn get_permission_status() -> PermissionStatus {
+    #[cfg(target_os = "macos")]
+    {
+        let screen_recording = if unsafe { CGPreflightScreenCaptureAccess() } {
+            PermissionState::Granted
+        } else {
+            PermissionState::NotDetermined
+        };
+        let accessibility = if unsafe { AXIsProcessTrusted() } {
+            PermissionState::Granted
+        } else {
+            PermissionState::NotDetermined
+        };
+
+        return PermissionStatus {
+            screen_recording,
+            accessibility,
+            microphone: microphone_permission_status(),
+        };
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        PermissionStatus {
+            screen_recording: PermissionState::Unknown,
+            accessibility: PermissionState::Unknown,
+            microphone: PermissionState::Unknown,
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn microphone_state_from_av_status(status: AVAuthorizationStatus) -> PermissionState {
+    match status {
+        AVAuthorizationStatus::Authorized => PermissionState::Granted,
+        AVAuthorizationStatus::Denied | AVAuthorizationStatus::Restricted => {
+            PermissionState::Denied
+        }
+        AVAuthorizationStatus::NotDetermined => PermissionState::NotDetermined,
+        _ => PermissionState::Unknown,
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn microphone_permission_status() -> PermissionState {
+    let Some(media_type) = (unsafe { AVMediaTypeAudio }) else {
+        return PermissionState::Unknown;
+    };
+
+    let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+    microphone_state_from_av_status(status)
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn request_screen_recording_permission() -> PermissionState {
+    if unsafe { CGPreflightScreenCaptureAccess() } || unsafe { CGRequestScreenCaptureAccess() } {
+        PermissionState::Granted
+    } else {
+        PermissionState::NotDetermined
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn request_accessibility_permission() -> PermissionState {
+    if unsafe { AXIsProcessTrusted() } {
+        return PermissionState::Granted;
+    }
+
+    let prompt_key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
+    let prompt_value = CFBoolean::true_value();
+    let options = CFDictionary::from_CFType_pairs(&[(prompt_key, prompt_value)]);
+
+    if unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) } {
+        PermissionState::Granted
+    } else {
+        PermissionState::NotDetermined
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn request_microphone_permission(app: tauri::AppHandle) -> PermissionState {
+    let Some(media_type) = (unsafe { AVMediaTypeAudio }) else {
+        return PermissionState::Unknown;
+    };
+
+    let current_status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+    if current_status != AVAuthorizationStatus::NotDetermined {
+        return microphone_state_from_av_status(current_status);
+    }
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let run_result = app.run_on_main_thread(move || {
+        let Some(media_type) = (unsafe { AVMediaTypeAudio }) else {
+            let _ = sender.send(false);
+            return;
+        };
+        let handler = RcBlock::new(move |granted: objc2::runtime::Bool| {
+            let _ = sender.send(granted.as_bool());
+        });
+
+        unsafe {
+            AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, &handler);
+        }
+    });
+
+    if run_result.is_err() {
+        return PermissionState::Unknown;
+    }
+
+    match receiver.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(true) => PermissionState::Granted,
+        Ok(false) => PermissionState::Denied,
+        Err(_) => microphone_permission_status(),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn request_required_permissions(app: tauri::AppHandle) -> PermissionStatus {
+    #[cfg(target_os = "macos")]
+    {
+        return PermissionStatus {
+            screen_recording: request_screen_recording_permission(),
+            accessibility: request_accessibility_permission(),
+            microphone: request_microphone_permission(app),
+        };
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        PermissionStatus {
+            screen_recording: PermissionState::Unknown,
+            accessibility: PermissionState::Unknown,
+            microphone: PermissionState::Unknown,
+        }
+    }
+}
+
+#[tauri::command]
+pub(crate) fn open_permission_settings(permission: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let pane = match permission.as_str() {
+            "screenRecording" | "screen_recording" | "screen" => "Privacy_ScreenCapture",
+            "accessibility" => "Privacy_Accessibility",
+            "microphone" | "mic" => "Privacy_Microphone",
+            _ => {
+                return Err(format!(
+                    "Unsupported permission settings pane: {permission}"
+                ))
+            }
+        };
+        let url = format!("x-apple.systempreferences:com.apple.preference.security?{pane}");
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|error| format!("Failed to open macOS System Settings: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = permission;
+        Err("Permission settings are only implemented for macOS.".to_string())
+    }
+}
+
+// Ask for Input Monitoring so the ⌥⌃ push-to-talk tap can receive modifier events.
+// No-op (returns true) once granted; otherwise prompts + lists the app in Settings.
+#[cfg(target_os = "macos")]
+pub(crate) fn ensure_input_monitoring_access() {
+    unsafe {
+        if !CGPreflightListenEventAccess() {
+            let _ = CGRequestListenEventAccess();
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn _permission_status_fallback() -> PermissionStatus {
+    PermissionStatus {
+        screen_recording: PermissionState::Unknown,
+        accessibility: PermissionState::Unknown,
+        microphone: PermissionState::Unknown,
+    }
+}
+
+pub(crate) fn requires_permission_setup(state: &PermissionState) -> bool {
+    matches!(
+        state,
+        PermissionState::Denied | PermissionState::NotDetermined
+    )
+}
+
+pub(crate) fn should_show_setup_window(status: &PermissionStatus) -> bool {
+    requires_permission_setup(&status.screen_recording)
+        || requires_permission_setup(&status.accessibility)
+        || requires_permission_setup(&status.microphone)
+}
