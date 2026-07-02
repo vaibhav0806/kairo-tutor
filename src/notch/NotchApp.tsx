@@ -629,6 +629,16 @@ export function NotchApp() {
       updateVoiceCaptureState('transcribing');
       setVoicePayload('transcribing');
       void emit('cursor:thinking', {});
+      // Capture the screen IN PARALLEL with transcription — it isn't a blocker, so
+      // the tutor turn never waits on a screenshot afterwards. submitQuery →
+      // askTutorFromNotch reuses this captured frame.
+      capturedScreenRef.current = null;
+      const capturePromise = nativeBridge
+        .captureScreen()
+        .then((result) => {
+          capturedScreenRef.current = result;
+        })
+        .catch(() => {});
       try {
         const result = await nativeBridge.transcribeAudio({
           audioBase64,
@@ -641,6 +651,7 @@ export function NotchApp() {
           return;
         }
         setQuery(transcript);
+        await capturePromise;
         await submitQuery(transcript);
       } catch (error) {
         const detail =
@@ -991,9 +1002,16 @@ export function NotchApp() {
     };
   }, [processCapturedAudio, startAnnotation]);
 
+  // Minimal: the notch card only shows for typing (⌘⇧Space) + errors (layout
+  // 'prompt'). During the voice flow (listening / thinking / answer + TTS) render
+  // nothing — only the cursor effects + box — while the panel stays alive so its
+  // webview can still run the transcribe → answer → TTS pipeline.
+  const showCard = payload.layout === 'prompt';
+
   return (
     <main className="notch-shell" aria-label="Kairo assistant status">
-      <section
+      {showCard ? (
+        <section
         aria-busy={isSubmitting || payload.state === 'thinking'}
         className="notch-card"
         data-busy={isSubmitting ? 'true' : 'false'}
@@ -1135,6 +1153,7 @@ export function NotchApp() {
           </div>
         </div>
       </section>
+      ) : null}
     </main>
   );
 }
