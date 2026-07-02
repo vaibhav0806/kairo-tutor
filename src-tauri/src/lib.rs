@@ -6,7 +6,8 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc::{channel, Sender},
         Arc, Mutex,
     },
     time::{Duration, Instant},
@@ -171,10 +172,6 @@ struct NotchPayload {
     layout: Option<String>,
     title: String,
     detail: String,
-    // Set true when a "listening" payload was raised by push-to-talk, so the notch
-    // records until key-release instead of auto-stopping on silence.
-    #[serde(default)]
-    ptt: Option<bool>,
 }
 
 #[derive(Default)]
@@ -1196,6 +1193,229 @@ fn ensure_input_monitoring_access() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Native microphone capture (cpal) for push-to-talk.
+//
+// WHY native: a WebView `getUserMedia` track keeps the macOS mic indicator lit for
+// as long as it is held (spec-mandated), so "instant + indicator-off" is impossible
+// there. Native audio ties the indicator to *running I/O* only: we build + play the
+// input stream on ⌥⌃-down and drop it on release, so the mic is active ONLY while
+// recording, and native start is a few ms (vs getUserMedia's ~1-2s). Cross-platform
+// via cpal (CoreAudio today, WASAPI on Windows later).
+// ---------------------------------------------------------------------------
+
+enum AudioCommand {
+    Start,
+    Stop,
+}
+
+#[derive(Default)]
+struct AudioCapture {
+    tx: Mutex<Option<Sender<AudioCommand>>>,
+    // True while the mic stream is running; drives the level emitter.
+    capturing: Arc<AtomicBool>,
+    // Latest normalized mic level (0..1) as f32 bits, for the cursor listening halo.
+    level: Arc<AtomicU32>,
+}
+
+fn audio_stream_error(err: cpal::StreamError) {
+    eprintln!("Kairo Tutor: audio stream error: {err}");
+}
+
+// Append captured frames as mono to the shared buffer and update the live level.
+fn append_mono(
+    samples: &Arc<Mutex<Vec<f32>>>,
+    level: &Arc<AtomicU32>,
+    data: &[f32],
+    channels: usize,
+) {
+    let mut sum_sq = 0.0f32;
+    let mut count = 0usize;
+    if let Ok(mut buf) = samples.lock() {
+        if channels <= 1 {
+            buf.extend_from_slice(data);
+            for &s in data {
+                sum_sq += s * s;
+            }
+            count = data.len();
+        } else {
+            for frame in data.chunks(channels) {
+                let mixed = frame.iter().sum::<f32>() / channels as f32;
+                buf.push(mixed);
+                sum_sq += mixed * mixed;
+                count += 1;
+            }
+        }
+    }
+    if count > 0 {
+        let rms = (sum_sq / count as f32).sqrt();
+        let norm = (rms / 0.15).min(1.0);
+        level.store(norm.to_bits(), Ordering::SeqCst);
+    }
+}
+
+// Minimal mono 16-bit PCM WAV encoder (no extra dependency).
+fn encode_wav_mono(samples: &[f32], sample_rate: u32) -> Vec<u8> {
+    let data_len = (samples.len() * 2) as u32;
+    let byte_rate = sample_rate * 2;
+    let mut out = Vec::with_capacity(44 + samples.len() * 2);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVE");
+    out.extend_from_slice(b"fmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&sample_rate.to_le_bytes());
+    out.extend_from_slice(&byte_rate.to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes()); // block align
+    out.extend_from_slice(&16u16.to_le_bytes()); // bits/sample
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for &s in samples {
+        let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+// Owns the cpal stream (which is !Send) on a dedicated thread and reacts to
+// Start/Stop. On Stop it encodes the buffer to WAV and emits `ptt:audio` to the
+// notch, which transcribes + runs the tutor turn. Also spawns a level emitter that
+// feeds the cursor halo while capturing. Returns the command sender.
+fn spawn_audio_capture(
+    app: &tauri::AppHandle,
+    capturing: Arc<AtomicBool>,
+    level: Arc<AtomicU32>,
+) -> Sender<AudioCommand> {
+    let (tx, rx) = channel::<AudioCommand>();
+
+    // Level emitter → cursor:level (throttled), only while capturing.
+    let app_level = app.clone();
+    let capturing_level = capturing.clone();
+    let level_read = level.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(66));
+        if capturing_level.load(Ordering::SeqCst) {
+            let lvl = f32::from_bits(level_read.load(Ordering::SeqCst));
+            if let Some(window) = app_level.get_webview_window("cursor") {
+                let _ = window.emit("cursor:level", json!({ "level": lvl }));
+            }
+        }
+    });
+
+    let app = app.clone();
+    let capturing_worker = capturing;
+    let level_worker = level;
+    std::thread::spawn(move || {
+        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+        let host = cpal::default_host();
+        let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
+        // Held across iterations so the mic stays open only between Start and Stop.
+        let mut current: Option<cpal::Stream> = None;
+        let mut current_rate: u32 = 16_000;
+
+        while let Ok(cmd) = rx.recv() {
+            match cmd {
+                AudioCommand::Start => {
+                    if let Ok(mut buf) = samples.lock() {
+                        buf.clear();
+                    }
+                    let Some(device) = host.default_input_device() else {
+                        eprintln!("Kairo Tutor: no default input device for push-to-talk");
+                        continue;
+                    };
+                    let Ok(config) = device.default_input_config() else {
+                        eprintln!("Kairo Tutor: no default input config");
+                        continue;
+                    };
+                    let sample_format = config.sample_format();
+                    current_rate = config.sample_rate().0;
+                    let channels = config.channels() as usize;
+                    let stream_config: cpal::StreamConfig = config.into();
+                    let samples_cb = samples.clone();
+                    let level_cb = level_worker.clone();
+                    let built = match sample_format {
+                        cpal::SampleFormat::F32 => device.build_input_stream(
+                            &stream_config,
+                            move |data: &[f32], _: &_| append_mono(&samples_cb, &level_cb, data, channels),
+                            audio_stream_error,
+                            None,
+                        ),
+                        cpal::SampleFormat::I16 => device.build_input_stream(
+                            &stream_config,
+                            move |data: &[i16], _: &_| {
+                                let f: Vec<f32> = data.iter().map(|s| *s as f32 / 32768.0).collect();
+                                append_mono(&samples_cb, &level_cb, &f, channels);
+                            },
+                            audio_stream_error,
+                            None,
+                        ),
+                        cpal::SampleFormat::U16 => device.build_input_stream(
+                            &stream_config,
+                            move |data: &[u16], _: &_| {
+                                let f: Vec<f32> =
+                                    data.iter().map(|s| (*s as f32 - 32768.0) / 32768.0).collect();
+                                append_mono(&samples_cb, &level_cb, &f, channels);
+                            },
+                            audio_stream_error,
+                            None,
+                        ),
+                        other => {
+                            eprintln!("Kairo Tutor: unsupported input sample format {other:?}");
+                            continue;
+                        }
+                    };
+                    match built {
+                        Ok(stream) => match stream.play() {
+                            Ok(()) => {
+                                current = Some(stream);
+                                capturing_worker.store(true, Ordering::SeqCst);
+                            }
+                            Err(err) => eprintln!("Kairo Tutor: failed to start mic stream: {err}"),
+                        },
+                        Err(err) => eprintln!("Kairo Tutor: failed to build mic stream: {err}"),
+                    }
+                }
+                AudioCommand::Stop => {
+                    capturing_worker.store(false, Ordering::SeqCst);
+                    level_worker.store(0, Ordering::SeqCst);
+                    // Dropping the stream stops capture → mic indicator turns off.
+                    current.take();
+                    let captured: Vec<f32> =
+                        samples.lock().map(|buf| buf.clone()).unwrap_or_default();
+                    if captured.is_empty() {
+                        continue;
+                    }
+                    let wav = encode_wav_mono(&captured, current_rate);
+                    use base64::Engine;
+                    let audio_base64 = base64::engine::general_purpose::STANDARD.encode(&wav);
+                    if let Some(window) = app.get_webview_window("notch") {
+                        let _ = window.emit(
+                            "ptt:audio",
+                            json!({ "audioBase64": audio_base64, "mimeType": "audio/wav" }),
+                        );
+                    }
+                }
+            }
+        }
+    });
+
+    tx
+}
+
+fn send_audio_command(app: &tauri::AppHandle, command: AudioCommand) {
+    let sender = app
+        .state::<AudioCapture>()
+        .tx
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+    if let Some(tx) = sender {
+        let _ = tx.send(command);
+    }
+}
+
 // Separate listen-only tap for the ⌥⌃ push-to-talk chord (FlagsChanged). Kept apart
 // from the mouse/scroll tap on purpose: keyboard-class taps can require the separate
 // macOS "Input Monitoring" grant, so if THIS tap can't be created, PTT is simply
@@ -1224,25 +1444,33 @@ fn spawn_ptt_tap(app: &tauri::AppHandle, watch: ContextWatch) {
                 let was = watch.ptt_active.load(Ordering::SeqCst);
                 if both && !was {
                     watch.ptt_active.store(true, Ordering::SeqCst);
-                    // Show the notch on the MAIN thread (AppKit requires it). This
-                    // both wakes the otherwise-suspended notch webview and, via the
-                    // ptt-flagged listening payload, kicks off a push-to-talk record.
+                    // Start native mic capture immediately (instant; indicator on now).
+                    send_audio_command(&app, AudioCommand::Start);
+                    // Cursor shows the listening halo.
+                    if let Some(window) = app.get_webview_window("cursor") {
+                        let _ = window.emit("cursor:listening", ());
+                    }
+                    // Show the notch (listening UI) on the MAIN thread — this also
+                    // wakes its otherwise-suspended webview so it can receive the
+                    // captured audio on release.
                     let app2 = app.clone();
                     let _ = app.run_on_main_thread(move || {
                         let notch_state = app2.state::<NotchState>();
                         if let Err(error) = show_notch_with_payload(
                             &app2,
                             notch_state.inner(),
-                            Some(listening_notch_payload(true)),
+                            Some(listening_notch_payload()),
                         ) {
-                            eprintln!("[ptt] failed to show notch: {error}");
+                            eprintln!("Kairo Tutor: ptt failed to show notch: {error}");
                         }
                     });
                 } else if !both && was {
                     watch.ptt_active.store(false, Ordering::SeqCst);
-                    // Notch is shown/awake by now; tell it to finalize + send.
-                    if let Some(window) = app.get_webview_window("notch") {
-                        let _ = window.emit("ptt:stop", ());
+                    // Stop capture → the audio thread encodes WAV + emits `ptt:audio`
+                    // to the (now awake) notch, which transcribes + runs the turn.
+                    send_audio_command(&app, AudioCommand::Stop);
+                    if let Some(window) = app.get_webview_window("cursor") {
+                        let _ = window.emit("cursor:thinking", ());
                     }
                 }
                 CallbackResult::Keep
@@ -1416,13 +1644,22 @@ fn show_notch_with_payload(
     Ok(())
 }
 
-fn listening_notch_payload(ptt: bool) -> NotchPayload {
+fn listening_notch_payload() -> NotchPayload {
     NotchPayload {
         state: "listening".to_string(),
         layout: Some("compact".to_string()),
         title: "Kairo is listening".to_string(),
         detail: "Capturing the current screen".to_string(),
-        ptt: Some(ptt),
+    }
+}
+
+// ⌘⇧Space now just opens the notch for TYPING (voice is push-to-talk via ⌥⌃).
+fn typing_notch_payload() -> NotchPayload {
+    NotchPayload {
+        state: "captured".to_string(),
+        layout: Some("prompt".to_string()),
+        title: "Ask Kairo".to_string(),
+        detail: "Type a question, or hold ⌥⌃ to talk".to_string(),
     }
 }
 
@@ -3290,10 +3527,10 @@ pub fn run() {
                 return;
             }
 
-            // ⌘⇧Space shows the notch (voice is push-to-talk via ⌥⌃).
+            // ⌘⇧Space opens the notch for typing (voice is push-to-talk via ⌥⌃).
             let notch_state = app.state::<NotchState>();
             if let Err(error) =
-                show_notch_with_payload(app, notch_state.inner(), Some(listening_notch_payload(false)))
+                show_notch_with_payload(app, notch_state.inner(), Some(typing_notch_payload()))
             {
                 eprintln!("Kairo Tutor activation shortcut failed to show notch: {error}");
             }
@@ -3307,6 +3544,7 @@ pub fn run() {
         .manage(NotchState::default())
         .manage(CursorState::default())
         .manage(ContextWatch::default())
+        .manage(AudioCapture::default())
         .plugin(global_shortcut_plugin)
         .plugin(tauri_nspanel::init())
         .setup(|app| {
@@ -3351,6 +3589,21 @@ pub fn run() {
             let context_watch = app.state::<ContextWatch>().inner().clone();
             spawn_context_poll(app.handle(), context_watch.clone());
             spawn_context_input_tap(app.handle(), context_watch.clone());
+            // Native mic capture for push-to-talk: spawn the audio thread and hand
+            // its command sender to the managed AudioCapture state.
+            {
+                let capturing;
+                let level;
+                {
+                    let audio = app.state::<AudioCapture>();
+                    capturing = audio.capturing.clone();
+                    level = audio.level.clone();
+                }
+                let tx = spawn_audio_capture(app.handle(), capturing, level);
+                if let Ok(mut guard) = app.state::<AudioCapture>().tx.lock() {
+                    *guard = Some(tx);
+                }
+            }
             // Push-to-talk runs on its own tap so its (possibly Input-Monitoring-gated)
             // keyboard access can't disturb the mouse/scroll reset tap above. Request
             // the grant first so Kairo shows up in the Input Monitoring settings list.

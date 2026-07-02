@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 base64 = "0.22"
 block2 = "0.6.2"
+cpal = "0.15"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 core-foundation = "0.10"
 core-graphics = "0.25"
