@@ -1126,8 +1126,8 @@ fn spawn_context_poll(app: &tauri::AppHandle, watch: ContextWatch) {
 fn spawn_context_input_tap(app: &tauri::AppHandle, watch: ContextWatch) {
     use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
     use core_graphics::event::{
-        CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-        CGEventType, CallbackResult,
+        CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
+        CallbackResult,
     };
 
     let app = app.clone();
@@ -1141,33 +1141,10 @@ fn spawn_context_input_tap(app: &tauri::AppHandle, watch: ContextWatch) {
                 CGEventType::LeftMouseDown,
                 CGEventType::RightMouseDown,
                 CGEventType::OtherMouseDown,
-                // Push-to-talk: watch modifier presses/releases for the ⌥⌃ chord.
-                CGEventType::FlagsChanged,
             ],
-            move |_proxy, event_type, event| {
-                match event_type {
-                    // ⌥⌃ (Option+Control) held → start recording; released → send.
-                    // Pure modifiers (no letter) can't be a normal global shortcut,
-                    // so we detect the held state here on the input tap instead.
-                    CGEventType::FlagsChanged => {
-                        let flags = event.get_flags();
-                        let both = flags.contains(CGEventFlags::CGEventFlagAlternate)
-                            && flags.contains(CGEventFlags::CGEventFlagControl);
-                        let was = watch.ptt_active.load(Ordering::SeqCst);
-                        if both && !was {
-                            watch.ptt_active.store(true, Ordering::SeqCst);
-                            let _ = app.emit("ptt:start", ());
-                        } else if !both && was {
-                            watch.ptt_active.store(false, Ordering::SeqCst);
-                            let _ = app.emit("ptt:stop", ());
-                        }
-                    }
-                    // Scroll / click → clear stale guidance (only while armed).
-                    _ => {
-                        if context_watch_settled(&watch) {
-                            fire_context_reset(&app, &watch, "input");
-                        }
-                    }
+            move |_proxy, _event_type, _event| {
+                if context_watch_settled(&watch) {
+                    fire_context_reset(&app, &watch, "input");
                 }
                 // Listen-only: never modify the event stream, always keep the event.
                 CallbackResult::Keep
@@ -1184,6 +1161,60 @@ fn spawn_context_input_tap(app: &tauri::AppHandle, watch: ContextWatch) {
         unsafe {
             let Ok(source) = tap.mach_port().create_runloop_source(0) else {
                 eprintln!("Kairo Tutor: failed to create event-tap runloop source");
+                return;
+            };
+            CFRunLoop::get_current().add_source(&source, kCFRunLoopCommonModes);
+            tap.enable();
+            CFRunLoop::run_current();
+        }
+    });
+}
+
+// Separate listen-only tap for the ⌥⌃ push-to-talk chord (FlagsChanged). Kept apart
+// from the mouse/scroll tap on purpose: keyboard-class taps can require the separate
+// macOS "Input Monitoring" grant, so if THIS tap can't be created, PTT is simply
+// disabled while the mouse/scroll reset tap keeps working untouched.
+fn spawn_ptt_tap(app: &tauri::AppHandle, watch: ContextWatch) {
+    use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
+    use core_graphics::event::{
+        CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+        CGEventType, CallbackResult,
+    };
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let tap = CGEventTap::new(
+            CGEventTapLocation::Session,
+            CGEventTapPlacement::HeadInsertEventTap,
+            CGEventTapOptions::ListenOnly,
+            vec![CGEventType::FlagsChanged],
+            move |_proxy, _event_type, event| {
+                // ⌥⌃ (Option+Control) both held → start recording; released → send.
+                // Pure modifiers can't be a normal global shortcut, so we watch the
+                // held state on this tap instead.
+                let flags = event.get_flags();
+                let both = flags.contains(CGEventFlags::CGEventFlagAlternate)
+                    && flags.contains(CGEventFlags::CGEventFlagControl);
+                let was = watch.ptt_active.load(Ordering::SeqCst);
+                if both && !was {
+                    watch.ptt_active.store(true, Ordering::SeqCst);
+                    let _ = app.emit("ptt:start", ());
+                } else if !both && was {
+                    watch.ptt_active.store(false, Ordering::SeqCst);
+                    let _ = app.emit("ptt:stop", ());
+                }
+                CallbackResult::Keep
+            },
+        );
+        let Ok(tap) = tap else {
+            eprintln!(
+                "Kairo Tutor: push-to-talk tap unavailable; grant Input Monitoring + relaunch to enable ⌥⌃"
+            );
+            return;
+        };
+        unsafe {
+            let Ok(source) = tap.mach_port().create_runloop_source(0) else {
+                eprintln!("Kairo Tutor: failed to create PTT runloop source");
                 return;
             };
             CFRunLoop::get_current().add_source(&source, kCFRunLoopCommonModes);
@@ -3276,7 +3307,10 @@ pub fn run() {
             // guidance is cleared when the user moves on. Threads idle-cheap until armed.
             let context_watch = app.state::<ContextWatch>().inner().clone();
             spawn_context_poll(app.handle(), context_watch.clone());
-            spawn_context_input_tap(app.handle(), context_watch);
+            spawn_context_input_tap(app.handle(), context_watch.clone());
+            // Push-to-talk runs on its own tap so its (possibly Input-Monitoring-gated)
+            // keyboard access can't disturb the mouse/scroll reset tap above.
+            spawn_ptt_tap(app.handle(), context_watch);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
