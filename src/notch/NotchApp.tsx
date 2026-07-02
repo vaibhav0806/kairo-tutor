@@ -126,6 +126,9 @@ export function NotchApp() {
   // The answer body is held back until TTS playback actually starts, so the notch
   // never shows the answer text before it is spoken.
   const [detailHidden, setDetailHidden] = useState(false);
+  // True while the answer is actually being spoken (TTS playing) — drives the
+  // "Speaking" state of the status capsule.
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [query, setQuery] = useState('');
   const [annotations, setAnnotations] = useState<UserAnnotation[]>([]);
   const [activeAnnotationTool, setActiveAnnotationTool] = useState<NotchAnnotationTool | null>(null);
@@ -136,6 +139,8 @@ export function NotchApp() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const answerAudioRef = useRef<HTMLAudioElement | null>(null);
+  // The status capsule element, for writing the live mic level (--mic-level).
+  const capsuleRef = useRef<HTMLDivElement | null>(null);
   // The teaching visuals for the current answer, revealed on TTS start (not when
   // the LLM answer arrives), plus the app they point at for the context watcher.
   const revealVisualsRef = useRef<() => Promise<void>>(async () => {});
@@ -209,6 +214,7 @@ export function NotchApp() {
   }, []);
 
   const stopAnswerPlayback = useCallback(() => {
+    setIsSpeaking(false);
     if (settleFallbackRef.current) {
       clearTimeout(settleFallbackRef.current);
       settleFallbackRef.current = null;
@@ -361,6 +367,7 @@ export function NotchApp() {
         answerAudioRef.current = audio;
         // Reveal the answer text + teaching visuals the instant speech begins.
         audio.onplay = () => {
+          setIsSpeaking(true);
           onSpeechStart?.();
           // Backstop: guarantee the answer settles (so auto-close can run) even if
           // 'ended' never fires. Cleared by 'ended' or a new turn (stopAnswerPlayback).
@@ -370,6 +377,7 @@ export function NotchApp() {
           settleFallbackRef.current = setTimeout(() => onSettled?.(), 60000);
         };
         audio.onended = () => {
+          setIsSpeaking(false);
           if (settleFallbackRef.current) {
             clearTimeout(settleFallbackRef.current);
             settleFallbackRef.current = null;
@@ -590,6 +598,17 @@ export function NotchApp() {
       void pending.then((unlisten) => unlisten());
     };
   }, [nativeBridge]);
+
+  // Live mic level (global event) → the capsule's listening waveform.
+  useEffect(() => {
+    const pending = listen<{ level: number }>('cursor:level', (event) => {
+      const level = Math.max(0, Math.min(1, event.payload.level ?? 0));
+      capsuleRef.current?.style.setProperty('--mic-level', String(level));
+    });
+    return () => {
+      void pending.then((unlisten) => unlisten());
+    };
+  }, []);
 
   const setVoicePayload = useCallback(
     (state: VoiceCaptureState) => {
@@ -1002,158 +1021,111 @@ export function NotchApp() {
     };
   }, [processCapturedAudio, startAnnotation]);
 
-  // Minimal: the notch card only shows for typing (⌘⇧Space) + errors (layout
-  // 'prompt'). During the voice flow (listening / thinking / answer + TTS) render
-  // nothing — only the cursor effects + box — while the panel stays alive so its
-  // webview can still run the transcribe → answer → TTS pipeline.
-  const showCard = payload.layout === 'prompt';
+  // Single minimal status capsule (top-center). Live waveform while listening, a
+  // pulse while thinking, animated bars while speaking, and it expands into the
+  // input while typing (⌘⇧Space) / on an error. Idle → hidden.
+  const capsuleMode: 'listening' | 'thinking' | 'speaking' | 'typing' | 'idle' =
+    payload.state === 'listening'
+      ? 'listening'
+      : isSpeaking
+        ? 'speaking'
+        : isSubmitting ||
+            payload.state === 'thinking' ||
+            voiceCaptureState === 'transcribing' ||
+            detailHidden
+          ? 'thinking'
+          : payload.layout === 'prompt'
+            ? 'typing'
+            : 'idle';
+
+  const noteCapsulePointer = () => {
+    pointerInsideNotchRef.current = true;
+    lastNotchPointerAt.current = performance.now();
+    noteNotchActivity();
+  };
+
+  const statusLabel =
+    capsuleMode === 'listening' ? 'Listening' : capsuleMode === 'speaking' ? 'Speaking' : 'Thinking';
 
   return (
-    <main className="notch-shell" aria-label="Kairo assistant status">
-      {showCard ? (
-        <section
-        aria-busy={isSubmitting || payload.state === 'thinking'}
-        className="notch-card"
-        data-busy={isSubmitting ? 'true' : 'false'}
-        data-layout={payload.layout}
-        data-state={payload.state}
-        data-voice-state={voiceCaptureState}
-        onPointerEnter={() => {
-          pointerInsideNotchRef.current = true;
-          lastNotchPointerAt.current = performance.now();
-          noteNotchActivity();
-        }}
-        onPointerMove={() => {
-          pointerInsideNotchRef.current = true;
-          lastNotchPointerAt.current = performance.now();
-          noteNotchActivity();
-        }}
-        onPointerLeave={() => {
-          pointerInsideNotchRef.current = false;
-        }}
-        onPointerDown={() => {
-          lastNotchPointerAt.current = performance.now();
-          noteNotchActivity();
-        }}
-      >
-        <header className="notch-header">
-          <div className="notch-orb" aria-hidden="true" />
-          <div className="notch-copy">
-            <strong>{payload.title}</strong>
-            <span>{detailHidden ? PREPARING_NEXT_STEP_TEXT : payload.detail}</span>
-          </div>
-          <button
-            aria-label="Hide Kairo"
-            className="notch-close"
-            type="button"
-            onClick={hideNotch}
-          >
-            <CloseIcon />
-          </button>
-        </header>
-
-        <div className="notch-body">
-          <form
-            className="notch-prompt"
-            data-visible={interaction.promptVisible ? 'true' : 'false'}
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (isSubmittingRef.current) {
-                return;
-              }
-
-              if (voiceCaptureStateRef.current === 'recording') {
-                stopActiveRecording(false);
-                return;
-              }
-
-              submitQuery(query).catch(() => {
-                isSubmittingRef.current = false;
-                setIsSubmitting(false);
-              });
-            }}
-          >
-            <input
-              aria-label="Ask Kairo"
-              autoFocus
-              disabled={!interaction.canUsePrompt}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={promptPlaceholder(payload)}
-              value={query}
-            />
-            <button
-              aria-label={voiceCaptureState === 'recording' ? 'Stop voice input' : 'Start voice input'}
-              className="notch-voice-button"
-              data-recording={voiceCaptureState === 'recording' ? 'true' : 'false'}
-              disabled={!interaction.canUseVoice}
-              title={voiceCaptureState === 'recording' ? 'Stop voice input' : 'Start voice input'}
-              type="button"
-              onClick={toggleVoiceCapture}
+    <main className="kairo-capsule-shell" aria-label="Kairo status">
+      {capsuleMode === 'idle' ? null : (
+        <div
+          ref={capsuleRef}
+          className="kairo-capsule"
+          data-mode={capsuleMode}
+          onPointerEnter={noteCapsulePointer}
+          onPointerMove={noteCapsulePointer}
+          onPointerLeave={() => {
+            pointerInsideNotchRef.current = false;
+          }}
+          onPointerDown={() => {
+            lastNotchPointerAt.current = performance.now();
+            noteNotchActivity();
+          }}
+        >
+          {capsuleMode === 'typing' ? (
+            <form
+              className="kairo-capsule-prompt"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (isSubmittingRef.current || query.trim().length === 0) {
+                  return;
+                }
+                submitQuery(query).catch(() => {
+                  isSubmittingRef.current = false;
+                  setIsSubmitting(false);
+                });
+              }}
             >
-              {voiceCaptureState === 'recording' ? <StopIcon /> : <MicIcon />}
-            </button>
-            <button disabled={!canSubmitCurrent} type="submit">
-              {interaction.submitMode === 'voice' ? 'Done' : 'Ask'}
-            </button>
-          </form>
-
-          <div className="notch-tool-row" aria-label="Annotation tools" role="toolbar">
-            {annotations.length > 0 ? (
-              <span className="notch-tool-count" aria-live="polite">
-                {annotationCountText(annotations.length)}
+              <input
+                aria-label="Ask Kairo"
+                autoFocus
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Ask about this screen — or hold ⌥⌃ to talk"
+                value={query}
+              />
+              <button
+                aria-label="Toggle pen"
+                className="kairo-capsule-icon"
+                data-active={activeAnnotationTool === 'pen' ? 'true' : 'false'}
+                title="Pen (⌥⇧P)"
+                type="button"
+                onClick={() => startAnnotation('pen')}
+              >
+                <PenIcon />
+              </button>
+              <button
+                className="kairo-capsule-ask"
+                disabled={query.trim().length === 0}
+                type="submit"
+              >
+                Ask
+              </button>
+              <button
+                aria-label="Hide Kairo"
+                className="kairo-capsule-icon"
+                title="Close"
+                type="button"
+                onClick={hideNotch}
+              >
+                <CloseIcon />
+              </button>
+            </form>
+          ) : (
+            <div className="kairo-capsule-status">
+              <span className="kairo-capsule-viz" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
               </span>
-            ) : null}
-            <div className="notch-tools">
-              {annotationTools.map((option) => (
-                <button
-                  aria-label={`${option.label} annotation tool`}
-                  aria-pressed={activeAnnotationTool === option.tool}
-                  data-active={activeAnnotationTool === option.tool ? 'true' : 'false'}
-                  disabled={!interaction.canAnnotate}
-                  key={option.tool}
-                  title={activeAnnotationTool === option.tool ? `${option.label} (on)` : option.label}
-                  type="button"
-                  onClick={() => startAnnotation(option.tool)}
-                >
-                  <span aria-hidden="true">{option.icon}</span>
-                  {activeAnnotationTool === option.tool ? (
-                    <span className="notch-tool-label">{option.label}</span>
-                  ) : null}
-                </button>
-              ))}
-              <button
-                aria-label="Undo last annotation"
-                disabled={!interaction.canAnnotate || annotations.length === 0}
-                title="Undo"
-                type="button"
-                onClick={undoAnnotation}
-              >
-                <UndoIcon />
-              </button>
-              <button
-                aria-label="Clear annotations"
-                disabled={!interaction.canAnnotate || annotations.length === 0}
-                title="Clear"
-                type="button"
-                onClick={clearAnnotations}
-              >
-                <ClearIcon />
-              </button>
-              <button
-                aria-label="Finish annotations"
-                className="notch-tool-done"
-                disabled={!interaction.canAnnotate || (!activeAnnotationTool && annotations.length === 0)}
-                title="Done"
-                type="button"
-                onClick={finishAnnotation}
-              >
-                <DoneIcon />
-              </button>
+              <span className="kairo-capsule-label">{statusLabel}</span>
             </div>
-          </div>
+          )}
         </div>
-      </section>
-      ) : null}
+      )}
     </main>
   );
 }

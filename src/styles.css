@@ -1387,3 +1387,230 @@ input {
     min-height: 260px;
   }
 }
+
+/* ----------------------------------------------------------------------------
+   Minimal status capsule (the redesigned notch). A single top-center pill:
+   live waveform while listening, a wave while thinking, an equalizer while
+   speaking, and it expands into the input while typing. Idle = hidden.
+   ---------------------------------------------------------------------------- */
+.kairo-capsule-shell {
+  align-items: flex-start;
+  background: transparent;
+  display: flex;
+  height: 100vh;
+  justify-content: center;
+  overflow: hidden;
+  padding: 10px 12px;
+  /* Empty area is click-through; the capsule itself re-enables pointer events. */
+  pointer-events: none;
+}
+
+.kairo-capsule {
+  --mic-level: 0;
+  align-items: center;
+  backdrop-filter: blur(24px) saturate(1.3);
+  background: linear-gradient(180deg, rgb(24 26 32 / 0.86), rgb(12 13 17 / 0.92));
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 999px;
+  box-shadow:
+    0 10px 34px rgb(0 0 0 / 0.42),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+  color: #f4f6f8;
+  display: flex;
+  gap: 10px;
+  max-width: min(100%, 640px);
+  padding: 8px 16px;
+  pointer-events: auto;
+  animation: kairo-capsule-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes kairo-capsule-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.kairo-capsule-status {
+  align-items: center;
+  display: flex;
+  gap: 11px;
+  padding: 2px 4px;
+}
+
+.kairo-capsule-label {
+  color: #e7ddff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.kairo-capsule-viz {
+  align-items: center;
+  display: flex;
+  gap: 3px;
+  height: 20px;
+}
+
+.kairo-capsule-viz i {
+  background: linear-gradient(180deg, #c4a1ff, #7c3aed);
+  border-radius: 999px;
+  display: block;
+  height: 6px;
+  width: 3px;
+}
+
+/* Listening: bars react to live mic volume (--mic-level 0..1) + gentle idle sway. */
+.kairo-capsule[data-mode='listening'] .kairo-capsule-viz i {
+  height: calc(4px + var(--mic-level, 0) * 16px);
+  transition: height 80ms ease-out;
+  animation: kairo-viz-idle 1.4s ease-in-out infinite;
+}
+.kairo-capsule[data-mode='listening'] .kairo-capsule-viz i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.kairo-capsule[data-mode='listening'] .kairo-capsule-viz i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.kairo-capsule[data-mode='listening'] .kairo-capsule-viz i:nth-child(4) {
+  animation-delay: 0.45s;
+}
+.kairo-capsule[data-mode='listening'] .kairo-capsule-viz i:nth-child(5) {
+  animation-delay: 0.6s;
+}
+
+@keyframes kairo-viz-idle {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Thinking: a travelling loading wave. */
+.kairo-capsule[data-mode='thinking'] .kairo-capsule-viz i {
+  animation: kairo-viz-think 1s ease-in-out infinite;
+}
+.kairo-capsule[data-mode='thinking'] .kairo-capsule-viz i:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.kairo-capsule[data-mode='thinking'] .kairo-capsule-viz i:nth-child(3) {
+  animation-delay: 0.2s;
+}
+.kairo-capsule[data-mode='thinking'] .kairo-capsule-viz i:nth-child(4) {
+  animation-delay: 0.3s;
+}
+.kairo-capsule[data-mode='thinking'] .kairo-capsule-viz i:nth-child(5) {
+  animation-delay: 0.4s;
+}
+
+@keyframes kairo-viz-think {
+  0%,
+  100% {
+    height: 5px;
+    opacity: 0.5;
+  }
+  50% {
+    height: 16px;
+    opacity: 1;
+  }
+}
+
+/* Speaking: equalizer-style bounce. */
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i {
+  animation: kairo-viz-speak 0.7s ease-in-out infinite;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(1) {
+  animation-delay: 0s;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(3) {
+  animation-delay: 0.05s;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(4) {
+  animation-delay: 0.24s;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(5) {
+  animation-delay: 0.1s;
+}
+
+@keyframes kairo-viz-speak {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 18px;
+  }
+}
+
+/* Typing: input + pen + ask + close. */
+.kairo-capsule-prompt {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  width: min(560px, 72vw);
+}
+
+.kairo-capsule-prompt input {
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 999px;
+  color: #f4f6f8;
+  flex: 1;
+  font-size: 0.9rem;
+  outline: none;
+  padding: 9px 14px;
+}
+
+.kairo-capsule-prompt input::placeholder {
+  color: rgb(244 246 248 / 0.5);
+}
+
+.kairo-capsule-prompt input:focus {
+  border-color: rgb(168 139 250 / 0.7);
+}
+
+.kairo-capsule-icon {
+  align-items: center;
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 999px;
+  color: #e7ddff;
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.kairo-capsule-icon[data-active='true'] {
+  background: rgb(124 58 237 / 0.5);
+  color: #fff;
+}
+
+.kairo-capsule-ask {
+  background: linear-gradient(135deg, #a273ff, #7c3aed);
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 0.86rem;
+  font-weight: 650;
+  padding: 9px 16px;
+}
+
+.kairo-capsule-ask:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
