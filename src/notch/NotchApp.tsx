@@ -1074,12 +1074,12 @@ export function NotchApp() {
           isSubmittingRef.current = false;
           setIsSubmitting(false);
           updateVoiceCaptureState('idle');
-          // Keep any pen drawing + its annotations through push-to-talk: finalize the
-          // stroke into preview (marks stay visible and are sent with the ask) but do
-          // NOT clear the overlay or the annotations. This is what lets "what did I
-          // circle?" work after drawing then holding ⌥⌃.
+          // Keep any pen drawing + its annotations through push-to-talk. The marks are
+          // already synced into `annotations` (via annotation:sync), so DON'T emit
+          // annotation:finish here — that makes the overlay fire annotation:done, which
+          // flips the notch to the 'captured' (text) UI instead of the listening
+          // capsule. Just drop the active tool + release the cursor.
           setActiveAnnotationTool(null);
-          void emit('annotation:finish', {});
           void nativeBridge.cursorRelease();
         }
         setPayload(nextPayload);

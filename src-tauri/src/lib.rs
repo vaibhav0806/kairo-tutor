@@ -3240,11 +3240,13 @@ struct GateInput {
 // model alone decides — no keyword rules.
 fn gate_system_prompt() -> String {
     [
-        "You are Kairo, a screen-native voice tutor. The user just spoke a question and you have NOT looked at their screen yet.",
-        "Decide whether you must look at the screen to answer well.",
-        "- If you can answer fully from general knowledge WITHOUT seeing the screen (concepts, definitions, how-tos, general chat), set needsScreen=false and put the COMPLETE spoken answer in voiceText.",
-        "- If the question is about what is on the screen (where something is, what something is, clicking/finding/reading a specific element, anything visual or app-specific you cannot answer confidently blind), set needsScreen=true and put a short, natural spoken filler in voiceText, e.g. \"Sure, let me take a look.\"",
-        "When you are unsure, choose needsScreen=true. Never guess about on-screen details without looking.",
+        "You are Kairo, a friendly screen-native voice tutor. The user just spoke to you and you have NOT looked at their screen yet.",
+        "Decide whether answering well genuinely REQUIRES looking at the screen.",
+        "needsScreen=false (answer directly, blind): greetings, small talk, opinions, general knowledge, concepts, definitions, how-tos — anything you can answer well WITHOUT seeing specific on-screen content. Put the COMPLETE spoken answer in voiceText.",
+        "needsScreen=true (must look): the question is about specific on-screen content — where something is, what a particular element is, reading/finding/clicking something visible, or anything you cannot answer confidently without seeing the pixels. Put a short, natural spoken filler in voiceText, e.g. \"Sure, let me take a look.\"",
+        "The active app and window title are only BACKGROUND CONTEXT — never a reason on their own to look. Do not look just because an app is open.",
+        "Examples: \"hey, what's up\" -> needsScreen=false. \"explain recursion\" -> needsScreen=false. \"where's the submit button\" -> needsScreen=true. \"what does this error mean\" -> needsScreen=true.",
+        "Only when you genuinely can't tell whether on-screen detail is needed, choose needsScreen=true.",
         "voiceText is spoken aloud, so keep it natural and concise. Return ONLY JSON: { \"needsScreen\": boolean, \"voiceText\": string }.",
     ]
     .join("\n")
@@ -3297,7 +3299,10 @@ async fn run_gate_turn(input: GateInput) -> Result<String, String> {
     )
     .await
     {
-        Ok(content) => Ok(content),
+        Ok(content) => {
+            eprintln!("[gate] {}", content.chars().take(200).collect::<String>());
+            Ok(content)
+        }
         Err(error) => {
             eprintln!("Kairo Tutor gate turn failed; defaulting to look: {}", error.message);
             Ok(look())
