@@ -310,7 +310,7 @@ input {
   color: #ffffff;
   font-size: 0.76rem;
   font-weight: 700;
-  left: 0;
+  left: 50%;
   letter-spacing: 0;
   line-height: 1;
   max-width: min(240px, 42vw);
@@ -320,14 +320,14 @@ input {
   position: absolute;
   top: 0;
   text-overflow: ellipsis;
-  transform: translateY(calc(-100% - 10px));
+  transform: translateX(-50%) translateY(calc(-100% - 12px));
   white-space: nowrap;
   z-index: 3;
 }
 
 .overlay-target-label[data-placement="below"] {
   top: 100%;
-  transform: translateY(10px);
+  transform: translateX(-50%) translateY(12px);
 }
 
 .overlay-target-label[data-placement="right"] {
