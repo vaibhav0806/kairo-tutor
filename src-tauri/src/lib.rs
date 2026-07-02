@@ -813,6 +813,25 @@ fn exclude_window_from_screen_capture(window: &tauri::WebviewWindow) {
 #[cfg(not(target_os = "macos"))]
 fn exclude_window_from_screen_capture(_window: &tauri::WebviewWindow) {}
 
+// Make a window appear in screen capture again (ReadOnly = the default). Used so the
+// user's pen marks are visible to the tutor's own screenshot even while other Kairo
+// UI stays hidden.
+#[cfg(target_os = "macos")]
+fn include_window_in_screen_capture(window: &tauri::WebviewWindow) {
+    let Ok(ns_window_ptr) = window.ns_window() else {
+        return;
+    };
+    if ns_window_ptr.is_null() {
+        return;
+    }
+    let ns_window: &objc2_app_kit::NSWindow =
+        unsafe { &*(ns_window_ptr as *const objc2_app_kit::NSWindow) };
+    #[allow(deprecated)]
+    ns_window.setSharingType(objc2_app_kit::NSWindowSharingType::ReadOnly);
+}
+#[cfg(not(target_os = "macos"))]
+fn include_window_in_screen_capture(_window: &tauri::WebviewWindow) {}
+
 // Lazily create the notch window, convert it to a non-activating NSPanel, and
 // apply the level / style / collection behavior that let it float over
 // full-screen Spaces. Idempotent: returns the existing panel once converted.
@@ -1610,8 +1629,20 @@ fn configure_overlay_window(
         ))
         .map_err(|error| format!("Failed to size overlay: {error}"))?;
 
-    // Capture exclusion (default-on) is set once on the panel in ensure_overlay_panel,
-    // gated by KAIRO_SHOW_IN_CAPTURE.
+    // Capture exclusion is MODE-BASED so the AI can see the user's pen marks even
+    // with KAIRO_SHOW_IN_CAPTURE=false: INCLUDE the overlay while it shows the user's
+    // drawing (annotate / preview) so the marks land in the tutor's screenshot, but
+    // EXCLUDE it while it shows Kairo's own box (visual) so guidance stays out of
+    // captures. With KAIRO_SHOW_IN_CAPTURE=true, always include (demo mode).
+    let shows_user_marks = matches!(
+        payload.mode.as_deref(),
+        Some("annotate") | Some("annotation_preview")
+    );
+    if shows_user_marks || env_flag("KAIRO_SHOW_IN_CAPTURE") {
+        include_window_in_screen_capture(window);
+    } else {
+        exclude_window_from_screen_capture(window);
+    }
 
     Ok(())
 }
