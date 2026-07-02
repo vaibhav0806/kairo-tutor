@@ -1205,8 +1205,56 @@ fn ensure_input_monitoring_access() {
 // ---------------------------------------------------------------------------
 
 enum AudioCommand {
-    Start,
+    // Carries the chord-down instant so we can log time-to-record-start.
+    Start(Instant),
     Stop,
+}
+
+// Pick the real built-in microphone. The OS *default* input on this machine is a
+// silent virtual device (BlackHole), so `default_input_device()` would capture
+// silence — mirror the WebView fix and skip known virtual/loopback devices.
+fn pick_input_device(host: &cpal::Host) -> Option<cpal::Device> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let is_virtual = |name: &str| {
+        let n = name.to_lowercase();
+        n.contains("blackhole")
+            || n.contains("soundflower")
+            || n.contains("loopback")
+            || n.contains("aggregate")
+            || n.contains("multi-output")
+            || n.contains("virtual")
+            || n.contains("vb-audio")
+            || n.contains("ishowu")
+    };
+    let devices: Vec<cpal::Device> = host
+        .input_devices()
+        .map(|iter| iter.collect())
+        .unwrap_or_default();
+    // 1) an explicitly built-in mic
+    for device in &devices {
+        if let Ok(name) = device.name() {
+            let n = name.to_lowercase();
+            if !is_virtual(&n)
+                && (n.contains("macbook")
+                    || n.contains("built-in")
+                    || n.contains("built in")
+                    || n.contains("internal")
+                    || n.contains("microphone"))
+            {
+                return Some(device.clone());
+            }
+        }
+    }
+    // 2) any non-virtual input
+    for device in &devices {
+        if let Ok(name) = device.name() {
+            if !is_virtual(&name.to_lowercase()) {
+                return Some(device.clone());
+            }
+        }
+    }
+    // 3) last resort: whatever the OS default is
+    host.default_input_device()
 }
 
 #[derive(Default)]
@@ -1308,7 +1356,7 @@ fn spawn_audio_capture(
     let capturing_worker = capturing;
     let level_worker = level;
     std::thread::spawn(move || {
-        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+        use cpal::traits::{DeviceTrait, StreamTrait};
         let host = cpal::default_host();
         let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
         // Held across iterations so the mic stays open only between Start and Stop.
@@ -1317,12 +1365,12 @@ fn spawn_audio_capture(
 
         while let Ok(cmd) = rx.recv() {
             match cmd {
-                AudioCommand::Start => {
+                AudioCommand::Start(chord_down) => {
                     if let Ok(mut buf) = samples.lock() {
                         buf.clear();
                     }
-                    let Some(device) = host.default_input_device() else {
-                        eprintln!("Kairo Tutor: no default input device for push-to-talk");
+                    let Some(device) = pick_input_device(&host) else {
+                        eprintln!("Kairo Tutor: no usable input device for push-to-talk");
                         continue;
                     };
                     let Ok(config) = device.default_input_config() else {
@@ -1369,6 +1417,11 @@ fn spawn_audio_capture(
                     match built {
                         Ok(stream) => match stream.play() {
                             Ok(()) => {
+                                eprintln!(
+                                    "[ptt-timing] recording started {} ms after ⌥⌃ down (device: {})",
+                                    chord_down.elapsed().as_millis(),
+                                    device.name().unwrap_or_else(|_| "?".into())
+                                );
                                 current = Some(stream);
                                 capturing_worker.store(true, Ordering::SeqCst);
                             }
@@ -1384,6 +1437,7 @@ fn spawn_audio_capture(
                     current.take();
                     let captured: Vec<f32> =
                         samples.lock().map(|buf| buf.clone()).unwrap_or_default();
+                    eprintln!("[ptt-timing] captured {} samples @ {} Hz", captured.len(), current_rate);
                     if captured.is_empty() {
                         continue;
                     }
@@ -1445,7 +1499,8 @@ fn spawn_ptt_tap(app: &tauri::AppHandle, watch: ContextWatch) {
                 if both && !was {
                     watch.ptt_active.store(true, Ordering::SeqCst);
                     // Start native mic capture immediately (instant; indicator on now).
-                    send_audio_command(&app, AudioCommand::Start);
+                    eprintln!("[ptt-timing] ⌥⌃ chord down");
+                    send_audio_command(&app, AudioCommand::Start(Instant::now()));
                     // Cursor shows the listening halo.
                     if let Some(window) = app.get_webview_window("cursor") {
                         let _ = window.emit("cursor:listening", ());
