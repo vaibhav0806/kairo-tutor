@@ -91,6 +91,13 @@ export type NativeCursorPointInput = {
   color?: string;
 };
 
+// The app a teaching target points at, captured when the box is revealed. A later
+// frontmost/scroll/click change relative to this clears the stale guidance.
+export type NativeContextBaseline = {
+  bundleId?: string;
+  windowTitle?: string;
+};
+
 export type NativeBridge = {
   getActiveApp(): Promise<NativeActiveApp>;
   getPermissionStatus(): Promise<NativePermissionStatus>;
@@ -110,6 +117,8 @@ export type NativeBridge = {
   hideOverlay(): Promise<void>;
   cursorPoint(input: NativeCursorPointInput): Promise<void>;
   cursorRelease(): Promise<void>;
+  armContextWatch(baseline: NativeContextBaseline): Promise<void>;
+  disarmContextWatch(): Promise<void>;
   showNotch(payload?: NotchPayload): Promise<void>;
   getCurrentNotchPayload(): Promise<NotchPayload | null>;
   hideNotch(): Promise<void>;
@@ -371,6 +380,22 @@ export function createNativeBridge(
         await invoke<void>('cursor_release');
       } catch {
         // Browser previews do not have a native cursor window.
+      }
+    },
+
+    async armContextWatch(baseline) {
+      try {
+        await invoke<void>('arm_context_watch', { baseline });
+      } catch {
+        // Browser previews have no native context watcher.
+      }
+    },
+
+    async disarmContextWatch() {
+      try {
+        await invoke<void>('disarm_context_watch');
+      } catch {
+        // Browser previews have no native context watcher.
       }
     },
 

@@ -4,7 +4,11 @@ import { createTutorOrchestrator } from '../core/orchestrator';
 import { createRuntimeTutorPlanner, type RuntimeTutorProvider } from '../core/runtimePlanner';
 import { createTutorRuntimeErrorResponse } from '../core/tutorErrors';
 import type { UserAnnotation } from '../core/types';
-import type { NativeBridge, NativeScreenCapture } from '../native/nativeBridge';
+import type {
+  NativeBridge,
+  NativeContextBaseline,
+  NativeScreenCapture
+} from '../native/nativeBridge';
 import { routeVisualTargets } from '../overlay/targetRouting';
 import type { NotchPayload } from './types';
 
@@ -19,6 +23,17 @@ export type AskTutorFromNotchOptions = {
   screenCapture?: NativeScreenCapture | null;
 };
 
+export type AskTutorResult = {
+  payload: NotchPayload;
+  // Shows the box + companion cursor. Deferred (not run inside this call) so the
+  // notch can reveal the visuals exactly when TTS playback starts — never while
+  // the answer is still being synthesized and the notch is silent.
+  revealVisuals: () => Promise<void>;
+  // The app the guidance points at, used to arm the context watcher. null when the
+  // answer has no on-screen target to protect from going stale.
+  context: NativeContextBaseline | null;
+};
+
 export async function askTutorFromNotch({
   query,
   nativeBridge,
@@ -26,7 +41,7 @@ export async function askTutorFromNotch({
   defaultSkill,
   annotations = [],
   screenCapture: providedCapture
-}: AskTutorFromNotchOptions): Promise<NotchPayload> {
+}: AskTutorFromNotchOptions): Promise<AskTutorResult> {
   try {
     const mockPlanner = createMockTutorPlanner();
     const planner = createRuntimeTutorPlanner({
@@ -56,27 +71,47 @@ export async function askTutorFromNotch({
     });
 
     const displayBounds = screenCapture.displayBounds;
-    if (response.visualTargets.length > 0 && displayBounds) {
-      // Companion cursor flies to the primary point target; area targets render in
-      // the overlay. The notch releases the cursor after TTS playback (+grace).
-      await routeVisualTargets(nativeBridge, response.visualTargets, displayBounds);
-    } else if (annotations.length > 0 && displayBounds) {
-      await nativeBridge.showOverlay({
-        mode: 'annotation_preview',
-        displayBounds,
-        targets: [],
-        annotations
-      });
-    } else {
-      await nativeBridge.hideOverlay();
-    }
+    const hasTargets = response.visualTargets.length > 0 && Boolean(displayBounds);
+    const hasAnnotationPreview =
+      !hasTargets && annotations.length > 0 && Boolean(displayBounds);
 
-    return tutorResponseToNotchPayload(response) ?? activationStateToNotchPayload('showing_step');
+    // Built now, run later (on TTS start) so the box/cursor never appear before the
+    // answer is spoken. The companion cursor is released after playback (+grace) or
+    // when the context watcher detects the user moving on.
+    const revealVisuals = async () => {
+      if (hasTargets && displayBounds) {
+        await routeVisualTargets(nativeBridge, response.visualTargets, displayBounds);
+      } else if (hasAnnotationPreview && displayBounds) {
+        await nativeBridge.showOverlay({
+          mode: 'annotation_preview',
+          displayBounds,
+          targets: [],
+          annotations
+        });
+      } else {
+        await nativeBridge.hideOverlay();
+      }
+    };
+
+    return {
+      payload:
+        tutorResponseToNotchPayload(response) ?? activationStateToNotchPayload('showing_step'),
+      revealVisuals,
+      context: hasTargets
+        ? { bundleId: activeApp.bundleId, windowTitle: activeApp.windowTitle }
+        : null
+    };
   } catch (error) {
     const response = createTutorRuntimeErrorResponse({
       skillSlug: defaultSkill,
       error
     });
-    return tutorResponseToNotchPayload(response);
+    return {
+      payload: tutorResponseToNotchPayload(response),
+      revealVisuals: async () => {
+        await nativeBridge.hideOverlay();
+      },
+      context: null
+    };
   }
 }
