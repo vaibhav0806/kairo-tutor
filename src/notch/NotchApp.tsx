@@ -3,7 +3,11 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { activationStateToNotchPayload } from '../activation/activationState';
 import { loadBrowserEnv } from '../config/env';
 import type { UserAnnotation } from '../core/types';
-import { createNativeBridge, type NativeScreenCapture } from '../native/nativeBridge';
+import {
+  createNativeBridge,
+  type NativeContextBaseline,
+  type NativeScreenCapture
+} from '../native/nativeBridge';
 import { type NotchAnnotationTool } from './annotationActions';
 import { buildAudioDataUrl } from './audioPlayback';
 import { subscribeToNotchPayload } from './notchEvents';
@@ -33,6 +37,13 @@ const defaultPayload: NotchPayload = {
   title: 'Kairo is ready',
   detail: 'Press the shortcut to start'
 };
+
+// After the answer finishes speaking, close the notch this long after the user
+// stops interacting with it.
+const NOTCH_IDLE_CLOSE_MS = 5000;
+// Body copy shown under the title while the answer is being synthesized to speech,
+// after the LLM has replied but before playback (and the visuals) begin.
+const PREPARING_NEXT_STEP_TEXT = 'Preparing the next step';
 
 function NotchIcon({ children, size = 18 }: { children: ReactNode; size?: number }) {
   return (
@@ -125,9 +136,22 @@ export function NotchApp() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const answerAudioRef = useRef<HTMLAudioElement | null>(null);
-  // Dismisses the AI pointer overlay; armed when answer speech finishes (or after
-  // a fallback delay when there is no speech).
-  const overlayDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The teaching visuals for the current answer, revealed on TTS start (not when
+  // the LLM answer arrives), plus the app they point at for the context watcher.
+  const revealVisualsRef = useRef<() => Promise<void>>(async () => {});
+  const contextBaselineRef = useRef<NativeContextBaseline | null>(null);
+  // Notch auto-close: once the answer has finished speaking, close the notch after
+  // a short idle delay — unless the user is interacting (hovering, or the prompt is
+  // focused). `settled` flips true when playback ends (or there was no speech).
+  const notchIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const answerSettledRef = useRef(false);
+  const notchHoverRef = useRef(false);
+  // Mirrors the prompt text so the idle-close check can tell "typing a follow-up"
+  // (block close) from a merely focused-but-empty prompt (the autoFocus default).
+  const queryRef = useRef('');
+  // Points at the latest evaluateNotchIdleClose so callbacks defined before it
+  // (submitQuery, playAnswerAudio) can trigger a re-evaluation without a dep cycle.
+  const evaluateNotchIdleCloseRef = useRef<() => void>(() => {});
   const voiceMonitorCleanupRef = useRef<(() => void) | null>(null);
   const pcmCaptureCleanupRef = useRef<(() => void) | null>(null);
   const pcmChunksRef = useRef<Float32Array[]>([]);
@@ -188,27 +212,12 @@ export function NotchApp() {
     answerAudioRef.current = null;
   }, []);
 
-  const cancelOverlayDismiss = useCallback(() => {
-    if (overlayDismissTimerRef.current) {
-      clearTimeout(overlayDismissTimerRef.current);
-      overlayDismissTimerRef.current = null;
+  const cancelNotchIdleClose = useCallback(() => {
+    if (notchIdleTimerRef.current) {
+      clearTimeout(notchIdleTimerRef.current);
+      notchIdleTimerRef.current = null;
     }
   }, []);
-
-  // Hide the AI pointer overlay after `delayMs`. Called with the grace delay once
-  // answer speech finishes, so the pointer lasts the whole TTS playback + grace.
-  const scheduleOverlayDismiss = useCallback(
-    (delayMs: number) => {
-      cancelOverlayDismiss();
-      overlayDismissTimerRef.current = setTimeout(() => {
-        overlayDismissTimerRef.current = null;
-        void nativeBridge.hideOverlay();
-        // Glide the companion cursor back to shadowing the mouse.
-        void nativeBridge.cursorRelease();
-      }, delayMs);
-    },
-    [cancelOverlayDismiss, nativeBridge]
-  );
 
   const stopActiveRecording = useCallback(
     (cancelled = false) => {
@@ -305,17 +314,16 @@ export function NotchApp() {
   );
 
   const playAnswerAudio = useCallback(
-    async (text: string, onSpeechStart?: () => void) => {
+    // `onSpeechStart` fires when playback actually begins (reveal the text +
+    // visuals then); `onSettled` fires when playback ends, or immediately when
+    // there is nothing to play, so the notch auto-close countdown can begin.
+    async (text: string, onSpeechStart?: () => void, onSettled?: () => void) => {
       stopAnswerPlayback();
-      // Keep the AI pointer up for the whole answer, then 5s past where speech
-      // ends. With no speech, fall back to a fixed window so it still clears.
-      const POINTER_GRACE_AFTER_SPEECH_MS = 5000;
-      const POINTER_FALLBACK_MS = 8000;
       const trimmedText = text.trim();
       if (!trimmedText) {
-        // Nothing to speak: reveal the text immediately so it isn't left hidden.
+        // Nothing to speak: reveal immediately so the answer isn't left hidden.
         onSpeechStart?.();
-        scheduleOverlayDismiss(POINTER_FALLBACK_MS);
+        onSettled?.();
         return;
       }
 
@@ -324,24 +332,24 @@ export function NotchApp() {
         const audioUrl = buildAudioDataUrl(result);
         if (!audioUrl) {
           onSpeechStart?.();
-          scheduleOverlayDismiss(POINTER_FALLBACK_MS);
+          onSettled?.();
           return;
         }
 
         const audio = new Audio(audioUrl);
         answerAudioRef.current = audio;
-        // Reveal the answer text the instant speech actually begins.
+        // Reveal the answer text + teaching visuals the instant speech begins.
         audio.onplay = () => onSpeechStart?.();
-        audio.onended = () => scheduleOverlayDismiss(POINTER_GRACE_AFTER_SPEECH_MS);
+        audio.onended = () => onSettled?.();
         await audio.play();
       } catch {
         // Speech playback is best-effort; reveal the text anyway so a silent
         // answer is never left invisible.
         onSpeechStart?.();
-        scheduleOverlayDismiss(POINTER_FALLBACK_MS);
+        onSettled?.();
       }
     },
-    [nativeBridge, scheduleOverlayDismiss, stopAnswerPlayback]
+    [nativeBridge, stopAnswerPlayback]
   );
 
   const submitQuery = useCallback(
@@ -353,8 +361,11 @@ export function NotchApp() {
 
       const thinkingPayload = activationStateToNotchPayload('thinking');
       stopAnswerPlayback();
-      // A new turn supersedes any pending pointer dismiss from the last answer.
-      cancelOverlayDismiss();
+      // A new turn supersedes the last answer: cancel its pending auto-close, stop
+      // watching the old target, and mark the turn unsettled.
+      cancelNotchIdleClose();
+      answerSettledRef.current = false;
+      void nativeBridge.disarmContextWatch();
       // Release any lingering pointing so the cursor shadows the mouse while the
       // new answer is computed; it flies again only if the answer has a target.
       void nativeBridge.cursorRelease();
@@ -369,7 +380,7 @@ export function NotchApp() {
       await waitForNotchPaint();
 
       try {
-        const answerPayload = await askTutorFromNotch({
+        const { payload: answerPayload, revealVisuals, context } = await askTutorFromNotch({
           query: trimmedQuery,
           nativeBridge,
           aiProvider: env.aiProvider,
@@ -378,14 +389,36 @@ export function NotchApp() {
           screenCapture: capturedScreenRef.current
         });
 
+        // Hold the box + cursor until speech starts; reveal them together with the
+        // text so nothing points at the screen while the notch is still silent.
+        revealVisualsRef.current = revealVisuals;
+        contextBaselineRef.current = context;
+
         setPayload(answerPayload);
-        // Hold the answer body until speech starts; revealed in playAnswerAudio.
+        // Body shows "Preparing the next step" (detailHidden) until speech begins.
         setDetailHidden(true);
         setQuery('');
         setAnnotations([]);
         setActiveAnnotationTool(null);
         void nativeBridge.showNotch(answerPayload);
-        void playAnswerAudio(answerPayload.detail, () => setDetailHidden(false));
+        void playAnswerAudio(
+          answerPayload.detail,
+          () => {
+            // Speech is starting: reveal text + visuals, then watch for the user
+            // moving on (app/tab switch, scroll, click) so the box doesn't go stale.
+            setDetailHidden(false);
+            void revealVisualsRef.current().then(() => {
+              if (contextBaselineRef.current) {
+                void nativeBridge.armContextWatch(contextBaselineRef.current);
+              }
+            });
+          },
+          () => {
+            // Playback finished (or there was none): start the auto-close countdown.
+            answerSettledRef.current = true;
+            evaluateNotchIdleCloseRef.current();
+          }
+        );
       } finally {
         isSubmittingRef.current = false;
         setIsSubmitting(false);
@@ -393,7 +426,7 @@ export function NotchApp() {
     },
     [
       annotations,
-      cancelOverlayDismiss,
+      cancelNotchIdleClose,
       env.aiProvider,
       env.defaultSkill,
       nativeBridge,
@@ -440,7 +473,10 @@ export function NotchApp() {
 
   const hideNotch = useCallback(() => {
     stopAnswerPlayback();
-    cancelOverlayDismiss();
+    cancelNotchIdleClose();
+    answerSettledRef.current = false;
+    notchHoverRef.current = false;
+    void nativeBridge.disarmContextWatch();
     voiceCancelledRef.current = true;
     stopActiveRecording(true);
     mediaRecorderRef.current = null;
@@ -454,6 +490,7 @@ export function NotchApp() {
     setIsSubmitting(false);
     updateVoiceCaptureState('idle');
     setPayload(defaultPayload);
+    setDetailHidden(false);
     setQuery('');
     setAnnotations([]);
     setActiveAnnotationTool(null);
@@ -461,7 +498,7 @@ export function NotchApp() {
     void nativeBridge.cursorRelease();
     void nativeBridge.hideNotch();
   }, [
-    cancelOverlayDismiss,
+    cancelNotchIdleClose,
     nativeBridge,
     stopActiveRecording,
     stopAnswerPlayback,
@@ -470,6 +507,50 @@ export function NotchApp() {
     stopVoiceTracks,
     updateVoiceCaptureState
   ]);
+
+  // Close the notch once the answer has finished speaking AND the user isn't
+  // interacting with it (not hovering, prompt not focused, not mid turn/recording).
+  // Any of those flipping true cancels the countdown; this re-runs when they clear.
+  const evaluateNotchIdleClose = useCallback(() => {
+    cancelNotchIdleClose();
+    const canClose =
+      answerSettledRef.current &&
+      !notchHoverRef.current &&
+      queryRef.current.trim().length === 0 &&
+      !isSubmittingRef.current &&
+      voiceCaptureStateRef.current === 'idle';
+    if (!canClose) {
+      return;
+    }
+    notchIdleTimerRef.current = setTimeout(() => {
+      notchIdleTimerRef.current = null;
+      hideNotch();
+    }, NOTCH_IDLE_CLOSE_MS);
+  }, [cancelNotchIdleClose, hideNotch]);
+
+  useEffect(() => {
+    evaluateNotchIdleCloseRef.current = evaluateNotchIdleClose;
+  }, [evaluateNotchIdleClose]);
+
+  // Typing a follow-up blocks the auto-close; clearing the field lets it resume.
+  useEffect(() => {
+    queryRef.current = query;
+    evaluateNotchIdleCloseRef.current();
+  }, [query]);
+
+  // The user moved on from what Kairo pointed at (app/tab switch, scroll, or click,
+  // detected natively). Clear the stale box + companion cursor; keep the notch (its
+  // own idle timer governs closing) so a follow-up is still one tap away.
+  useEffect(() => {
+    const pending = listen('context:changed', () => {
+      void nativeBridge.hideOverlay();
+      void nativeBridge.cursorRelease();
+      void nativeBridge.disarmContextWatch();
+    });
+    return () => {
+      void pending.then((unlisten) => unlisten());
+    };
+  }, [nativeBridge]);
 
   const setVoicePayload = useCallback(
     (state: VoiceCaptureState) => {
@@ -841,12 +922,20 @@ export function NotchApp() {
         data-layout={payload.layout}
         data-state={payload.state}
         data-voice-state={voiceCaptureState}
+        onMouseEnter={() => {
+          notchHoverRef.current = true;
+          cancelNotchIdleClose();
+        }}
+        onMouseLeave={() => {
+          notchHoverRef.current = false;
+          evaluateNotchIdleClose();
+        }}
       >
         <header className="notch-header">
           <div className="notch-orb" aria-hidden="true" />
           <div className="notch-copy">
             <strong>{payload.title}</strong>
-            <span>{detailHidden ? '' : payload.detail}</span>
+            <span>{detailHidden ? PREPARING_NEXT_STEP_TEXT : payload.detail}</span>
           </div>
           <button
             aria-label="Hide Kairo"

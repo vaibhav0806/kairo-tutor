@@ -33,6 +33,8 @@ function createBridge(overrides: Partial<NativeBridge> = {}): NativeBridge {
     hideOverlay: vi.fn(),
     cursorPoint: vi.fn(),
     cursorRelease: vi.fn(),
+    armContextWatch: vi.fn(),
+    disarmContextWatch: vi.fn(),
     showNotch: vi.fn(),
     getCurrentNotchPayload: vi.fn(),
     hideNotch: vi.fn(),
@@ -56,14 +58,14 @@ describe('askTutorFromNotch', () => {
   test('runs a tutor turn directly from the visible notch window', async () => {
     const bridge = createBridge();
 
-    await expect(
-      askTutorFromNotch({
-        query: 'What is on this screen?',
-        nativeBridge: bridge,
-        aiProvider: 'openrouter',
-        defaultSkill: 'blender'
-      })
-    ).resolves.toEqual({
+    const result = await askTutorFromNotch({
+      query: 'What is on this screen?',
+      nativeBridge: bridge,
+      aiProvider: 'openrouter',
+      defaultSkill: 'blender'
+    });
+
+    expect(result.payload).toEqual({
       state: 'showing_step',
       layout: 'answer',
       title: 'Kairo answered',
@@ -133,13 +135,15 @@ describe('askTutorFromNotch', () => {
       ]
     };
 
-    await askTutorFromNotch({
+    const result = await askTutorFromNotch({
       query: 'Do you see my annotation?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
       defaultSkill: 'blender',
       annotations: [annotation]
     });
+    // Visuals are deferred until TTS start; reveal them, then assert routing.
+    await result.revealVisuals();
 
     expect(bridge.cursorPoint).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -175,12 +179,13 @@ describe('askTutorFromNotch', () => {
       )
     });
 
-    await askTutorFromNotch({
+    const result = await askTutorFromNotch({
       query: 'Where is the GitHub homepage?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
       defaultSkill: 'blender'
     });
+    await result.revealVisuals();
 
     expect(bridge.cursorPoint).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -216,12 +221,13 @@ describe('askTutorFromNotch', () => {
       )
     });
 
-    await askTutorFromNotch({
+    const result = await askTutorFromNotch({
       query: 'What is this panel?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
       defaultSkill: 'blender'
     });
+    await result.revealVisuals();
 
     expect(bridge.cursorPoint).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -244,14 +250,14 @@ describe('askTutorFromNotch', () => {
       })
     });
 
-    await expect(
-      askTutorFromNotch({
-        query: 'What is on this screen?',
-        nativeBridge: bridge,
-        aiProvider: 'openrouter',
-        defaultSkill: 'blender'
-      })
-    ).resolves.toMatchObject({
+    const result = await askTutorFromNotch({
+      query: 'What is on this screen?',
+      nativeBridge: bridge,
+      aiProvider: 'openrouter',
+      defaultSkill: 'blender'
+    });
+
+    expect(result.payload).toMatchObject({
       state: 'showing_step',
       layout: 'answer',
       title: 'Kairo answered',
