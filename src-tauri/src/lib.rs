@@ -16,6 +16,9 @@ use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 use tauri_nspanel::{tauri_panel, CollectionBehavior, PanelHandle, StyleMask, WebviewWindowExt};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
+mod prompts;
+use prompts::{box_locator_prompt, build_tutor_system_prompt, gate_system_prompt};
+
 const KAIRO_ACTIVATION_SHORTCUT: &str = "CommandOrControl+Shift+Space";
 // Toggle the pen directly without opening the notch first. Avoids ⌥⌃ (the
 // push-to-talk chord) so holding it never starts a recording.
@@ -75,6 +78,8 @@ struct ActiveApp {
     active_app: String,
     bundle_id: Option<String>,
     window_title: Option<String>,
+    /// Active-tab URL when the frontmost app is a supported browser (else None).
+    url: Option<String>,
     source: String,
 }
 
@@ -255,6 +260,8 @@ struct TutorActiveAppContext {
     active_app: String,
     bundle_id: Option<String>,
     window_title: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -389,14 +396,54 @@ fn frontmost_window_title() -> Option<String> {
     )
 }
 
+// Best-effort active-tab URL for known browsers via AppleScript. Needs macOS
+// Automation permission (prompts once per browser); returns None if denied or the
+// app is unknown, so callers fall back to the window title. Firefox exposes no
+// scripting access to tab URLs, so it's intentionally absent.
+#[cfg(target_os = "macos")]
+fn frontmost_browser_url(bundle_id: Option<&str>) -> Option<String> {
+    let script = match bundle_id? {
+        "com.google.Chrome" | "com.google.Chrome.canary" => {
+            r#"tell application "Google Chrome" to get URL of active tab of front window"#
+        }
+        "com.brave.Browser" => {
+            r#"tell application "Brave Browser" to get URL of active tab of front window"#
+        }
+        "com.microsoft.edgemac" => {
+            r#"tell application "Microsoft Edge" to get URL of active tab of front window"#
+        }
+        "com.operasoftware.Opera" => {
+            r#"tell application "Opera" to get URL of active tab of front window"#
+        }
+        "com.vivaldi.Vivaldi" => {
+            r#"tell application "Vivaldi" to get URL of active tab of front window"#
+        }
+        "company.thebrowser.Browser" => {
+            r#"tell application "Arc" to get URL of active tab of front window"#
+        }
+        "com.apple.Safari" => r#"tell application "Safari" to get URL of front document"#,
+        _ => return None,
+    };
+    run_osascript(script)
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty())
+}
+#[cfg(not(target_os = "macos"))]
+fn frontmost_browser_url(_bundle_id: Option<&str>) -> Option<String> {
+    None
+}
+
 #[tauri::command]
 fn get_active_app() -> ActiveApp {
     #[cfg(target_os = "macos")]
     {
+        let bundle_id = frontmost_bundle_id();
+        let url = frontmost_browser_url(bundle_id.as_deref());
         return ActiveApp {
             active_app: frontmost_app_name().unwrap_or_else(|| "Unknown App".to_string()),
-            bundle_id: frontmost_bundle_id(),
+            bundle_id,
             window_title: frontmost_window_title(),
+            url,
             source: "native".to_string(),
         };
     }
@@ -407,6 +454,7 @@ fn get_active_app() -> ActiveApp {
             active_app: "Unsupported Platform".to_string(),
             bundle_id: None,
             window_title: None,
+            url: None,
             source: "native".to_string(),
         }
     }
@@ -2162,12 +2210,6 @@ fn build_box_locator_context(elements: &[OcrElement]) -> String {
     lines.join("\n")
 }
 
-fn box_locator_prompt(user_query: &str, rw: u32, rh: u32, screen_context: &str) -> String {
-    format!(
-        "You are Kairo's pixel grounding model. Your only job is to find the exact click/look target in the screenshot, in pixels.\n\nThe user asked this while looking at their screen: \"{user_query}\".\n\n{screen_context}\n\nAll visible UI layers count: browser or app chrome, address bars, tabs, OS/toolbars, sidebars, dialogs, canvas content, web pages, and floating overlays. Do not ignore a control because it is outside the page content.\n\nIgnore Kairo's own assistant/notch/answer card, purple labels, cursor, and overlay chrome if visible; those are feedback overlays, not the user's target app, unless the user explicitly asks about Kairo itself.\n\nIdentify the SINGLE exact on-screen element the user should look at or click. For \"where is/show me/which tool\" questions, box the requested control itself, not a related heading, text paragraph, tooltip, or large page region. For requests to change/edit a URL, address, path, or link, choose the visible editable field that currently contains that value if present. If an OCR hint contains the current URL/domain/path text, the target is usually the enclosing editable address/input field around that text, not the web page search box. Do not choose a search field unless the user asks to search. Icon-only controls count: infer common icons from shape and toolbar context, such as rectangle/box = square outline icon, pen = pencil, arrow = arrow, text = T, hand = pan.\n\nReturn JSON only: {{\"elements\":[{{\"label\":\"1-3 word label\",\"box\":[x1,y1,x2,y2]}}]}}. Use ABSOLUTE PIXELS of this {rw}x{rh} image (origin top-left, x increases right, y increases down). Return exactly one element, or {{\"elements\":[]}} if nothing on screen is relevant. Box only that one element; do not include extra, secondary, or overlapping elements."
-    )
-}
-
 // Ask the grounding provider for the target boxes as raw JSON text. Both providers
 // receive the SAME prompt + resized JPEG and return the same {"elements":[...]}
 // shape, so the caller parses one format regardless of which provider ran.
@@ -2779,38 +2821,6 @@ fn ground_visual_targets(
     serde_json::to_string(&parsed).unwrap_or(content)
 }
 
-fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {
-    [
-        "You are Kairo Tutor, a screen-native software tutor.".to_string(),
-        "Return only JSON that matches this TypeScript shape:".to_string(),
-        "{ mode: \"idle\" | \"stuck_help\" | \"guided_lesson\", skillSlug: string, voiceText: string, screenText: string, visualTargets: VisualTarget[], expectedNextState: string }".to_string(),
-        "Never return null for string fields. Use an empty string when a string field has no value.".to_string(),
-        "Each VisualTarget is { kind, label, elementId?, screenRegion? }. kind is one of pointer, highlight_box, arrow, ghost_cursor, underline, spotlight. label is a short caption.".to_string(),
-        "Use visualTargets as Kairo-generated instructional overlays. They are not user drawing tools; they are how you show the user exactly what to look at, click, drag, type into, or inspect.".to_string(),
-        "For visible text elements, set elementId to an id from SCREEN ELEMENTS. For icon-only controls, diagrams, buttons without text, or visual objects, inspect the screenshot and return a tight screenRegion in screen pixels.".to_string(),
-        "WHERE/SHOW QUESTIONS: when the user asks where something is, show me something, or which tool/button to use, return a visible target for that exact thing. Prefer highlight_box around the control plus pointer at its click point.".to_string(),
-        "Icon-only tools still count as visible elements. Infer common tools from icon shape and nearby toolbar context: rectangle/box is usually a square outline icon, pen is a pencil, arrow is an arrow, text is T, hand is pan.".to_string(),
-        "VisualTarget semantics: pointer = exact click/tap/action point; ghost_cursor = where Kairo cursor should move; highlight_box = object/control/region to focus; arrow = direction or drag path from source to destination; underline = text/value/field row; spotlight = broad area to inspect.".to_string(),
-        "If nothing on screen is relevant to your answer, return an empty visualTargets array. Use at most three targets, and prefer the single best one.".to_string(),
-        "Ignore Kairo's own assistant/notch/answer card, purple labels, cursor, and overlay chrome if visible in the screenshot. They are Kairo feedback overlays, not target UI, unless the user explicitly asks about Kairo itself.".to_string(),
-        "Give exactly one short next step. Do not invent app state.".to_string(),
-        "Answer general user questions directly. Do not refuse just because the question is outside the selected skill pack.".to_string(),
-        "Use the selected skill pack only when it is relevant to the active app or user question. If the skill is general, answer from the screen and user request without mentioning any app-specific course.".to_string(),
-        "Do not mention a specific app, tool, or course by name unless the active app, window title, user question, or selected skill is clearly about it.".to_string(),
-        "When responding to a user question, prefer mode \"stuck_help\" or \"guided_lesson\"; reserve mode \"idle\" for no-op readiness.".to_string(),
-        "If annotations are present, use them as user-marked screen areas and inspect the screenshot to infer what those marked areas point to.".to_string(),
-        "Annotation IDs are internal coordinate references only. Never call them labels and never mention IDs like screen-annotation-1 in voiceText or screenText.".to_string(),
-        "Treat Kairo user markup, arrows, circles, and doodles as visual attention guides. Infer the intended target from arrow heads, enclosed areas, nearby labels, and stroke direction.".to_string(),
-        "Do not count, name, or describe the marks themselves unless the user explicitly asks about the drawing marks.".to_string(),
-        "If the user asks whether you see annotations, answer what the annotations appear to highlight on the screen, not just that marks exist.".to_string(),
-        "If the user asks about a marked area, answer what underlying screen content or UI element appears to be marked. If the drawing is ambiguous, say what it may be pointing to and ask a brief clarification.".to_string(),
-        "Do not invent image labels or extra annotation objects.".to_string(),
-        format!("Selected skill context, when relevant: {} ({}).", input.skill.display_name, input.skill.slug),
-        format!("Constraints: {}", input.constraints.join(" ")),
-    ]
-    .join("\n")
-}
-
 fn build_annotation_summary(input: &TutorTurnInput) -> String {
     if input.annotations.is_empty() {
         return "No user annotations.".to_string();
@@ -3249,24 +3259,8 @@ struct GateInput {
     active_app: Option<String>,
     #[serde(default)]
     window_title: Option<String>,
-}
-
-// The "do I need to look?" gate. A cheap TEXT-ONLY first pass (no screenshot): the
-// model either answers directly, or flags that it must see the screen and returns a
-// short spoken filler. Only when it flags does the (expensive) vision turn run. The
-// model alone decides — no keyword rules.
-fn gate_system_prompt() -> String {
-    [
-        "You are Kairo, a friendly screen-native voice tutor. The user just spoke to you and you have NOT looked at their screen yet.",
-        "Decide whether answering well genuinely REQUIRES looking at the screen.",
-        "needsScreen=false (answer directly, blind): greetings, small talk, opinions, general knowledge, concepts, definitions, how-tos — anything you can answer well WITHOUT seeing specific on-screen content. Put the COMPLETE spoken answer in voiceText.",
-        "needsScreen=true (must look): the question is about specific on-screen content — where something is, what a particular element is, reading/finding/clicking something visible, or anything you cannot answer confidently without seeing the pixels. Put a short, natural spoken filler in voiceText, e.g. \"Sure, let me take a look.\"",
-        "The active app and window title are only BACKGROUND CONTEXT — never a reason on their own to look. Do not look just because an app is open.",
-        "Examples: \"hey, what's up\" -> needsScreen=false. \"explain recursion\" -> needsScreen=false. \"where's the submit button\" -> needsScreen=true. \"what does this error mean\" -> needsScreen=true.",
-        "Only when you genuinely can't tell whether on-screen detail is needed, choose needsScreen=true.",
-        "voiceText is spoken aloud, so keep it natural and concise. Return ONLY JSON: { \"needsScreen\": boolean, \"voiceText\": string }.",
-    ]
-    .join("\n")
+    #[serde(default)]
+    url: Option<String>,
 }
 
 #[tauri::command]
@@ -3292,8 +3286,9 @@ async fn run_gate_turn(input: GateInput) -> Result<String, String> {
 
     let app = input.active_app.unwrap_or_else(|| "unknown".to_string());
     let title = input.window_title.unwrap_or_default();
+    let url = input.url.unwrap_or_default();
     let user_message = format!(
-        "Active app: {app}\nWindow title: {title}\nUser question (spoken): \"{}\"",
+        "Active app: {app}\nWindow title: {title}\nPage URL: {url}\nUser question (spoken): \"{}\"",
         input.user_query
     );
     let body = json!({

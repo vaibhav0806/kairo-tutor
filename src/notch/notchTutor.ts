@@ -63,6 +63,7 @@ export async function askTutorFromNotch({
         activeApp: activeApp.activeApp,
         bundleId: activeApp.bundleId,
         windowTitle: activeApp.windowTitle,
+        url: activeApp.url,
         userQuery: query,
         annotations
       },

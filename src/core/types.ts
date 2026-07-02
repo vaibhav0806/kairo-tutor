@@ -2,6 +2,8 @@ export type ActiveAppContext = {
   activeApp: string;
   bundleId?: string;
   windowTitle?: string;
+  // Active-tab URL when the frontmost app is a supported browser.
+  url?: string;
 };
 
 export type UserAnnotation = {

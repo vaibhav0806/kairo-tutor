@@ -42,7 +42,8 @@ export function buildTutorTurnInput({
     activeApp: {
       activeApp: request.activeApp,
       bundleId: request.bundleId,
-      windowTitle: request.windowTitle
+      windowTitle: request.windowTitle,
+      url: request.url
     },
     annotations: request.annotations,
     screen: screenCapture

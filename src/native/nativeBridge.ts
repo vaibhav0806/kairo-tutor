@@ -25,6 +25,8 @@ export type NativeActiveApp = {
   activeApp: string;
   bundleId?: string;
   windowTitle?: string;
+  // Active-tab URL when the frontmost app is a supported browser (native only).
+  url?: string;
   source: NativeSource;
 };
 
@@ -102,6 +104,7 @@ export type NativeGateInput = {
   userQuery: string;
   activeApp?: string;
   windowTitle?: string;
+  url?: string;
 };
 
 export type NativeBridge = {
