@@ -14,6 +14,12 @@ use tauri::{Emitter, Manager};
 // window, so a confirmed hold already has a live mic.
 pub(crate) const PTT_TAP_MAX_MS: u64 = 250;
 
+// A ⌥ or ⌃ can momentarily read released mid-hold (contact chatter, or an OS
+// flags-clear during a Space/app transition). Defer the chord-up commit by this
+// long and skip it if the chord goes back down within the window, so a blip can't
+// fire a truncated send + spurious typing — the blip is treated as a continuous hold.
+pub(crate) const RELEASE_DEBOUNCE_MS: u64 = 60;
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum PttOutcome {
     Tap,
@@ -205,9 +211,13 @@ pub(crate) fn spawn_ptt_tap(app: &tauri::AppHandle, watch: ContextWatch) {
                         }
                     });
                 } else if !both && was {
-                    // Chord UP. Invalidate any pending promote, measure duration, classify.
+                    // Chord UP — but a ⌥/⌃ can flicker mid-hold. Mark released and bump
+                    // generation NOW (so a re-down is detected and any pending promote is
+                    // invalidated), but DEFER the classify/commit by RELEASE_DEBOUNCE_MS. If
+                    // the chord goes back down within that window we treat the blip as a
+                    // continuous hold and never commit — no truncated send, no spurious typing.
                     watch.ptt_active.store(false, Ordering::SeqCst);
-                    watch.ptt_generation.fetch_add(1, Ordering::SeqCst);
+                    let release_gen = watch.ptt_generation.fetch_add(1, Ordering::SeqCst) + 1;
                     let held = watch
                         .ptt_down_at
                         .lock()
@@ -215,32 +225,50 @@ pub(crate) fn spawn_ptt_tap(app: &tauri::AppHandle, watch: ContextWatch) {
                         .and_then(|guard| *guard)
                         .map(|at| at.elapsed())
                         .unwrap_or_default();
-                    // Recording truth is now false regardless of branch.
-                    let _ = app.emit("ptt:recording", serde_json::json!({ "active": false }));
 
-                    match classify_press(held, PTT_TAP_MAX_MS) {
-                        PttOutcome::Tap => {
-                            crate::klog!(ptt, info, ms = held.as_millis(), "tap → typing");
-                            send_audio_command(&app, AudioCommand::Cancel);
-                            let app_main = app.clone();
-                            let _ = app.run_on_main_thread(move || {
-                                let notch_state = app_main.state::<NotchState>();
-                                if let Err(error) = show_notch_with_payload(
-                                    &app_main,
-                                    notch_state.inner(),
-                                    Some(typing_notch_payload()),
-                                ) {
-                                    crate::klog!(ptt, error, "failed to show typing notch: {error}");
-                                }
-                                let _ = app_main.emit("notch:focus-input", ());
-                            });
+                    let app_release = app.clone();
+                    let watch_release = watch.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(RELEASE_DEBOUNCE_MS));
+                        // A re-down within the window bumps generation + sets ptt_active, so
+                        // the release no longer stands — absorb the blip, stay recording.
+                        if watch_release.ptt_active.load(Ordering::SeqCst)
+                            || watch_release.ptt_generation.load(Ordering::SeqCst) != release_gen
+                        {
+                            crate::klog!(ptt, info, "release blip absorbed → continuous hold");
+                            return;
                         }
-                        PttOutcome::Hold => {
-                            crate::klog!(ptt, info, ms = held.as_millis(), "hold → send");
-                            send_audio_command(&app, AudioCommand::Stop);
-                            let _ = app.emit("cursor:thinking", ());
+                        // Recording truth is now false regardless of branch.
+                        let _ = app_release
+                            .emit("ptt:recording", serde_json::json!({ "active": false }));
+                        match classify_press(held, PTT_TAP_MAX_MS) {
+                            PttOutcome::Tap => {
+                                crate::klog!(ptt, info, ms = held.as_millis(), "tap → typing");
+                                send_audio_command(&app_release, AudioCommand::Cancel);
+                                let app_main = app_release.clone();
+                                let _ = app_release.run_on_main_thread(move || {
+                                    let notch_state = app_main.state::<NotchState>();
+                                    if let Err(error) = show_notch_with_payload(
+                                        &app_main,
+                                        notch_state.inner(),
+                                        Some(typing_notch_payload()),
+                                    ) {
+                                        crate::klog!(
+                                            ptt,
+                                            error,
+                                            "failed to show typing notch: {error}"
+                                        );
+                                    }
+                                    let _ = app_main.emit("notch:focus-input", ());
+                                });
+                            }
+                            PttOutcome::Hold => {
+                                crate::klog!(ptt, info, ms = held.as_millis(), "hold → send");
+                                send_audio_command(&app_release, AudioCommand::Stop);
+                                let _ = app_release.emit("cursor:thinking", ());
+                            }
                         }
-                    }
+                    });
                 }
                 CallbackResult::Keep
             },
