@@ -81,6 +81,54 @@ async fn anthropic_vision_text(
     Some(text)
 }
 
+/// Anthropic Messages call with a system prompt, one user text block, and one
+/// image. Returns the assistant's text (JSON expected via the prompt — Anthropic
+/// has no json_object mode, so callers parse defensively with `json_body`).
+pub(crate) async fn anthropic_vision_chat(
+    system: &str,
+    user_text: &str,
+    image_jpeg_base64: &str,
+    model: &str,
+    timeout: Duration,
+) -> Option<String> {
+    let api_key = provider_env_optional("ANTHROPIC_API_KEY")?;
+    if api_key.trim().is_empty() {
+        return None;
+    }
+    let base_url = provider_env("ANTHROPIC_BASE_URL", "https://api.anthropic.com");
+    let body = json!({
+        "model": model,
+        "max_tokens": 900,
+        "system": system,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": user_text },
+                { "type": "image", "source": {
+                    "type": "base64", "media_type": "image/jpeg", "data": image_jpeg_base64
+                }}
+            ]
+        }]
+    });
+    let response = shared_http_client()
+        .post(format!("{}/v1/messages", base_url.trim_end_matches('/')))
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .timeout(timeout)
+        .json(&body)
+        .send()
+        .await
+        .ok()?;
+    let payload = response.json::<Value>().await.ok()?;
+    payload
+        .get("content")
+        .and_then(Value::as_array)
+        .and_then(|blocks| blocks.first())
+        .and_then(|block| block.get("text"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
 // Any OpenAI-compatible chat/completions vision endpoint (OpenRouter, Alibaba
 // DashScope, etc.). The caller resolves base_url/key/model per provider; here we
 // just POST the image + prompt and return the model's raw text. Used for the
