@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import type { ScreenRegion } from '../core/types';
 import type { DisplayBounds } from '../overlay/coordinates';
 import { createNativeBridge } from '../native/nativeBridge';
@@ -79,6 +79,11 @@ export function CursorApp() {
   useEffect(() => {
     document.documentElement.classList.add('cursor-document');
     document.body.classList.add('cursor-document');
+    // Tell the native side the cursor webview has mounted with its transparent
+    // background applied, so it can reveal the full-screen panel without flashing the
+    // screen white. Emitted directly (NOT via rAF) — a hidden window throttles rAF, so
+    // rAF wouldn't fire until shown; mount already means the DOM + CSS are in place.
+    void emit('cursor:ready', {});
     return () => {
       document.documentElement.classList.remove('cursor-document');
       document.body.classList.remove('cursor-document');

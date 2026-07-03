@@ -44,39 +44,11 @@ pub(crate) fn frontmost_window_title() -> Option<String> {
     )
 }
 
-// Best-effort active-tab URL for known browsers via AppleScript. Needs macOS
-// Automation permission (prompts once per browser); returns None if denied or the
-// app is unknown, so callers fall back to the window title. Firefox exposes no
-// scripting access to tab URLs, so it's intentionally absent.
-#[cfg(target_os = "macos")]
-pub(crate) fn frontmost_browser_url(bundle_id: Option<&str>) -> Option<String> {
-    let script = match bundle_id? {
-        "com.google.Chrome" | "com.google.Chrome.canary" => {
-            r#"tell application "Google Chrome" to get URL of active tab of front window"#
-        }
-        "com.brave.Browser" => {
-            r#"tell application "Brave Browser" to get URL of active tab of front window"#
-        }
-        "com.microsoft.edgemac" => {
-            r#"tell application "Microsoft Edge" to get URL of active tab of front window"#
-        }
-        "com.operasoftware.Opera" => {
-            r#"tell application "Opera" to get URL of active tab of front window"#
-        }
-        "com.vivaldi.Vivaldi" => {
-            r#"tell application "Vivaldi" to get URL of active tab of front window"#
-        }
-        "company.thebrowser.Browser" => {
-            r#"tell application "Arc" to get URL of active tab of front window"#
-        }
-        "com.apple.Safari" => r#"tell application "Safari" to get URL of front document"#,
-        _ => return None,
-    };
-    run_osascript(script)
-        .map(|url| url.trim().to_string())
-        .filter(|url| !url.is_empty())
-}
-#[cfg(not(target_os = "macos"))]
+// Disabled by product decision: reading a browser's active-tab URL requires
+// AppleScript automation, which triggers a "Kairo wants to control <Browser>"
+// permission prompt on first use. That prompt is off-putting for new users, so we
+// never read the URL and rely on the window title for context instead. Kept as a
+// stub (always None) so the ActiveApp plumbing still compiles.
 pub(crate) fn frontmost_browser_url(_bundle_id: Option<&str>) -> Option<String> {
     None
 }
