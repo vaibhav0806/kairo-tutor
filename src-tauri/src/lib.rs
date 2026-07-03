@@ -173,6 +173,9 @@ enum AudioCommand {
     // Carries the chord-down instant so we can log time-to-record-start.
     Start(Instant),
     Stop,
+    // Stop + discard: drop the stream and clear the buffer WITHOUT encoding or
+    // emitting `ptt:audio`. Used when a ⌥⌃ press turns out to be a tap (→ typing).
+    Cancel,
 }
 
 #[derive(Default)]

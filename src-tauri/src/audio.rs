@@ -270,6 +270,17 @@ pub(crate) fn spawn_audio_capture(
                         );
                     }
                 }
+                AudioCommand::Cancel => {
+                    capturing_worker.store(false, Ordering::SeqCst);
+                    level_worker.store(0, Ordering::SeqCst);
+                    // Drop the stream (closes the device / turns the mic indicator off) and
+                    // throw the buffer away — no WAV, no `ptt:audio`, so no transcription runs.
+                    current.take();
+                    if let Ok(mut buf) = samples.lock() {
+                        buf.clear();
+                    }
+                    crate::klog!(ptt, info, "capture cancelled (tap → typing)");
+                }
             }
         }
     });
