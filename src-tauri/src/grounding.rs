@@ -772,3 +772,106 @@ pub(crate) fn ground_visual_targets(
     }
     serde_json::to_string(&parsed).unwrap_or(content)
 }
+
+// Pure: parse the tutor JSON and return (label, [nx1,ny1,nx2,ny2]) for the FIRST
+// target carrying a valid normalized box. Kept separate from image sampling so it
+// is unit-testable without a screenshot.
+pub(crate) fn boxes_from_content_norm(content: &str) -> Vec<(String, [f64; 4])> {
+    let Ok(parsed) = serde_json::from_str::<Value>(json_body(content)) else {
+        return Vec::new();
+    };
+    let Some(targets) = parsed.get("visualTargets").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    for target in targets {
+        let Some(arr) = target.get("box").and_then(Value::as_array) else {
+            continue;
+        };
+        if arr.len() != 4 {
+            continue;
+        }
+        let v: Vec<f64> = arr.iter().filter_map(Value::as_f64).collect();
+        if v.len() != 4 {
+            continue;
+        }
+        let [x1, y1, x2, y2] = [v[0], v[1], v[2], v[3]];
+        let in_range = [x1, y1, x2, y2].iter().all(|c| (0.0..=1.0).contains(c));
+        if !in_range || x2 <= x1 || y2 <= y1 {
+            continue;
+        }
+        let label = target
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("target")
+            .to_string();
+        return vec![(label, [x1, y1, x2, y2])];
+    }
+    Vec::new()
+}
+
+// Build a DetectedBox from the tutor's normalized box, sampling the accent colour
+// from the screenshot so the highlight pops (mirrors detect_element_boxes).
+pub(crate) fn boxes_from_content(content: &str, image_base64: &str) -> Vec<DetectedBox> {
+    let norm = boxes_from_content_norm(content);
+    let Some((label, [nx1, ny1, nx2, ny2])) = norm.into_iter().next() else {
+        return Vec::new();
+    };
+    // Default accent if the image can't be decoded; sampled below when it can.
+    let mut color = vibrant_accent(90.0, 90.0, 90.0);
+    use base64::Engine;
+    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(image_base64) {
+        if let Ok(image) = image::load_from_memory(&bytes) {
+            let rgb = image.to_rgb8();
+            let (w, h) = (rgb.width() as f64, rgb.height() as f64);
+            let (ar, ag, ab) = sample_background(
+                &rgb,
+                (nx1 * w) as u32,
+                (ny1 * h) as u32,
+                (nx2 * w) as u32,
+                (ny2 * h) as u32,
+            );
+            color = vibrant_accent(ar, ag, ab);
+        }
+    }
+    crate::klog!(grounding, debug, label = %label, norm = %format!("[{nx1:.4},{ny1:.4},{nx2:.4},{ny2:.4}]"), "box from tutor content");
+    vec![DetectedBox {
+        norm_x1: nx1,
+        norm_y1: ny1,
+        norm_x2: nx2,
+        norm_y2: ny2,
+        label,
+        color,
+    }]
+}
+
+#[cfg(test)]
+mod content_box_tests {
+    use super::boxes_from_content_norm;
+
+    #[test]
+    fn extracts_first_target_with_a_normalized_box() {
+        let content = r#"{
+          "voiceText": "Click New — I've highlighted it.",
+          "visualTargets": [
+            { "kind": "pointer", "label": "New repo", "box": [0.10, 0.20, 0.30, 0.28] },
+            { "kind": "highlight_box", "label": "Sidebar", "elementId": "screen-3" }
+          ]
+        }"#;
+        let boxes = boxes_from_content_norm(content);
+        assert_eq!(boxes.len(), 1);
+        assert_eq!(boxes[0].0, "New repo");
+        assert_eq!(boxes[0].1, [0.10, 0.20, 0.30, 0.28]);
+    }
+
+    #[test]
+    fn returns_empty_when_no_target_has_a_box() {
+        let content = r#"{ "visualTargets": [ { "kind": "underline", "elementId": "screen-1" } ] }"#;
+        assert!(boxes_from_content_norm(content).is_empty());
+    }
+
+    #[test]
+    fn ignores_out_of_range_or_inverted_boxes() {
+        let content = r#"{ "visualTargets": [ { "label": "x", "box": [0.9, 0.2, 0.1, 0.4] } ] }"#;
+        assert!(boxes_from_content_norm(content).is_empty());
+    }
+}
