@@ -299,3 +299,8 @@ codesign -d --entitlements :- "src-tauri/target/release/bundle/macos/Kairo Tutor
 ```
 
 - Verification used for this capability: `npm test -- --run`, `npm run build`, `cargo check`, `cargo test`, `npm exec tauri info`, `npm run tauri:build`, and `git diff --check`.
+
+One command to kill kairo app, rebuild and relaunch:
+```
+osascript -e 'tell application "Kairo Tutor" to quit'; npm run tauri:build -- --bundles app && open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
+```

@@ -166,3 +166,19 @@ npm run smoke:providers                  # when touching providers
   `codesign -d --entitlements :- "…/Kairo Tutor.app"`.
 - Follow existing module boundaries. Don't do unrelated refactors in a feature change.
 - Add tests in `tests/` (node env — no DOM libs; guard `window` usage).
+
+### Random Rules and Stuff:
+
+- When i say i wanna discuss, never make code changes. analyze the issue/spec that we wanna address, and then lets discuss things in detail. 
+- Always explain things in a simple manner please, never complicate things. there is no need to complicate anything, we aren't working on rocket science here.
+
+Command to kill kairo app, rebuild and relaunch:
+```
+osascript -e 'tell application "Kairo Tutor" to quit'; npm run tauri:build -- --bundles app && open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
+```
+Use the above after every single change that requires it please, don't wait for the user to tell u to do this.
+Notes:
+- .env changes (provider keys, KAIRO_*) → no rebuild needed, just relaunch (env read at launch).
+- Rust or frontend code changes → rebuild (command 1).
+- First build after a cargo change is slow (~minutes); later ones are faster.
+- Watch logs: tail -F ~/Library/Logs/Kairo/kairo-latest.log
