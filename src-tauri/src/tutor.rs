@@ -246,7 +246,7 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
                 .image_mime_type
                 .as_deref()
                 .unwrap_or("image/jpeg");
-            crate::klog!(tutor, info, model = %tutor_model, media_type = media_type, "single-call vision turn (answer + box)");
+            crate::klog!(tutor, info, model = %tutor_model, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
             match anthropic_vision_chat(
                 &system_prompt,
                 &user_text,
@@ -261,6 +261,16 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
                     // Sanitize once so the frontend always gets a clean JSON object,
                     // even if Opus wrapped it in prose/fences (no json_object mode).
                     let content = clean_model_json(&raw);
+                    // Diagnostic: the exact spoken answer, paired with the question
+                    // logged above. Text shown only under KAIRO_LOG_TRANSCRIPTS.
+                    if let Some(voice) = serde_json::from_str::<Value>(&content)
+                        .ok()
+                        .as_ref()
+                        .and_then(|value| value.get("voiceText"))
+                        .and_then(Value::as_str)
+                    {
+                        crate::klog!(tutor, info, answer = %crate::klog::transcript_field(voice), "single-call answer");
+                    }
                     let detected = boxes_from_content(&content, image_base64);
                     return Ok(if detected.is_empty() {
                         // No explicit box (e.g. text-only target) — ground the model's
@@ -367,6 +377,16 @@ pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
     let user_message = format!(
         "Active app: {app}\nWindow title: {title}\nPage URL: {url}\nUser question (spoken): \"{}\"",
         input.user_query
+    );
+    // Diagnostic: pair the exact question the gate saw with its answer (the "gate
+    // result" line below). Text shown only under KAIRO_LOG_TRANSCRIPTS.
+    crate::klog!(
+        gate,
+        info,
+        model = %model,
+        app = %app,
+        question = %crate::klog::transcript_field(&input.user_query),
+        "gate turn"
     );
     let body = json!({
         "model": model,

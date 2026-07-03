@@ -566,6 +566,10 @@ export function NotchApp() {
         return;
       }
 
+      // Diagnostic: which input started this turn (pairs with the native STT
+      // transcript + gate question/answer lines in the same log file).
+      klog('notch', 'info', 'ask submit', { source, query_len: trimmedQuery.length });
+
       const thinkingPayload = activationStateToNotchPayload('thinking');
       stopAnswerPlayback();
       // A new turn supersedes the last answer: mark it unsettled (blocks auto-close)
@@ -594,6 +598,16 @@ export function NotchApp() {
             ? await runGate(trimmedQuery)
             : { needsScreen: true, voiceText: '' };
         const needsScreen = source === 'typed' || annotations.length > 0 || gate.needsScreen;
+
+        // Diagnostic: which route this turn took and whether the gate actually ran,
+        // so an "unrelated answer" can be traced to the gate vs the vision turn.
+        klog('notch', 'info', 'gate decision', {
+          source,
+          gate_ran: source === 'voice' && annotations.length === 0,
+          needs_screen: needsScreen,
+          path: needsScreen ? 'vision' : 'direct',
+          answer_len: gate.voiceText.trim().length
+        });
 
         if (!needsScreen && gate.voiceText.trim().length > 0) {
           // Direct answer — no screenshot, no grounding, no vision cost.
