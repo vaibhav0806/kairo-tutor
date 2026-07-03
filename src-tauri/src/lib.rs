@@ -6,7 +6,7 @@ use std::{
     },
     time::Instant,
 };
-use tauri::{Emitter, Listener, LogicalSize, Manager, State};
+use tauri::{Emitter, LogicalSize, Manager, State};
 use tauri_nspanel::{tauri_panel, PanelHandle};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
@@ -383,16 +383,6 @@ fn log_window_startup(window: &tauri::WebviewWindow) {
     klog!(app, info, visible = visible, position = %position, size = %size, "startup: main window found");
 }
 
-// Reveal the companion cursor panel on the main thread. Idempotent: safe to call
-// from both the `cursor:ready` listener and the fallback timer.
-fn reveal_cursor_panel(app: &tauri::AppHandle) {
-    if let Ok(panel) = ensure_cursor_panel(app) {
-        let _ = app.run_on_main_thread(move || {
-            panel.show();
-        });
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // First thing: stand up the universal logger so every subsystem below logs
@@ -463,23 +453,12 @@ pub fn run() {
             if let Err(error) = ensure_overlay_panel(app.handle()) {
                 klog!(app, error, "failed to pre-create overlay panel: {error}");
             }
-            // Companion cursor: create it, then reveal it only AFTER its webview has
-            // painted (it emits `cursor:ready`). The cursor window spans the whole
-            // display, so showing it before the transparent webview loads flashes the
-            // entire screen white for ~1-2s. A fallback timer reveals it if the event
-            // is ever missed; both paths call show(), which is idempotent.
+            // Companion cursor: create it, show it always, and start tracking the
+            // real mouse so it shadows the cursor from launch.
             match ensure_cursor_panel(app.handle()) {
-                Ok(_) => {
+                Ok(panel) => {
+                    panel.show();
                     spawn_mouse_tracker(app.handle());
-                    let ready_handle = app.handle().clone();
-                    app.listen_any("cursor:ready", move |_| {
-                        reveal_cursor_panel(&ready_handle);
-                    });
-                    let fallback_handle = app.handle().clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(3000));
-                        reveal_cursor_panel(&fallback_handle);
-                    });
                 }
                 Err(error) => {
                     klog!(app, error, "failed to pre-create cursor panel: {error}");
