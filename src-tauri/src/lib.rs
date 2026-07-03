@@ -65,6 +65,8 @@ use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt_tap};
 // push-to-talk chord) so holding it never starts a recording.
 const KAIRO_PEN_SHORTCUT: &str = "Alt+Shift+P";
 const DEFAULT_OPENROUTER_VISION_MODEL: &str = "google/gemini-2.5-flash";
+// Direct-Anthropic model for the single-call vision tutor turn (answer + box).
+pub(crate) const DEFAULT_TUTOR_VISION_MODEL: &str = "claude-opus-4-8";
 
 // Non-activating NSPanel for the notch. A non-activating panel can receive
 // input without activating the app, so showing it does not pull the user out

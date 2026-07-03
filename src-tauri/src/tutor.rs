@@ -3,11 +3,14 @@
 //! gate. Also owns the shared pooled HTTP client.
 
 use crate::env::{provider_env, provider_env_optional, provider_timeout_ms};
-use crate::grounding::{apply_box_targets, detect_element_boxes, ground_visual_targets};
+use crate::grounding::{
+    anthropic_vision_chat, apply_box_targets, boxes_from_content, detect_element_boxes,
+    ground_visual_targets,
+};
 use crate::ocr::{build_screen_elements_block, ocr_tutor_screenshot};
 use crate::prompts::{build_tutor_system_prompt, gate_system_prompt};
 use crate::types::{GateInput, OcrElement, TutorTurnInput};
-use crate::DEFAULT_OPENROUTER_VISION_MODEL;
+use crate::{DEFAULT_OPENROUTER_VISION_MODEL, DEFAULT_TUTOR_VISION_MODEL};
 use serde_json::{json, Value};
 use std::time::Duration;
 
@@ -215,27 +218,60 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
     let client = shared_http_client();
     let site_url_ref = site_url.as_deref();
 
-    // The verbal answer and the Computer Use pointing are independent, so run them
-    // together — the (slower) pointing call then adds no wall-clock to the turn.
+    let separate_grounding = provider_env("KAIRO_SEPARATE_GROUNDING", "false")
+        .trim()
+        .eq_ignore_ascii_case("true");
+    let has_vision = input.screen.captured && input.screen.image_base64.is_some();
+
+    // DEFAULT: one Opus vision call returns the answer AND the primary target box.
+    if has_vision && !separate_grounding {
+        let (Some(image_base64), Some(bounds)) =
+            (&input.screen.image_base64, &input.screen.display_bounds)
+        else {
+            return Err("vision turn missing screenshot or display bounds".to_string());
+        };
+        let tutor_model = provider_env("ANTHROPIC_VISION_MODEL", DEFAULT_TUTOR_VISION_MODEL);
+        let system_prompt = build_tutor_system_prompt(&input);
+        let user_prompt = build_tutor_user_prompt(&input)?;
+        let elements_block = build_screen_elements_block(&ocr_elements);
+        let user_text = if elements_block.is_empty() {
+            user_prompt
+        } else {
+            format!("{user_prompt}\n\n{elements_block}")
+        };
+        crate::klog!(tutor, info, model = %tutor_model, "single-call vision turn (answer + box)");
+        let Some(content) = anthropic_vision_chat(
+            &system_prompt,
+            &user_text,
+            image_base64,
+            &tutor_model,
+            timeout,
+        )
+        .await
+        else {
+            return Err("Opus vision turn returned no content (check ANTHROPIC_API_KEY).".to_string());
+        };
+
+        let detected = boxes_from_content(&content, image_base64);
+        return Ok(if detected.is_empty() {
+            // No explicit box (e.g. text-only target) — ground the model's own
+            // elementId/screenRegion targets via OCR.
+            ground_visual_targets(content, &ocr_elements, Some(bounds))
+        } else {
+            apply_box_targets(content, &detected, bounds)
+        });
+    }
+
+    // LEGACY (KAIRO_SEPARATE_GROUNDING=true, or a text-only turn): the OpenRouter
+    // answer call, plus — for vision — the separate grounding call in parallel.
     let answer_future = async {
         let request_body = {
             let (request_model, include_screenshot) =
                 select_openrouter_request_model(&input, &model, &vision_model);
-            build_openrouter_request_body(
-                &input,
-                &request_model,
-                include_screenshot,
-                &ocr_elements,
-            )?
+            build_openrouter_request_body(&input, &request_model, include_screenshot, &ocr_elements)?
         };
         let first = send_openrouter_chat_request(
-            client,
-            &endpoint,
-            &api_key,
-            &app_title,
-            site_url_ref,
-            timeout,
-            request_body,
+            client, &endpoint, &api_key, &app_title, site_url_ref, timeout, request_body,
         )
         .await;
         match first {
@@ -245,19 +281,9 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
                     && input.screen.captured
                     && input.screen.image_base64.is_some() =>
             {
-                crate::klog!(
-                    tutor,
-                    warn,
-                    "screenshot request failed; retrying text-only: {}",
-                    error.message
-                );
+                crate::klog!(tutor, warn, "screenshot request failed; retrying text-only: {}", error.message);
                 send_openrouter_chat_request(
-                    client,
-                    &endpoint,
-                    &api_key,
-                    &app_title,
-                    site_url_ref,
-                    timeout,
+                    client, &endpoint, &api_key, &app_title, site_url_ref, timeout,
                     build_openrouter_request_body(&input, &model, false, &[])?,
                 )
                 .await
@@ -271,9 +297,8 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
             Err(error) => Err(error.message),
         }
     };
-
     let boxes_future = async {
-        if !input.screen.captured {
+        if !has_vision || !separate_grounding {
             return Vec::new();
         }
         let (Some(image_base64), Some(bounds)) =
@@ -283,24 +308,11 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
         };
         detect_element_boxes(image_base64, bounds, &input.user_query, &ocr_elements).await
     };
-
     let (answer_result, detected_boxes) = tokio::join!(answer_future, boxes_future);
     let content = answer_result?;
-
-    // Prefer Claude vision boxes — they ground any element (icons/non-text/any
-    // app) and give drawable labeled rectangles. Fall back to OCR Set-of-Mark
-    // when none were found (e.g. no ANTHROPIC_API_KEY, or a purely conceptual
-    // question with nothing on screen to box).
-    match (
-        detected_boxes.is_empty(),
-        input.screen.display_bounds.as_ref(),
-    ) {
+    match (detected_boxes.is_empty(), input.screen.display_bounds.as_ref()) {
         (false, Some(bounds)) => Ok(apply_box_targets(content, &detected_boxes, bounds)),
-        _ => Ok(ground_visual_targets(
-            content,
-            &ocr_elements,
-            input.screen.display_bounds.as_ref(),
-        )),
+        _ => Ok(ground_visual_targets(content, &ocr_elements, input.screen.display_bounds.as_ref())),
     }
 }
 
