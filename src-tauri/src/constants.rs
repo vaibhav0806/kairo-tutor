@@ -22,8 +22,9 @@ pub(crate) const TTS_PROVIDER: &str = "sarvam";
 pub(crate) const GROUNDING_PROVIDER: &str = "anthropic"; // anthropic | openrouter | qwen
 
 // ---------------------------------------------------------------- OpenRouter
-// Drives the gate (every ask) + text turns. Keep this a FAST model.
-pub(crate) const OPENROUTER_MODEL: &str = "qwen/qwen3.6-flash";
+// Drives the gate (every ask) + text turns. Keep this a FAST model — Flash Lite
+// has thinking off by default, so the gate answers in ~1-2s instead of qwen's ~10s.
+pub(crate) const OPENROUTER_MODEL: &str = "google/gemini-2.5-flash-lite";
 pub(crate) const OPENROUTER_VISION_MODEL: &str = "google/gemini-2.5-flash"; // legacy 2-call path
 pub(crate) const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 pub(crate) const OPENROUTER_SITE_URL: &str = "https://kairo.tutor";
@@ -43,7 +44,10 @@ pub(crate) const QWEN_BASE_URL: &str = "https://dashscope-intl.aliyuncs.com/comp
 pub(crate) const SARVAM_BASE_URL: &str = "https://api.sarvam.ai";
 pub(crate) const SARVAM_STT_MODEL: &str = "saaras:v3";
 pub(crate) const SARVAM_STT_MODE: &str = "transcribe";
-pub(crate) const SARVAM_STT_LANGUAGE_CODE: &str = "en-IN";
+// "unknown" = auto-detect across all 23 languages (22 Indian + English). saaras:v3
+// then returns the detected language_code + a confidence in the response. Forcing a
+// single language (e.g. en-IN) is what garbled accented/mixed English.
+pub(crate) const SARVAM_STT_LANGUAGE_CODE: &str = "unknown";
 pub(crate) const SARVAM_TTS_MODEL: &str = "bulbul:v3";
 pub(crate) const SARVAM_TTS_LANGUAGE_CODE: &str = "en-IN";
 pub(crate) const SARVAM_TTS_SPEAKER: &str = "shubh";

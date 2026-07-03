@@ -208,7 +208,22 @@ pub(crate) async fn transcribe_audio(
             .ok_or_else(|| "Sarvam STT response did not include transcript text.".to_string())?
             .to_string();
 
-        crate::klog!(stt, info, provider = %provider, transcript = %crate::klog::transcript_field(&text), "transcribed");
+        // With language_code="unknown", saaras returns the detected language + a
+        // confidence — log both so we can see WHAT it heard (and catch mis-detects).
+        let detected_lang = value.get("language_code").and_then(Value::as_str).unwrap_or("?");
+        let lang_prob = value
+            .get("language_probability")
+            .and_then(Value::as_f64)
+            .unwrap_or(-1.0);
+        crate::klog!(
+            stt,
+            info,
+            provider = %provider,
+            detected_lang = detected_lang,
+            lang_prob = lang_prob,
+            transcript = %crate::klog::transcript_field(&text),
+            "transcribed"
+        );
         return Ok(TranscriptionResult { text, provider });
     }
 
