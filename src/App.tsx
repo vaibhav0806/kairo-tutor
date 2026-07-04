@@ -26,8 +26,7 @@ import {
   type NativeActiveApp,
   type NativePermissionState,
   type NativePermissionStatus,
-  type NativeScreenCapture,
-  type NativeShortcutRegistration
+  type NativeScreenCapture
 } from './native/nativeBridge';
 import { normalizeRegionToPercent } from './overlay/coordinates';
 import { VisualOverlay } from './overlay/VisualOverlay';
@@ -199,11 +198,6 @@ export function App() {
   const [draftPenPoints, setDraftPenPoints] = useState<AnnotationPoint[] | null>(null);
   const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
   const annotationSequence = useRef(0);
-  const [activationShortcut, setActivationShortcut] = useState<NativeShortcutRegistration>({
-    registered: true,
-    shortcut: 'CommandOrControl+Shift+Space',
-    reason: 'Registered by native app shell.'
-  });
   const [response, setResponse] = useState<TutorResponse>(() =>
     planner.createIdleResponse(env.defaultSkill)
   );
@@ -382,24 +376,6 @@ export function App() {
     setPermissions(await nativeBridge.getPermissionStatus());
   }, [nativeBridge]);
 
-  const handleActivationShortcut = useCallback(() => {
-    setIsOverlayActive(false);
-    void nativeBridge.hideOverlay();
-    // Show the ready state immediately so voice can start. The screenshot is
-    // captured by the notch at voice-start (no double-capture here); only refresh
-    // active-app + permission context in the background.
-    showActivationState(reduceActivationState('listening', { type: 'capture_complete' }));
-
-    void Promise.all([nativeBridge.getActiveApp(), nativeBridge.getPermissionStatus()])
-      .then(([nextActiveApp, nextPermissions]) => {
-        setActiveApp(nextActiveApp);
-        setPermissions(nextPermissions);
-      })
-      .catch(() => {
-        // Background refresh is best-effort.
-      });
-  }, [nativeBridge, showActivationState]);
-
   async function captureNativeScreen() {
     setScreenCapture(await nativeBridge.captureScreen());
   }
@@ -421,42 +397,8 @@ export function App() {
   }
 
   useEffect(() => {
-    let isMounted = true;
-    let unlisten: (() => void) | undefined;
-
     void refreshNativeContext();
-
-    void listen('activation:shortcut', () => {
-      void handleActivationShortcut();
-    })
-      .then((nextUnlisten) => {
-        unlisten = nextUnlisten;
-        if (isMounted) {
-          setActivationShortcut({
-            registered: true,
-            shortcut: 'CommandOrControl+Shift+Space',
-            reason: 'Registered by native app shell.'
-          });
-        }
-      })
-      .catch((error) => {
-        if (isMounted) {
-          setActivationShortcut({
-            registered: false,
-            shortcut: 'CommandOrControl+Shift+Space',
-            reason:
-              error instanceof Error
-                ? error.message
-                : 'Native activation listener is unavailable in this environment.'
-          });
-        }
-      });
-
-    return () => {
-      isMounted = false;
-      unlisten?.();
-    };
-  }, [handleActivationShortcut, refreshNativeContext]);
+  }, [refreshNativeContext]);
 
   useEffect(() => {
     let isMounted = true;
@@ -651,8 +593,7 @@ export function App() {
         <aside className="panel">
           <h2>Activation</h2>
           <p>State: {activationState}</p>
-          <p>Shortcut target: {activationShortcut.shortcut}</p>
-          <p>Status: {activationShortcut.registered ? 'registered' : activationShortcut.reason}</p>
+          <p>Shortcuts: ⌥⌃ hold to talk / tap to type · ⌥⇧P pen</p>
           <p>Default skill: {env.defaultSkill}</p>
           <p>Voice: {env.sttProvider === 'sarvam' || env.ttsProvider === 'sarvam' ? 'Sarvam' : 'Mock'}</p>
           <p>Active app: {activeApp.activeApp}</p>

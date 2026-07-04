@@ -21,12 +21,23 @@ app stays visually quiet until the user activates voice or on-screen guidance.
 `.app` — that is the environment users get and the one where native permissions,
 panels, and logging behave correctly.
 
-```bash
-# Build the macOS app bundle
-npm run tauri:build -- --bundles app
+**One command does it all** — quit the running app, rebuild, sign, verify the
+signature, and relaunch:
 
-# Launch it
-open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
+```bash
+npm run app             # quit → build+sign → verify signature → launch
+npm run app -- --check  # same, but run typecheck + tests + cargo check first
+```
+
+Signing is automatic (`tauri.conf.json` → `bundle.macOS.signingIdentity =
+"Kairo Tutor Local Dev"`); `npm run app` additionally verifies the signature so a
+broken sign fails loudly, not at launch. It wraps (see `scripts/rebuild-run.sh`):
+
+```bash
+osascript -e 'quit app "Kairo Tutor"'                        # quit old instance
+npm run tauri:build -- --bundles app                         # build + sign
+codesign --verify --deep --strict "…/Kairo Tutor.app"        # verify sign
+open "src-tauri/target/release/bundle/macos/Kairo Tutor.app" # launch
 ```
 
 - App identifier: `com.kairo.tutor`. Product name: `Kairo Tutor`. Dev Vite port: `5273`.
@@ -94,15 +105,35 @@ scripts/smoke-providers.mjs  provider smoke test
 
 Subsystems worth knowing: notch = **non-activating** NSPanel; the annotation overlay
 must be a **can-become-key** NSPanel (a borderless window drops clicks); the companion
-cursor lives in its own click-through panel. Shortcuts: PTT = ⌥⌃ (hold), pen = ⌥⇧P,
-notch/typing = ⌘⇧Space.
+cursor lives in its own click-through panel. Shortcuts: ⌥⌃ = **hold to talk / tap to
+type** (one universal key, driven by a single-owner PTT state-machine controller in
+`input.rs`), pen = ⌥⇧P. (⌘⇧Space was removed — typing is a quick ⌥⌃ tap.)
 
 ## Providers & env
 
-Provider selection is runtime env (`KAIRO_AI_PROVIDER`, `KAIRO_STT_PROVIDER`,
-`KAIRO_TTS_PROVIDER`, `KAIRO_GROUNDING_PROVIDER`) with per-provider keys/models in
-`.env` (see `.env.example`). Grounding is swappable: `anthropic` (Opus, default),
-`openrouter` (Qwen, cheaper), or `qwen` (direct DashScope). No Sonnet for grounding.
+Provider selection defaults live in `src-tauri/src/constants.rs` (`AI_PROVIDER`,
+`STT_PROVIDER`, `TTS_PROVIDER`, `GROUNDING_PROVIDER`); the same-named env vars still
+override at runtime but you never need to set them. Grounding is swappable:
+`anthropic` (Opus, default), `openrouter` (Qwen, cheaper), or `qwen` (direct
+DashScope). No Sonnet for grounding.
+
+## Configuration
+
+Non-secret config is centralized — **`.env` holds ONLY API keys.**
+
+- **Native** config lives in `src-tauri/src/constants.rs` (committed, shared):
+  providers, models, base URLs, timeouts, tuning, toggles, logging flags. Edit that
+  file, not env. To change a model or timeout, edit `constants.rs` and rebuild.
+- **Frontend** config lives in the zod defaults in `src/config/env.ts`. Keep the two
+  in sync for values used by both (provider selection, model names).
+- **`.env`** (per-person, git-ignored) holds ONLY the API keys: `OPENROUTER_API_KEY`,
+  `ANTHROPIC_API_KEY`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY`, `DASHSCOPE_API_KEY`
+  (see `.env.example`). A fresh clone runs with just these five keys — no other env
+  vars needed.
+- The model/URL/provider constants stay env-overridable at runtime (default = the
+  constant); timeouts, toggles, and logging flags are read directly from the constant.
+- Transcript + answer logging is **always on** (`constants::LOG_TRANSCRIPTS = true`) —
+  no env var. Set it to `false` in `constants.rs` to log lengths only.
 
 ## Logging is MANDATORY
 
@@ -166,3 +197,19 @@ npm run smoke:providers                  # when touching providers
   `codesign -d --entitlements :- "…/Kairo Tutor.app"`.
 - Follow existing module boundaries. Don't do unrelated refactors in a feature change.
 - Add tests in `tests/` (node env — no DOM libs; guard `window` usage).
+
+### Random Rules and Stuff:
+
+- When i say i wanna discuss, never make code changes. analyze the issue/spec that we wanna address, and then lets discuss things in detail. 
+- Always explain things in a simple manner please, never complicate things. there is no need to complicate anything, we aren't working on rocket science here.
+
+Command to kill kairo app, rebuild and relaunch:
+```
+osascript -e 'tell application "Kairo Tutor" to quit'; npm run tauri:build -- --bundles app && open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
+```
+Use the above after every single change that requires it please, don't wait for the user to tell u to do this.
+Notes:
+- .env changes (provider keys, KAIRO_*) → no rebuild needed, just relaunch (env read at launch).
+- Rust or frontend code changes → rebuild (command 1).
+- First build after a cargo change is slow (~minutes); later ones are faster.
+- Watch logs: tail -F ~/Library/Logs/Kairo/kairo-latest.log

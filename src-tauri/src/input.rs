@@ -2,12 +2,29 @@
 //! stale guidance when the user moves on, and the ⌥⌃ push-to-talk tap.
 
 use crate::audio::send_audio_command;
-use crate::panels::{listening_notch_payload, show_notch_with_payload};
+use crate::constants;
+use crate::panels::{listening_notch_payload, show_notch_with_payload, typing_notch_payload};
 use crate::platform::{frontmost_bundle_id, frontmost_window_title};
 use crate::{AudioCommand, ContextWatch, NotchState};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
+
+// Keep classify_press + PttOutcome (used by ptt_commit). Threshold now from constants.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PttOutcome {
+    Tap,
+    Hold,
+}
+
+pub(crate) fn classify_press(held: Duration, tap_max_ms: u64) -> PttOutcome {
+    if held < Duration::from_millis(tap_max_ms) {
+        PttOutcome::Tap
+    } else {
+        PttOutcome::Hold
+    }
+}
 
 const KAIRO_BUNDLE_ID: &str = "com.kairo.tutor";
 // Ignore activity for the first moment after arming so the reveal itself (or the
@@ -124,69 +141,279 @@ pub(crate) fn spawn_context_input_tap(app: &tauri::AppHandle, watch: ContextWatc
     });
 }
 
-// Separate listen-only tap for the ⌥⌃ push-to-talk chord (FlagsChanged). Kept apart
-// from the mouse/scroll tap on purpose: keyboard-class taps can require the separate
-// macOS "Input Monitoring" grant, so if THIS tap can't be created, PTT is simply
-// disabled while the mouse/scroll reset tap keeps working untouched.
-pub(crate) fn spawn_ptt_tap(app: &tauri::AppHandle, watch: ContextWatch) {
+// Raw chord edges forwarded from the event tap to the controller.
+enum PttEvent {
+    Down(Instant),
+    Up(Instant),
+}
+// A controller wakeup: either an edge, or a timer deadline elapsed.
+enum Wake {
+    Event(PttEvent),
+    Timeout,
+}
+
+// The PTT state machine. `promoted` = the "listening" UI has been shown (hold confirmed).
+#[derive(Debug)]
+enum PttState {
+    Idle,
+    Recording {
+        started: Instant,
+        promoted: bool,
+    },
+    Releasing {
+        started: Instant,
+        released: Instant,
+        promoted: bool,
+    },
+}
+
+// Side effect the controller must perform after a transition. Pure state logic
+// decides the action; the controller executes it. Kept separate so the transition
+// table is unit-testable without a running app/mic.
+#[derive(Debug, PartialEq)]
+enum PttAction {
+    None,
+    StartCapture,
+    Promote,
+    Commit { held: Duration },
+}
+
+// PURE transition. Exactly one StartCapture (Idle+Down) and one Commit (release
+// settle OR max-record) per logical press — a stream can never leak or double-send.
+// A re-Down while Releasing (key bounce) resumes the SAME recording (no new Start).
+fn ptt_transition(state: PttState, wake: Wake) -> (PttState, PttAction) {
+    match (state, wake) {
+        (PttState::Idle, Wake::Event(PttEvent::Down(t))) => (
+            PttState::Recording {
+                started: t,
+                promoted: false,
+            },
+            PttAction::StartCapture,
+        ),
+        (PttState::Idle, _) => (PttState::Idle, PttAction::None),
+
+        // promote at the tap/hold threshold (only if still held, not yet released)
+        (
+            PttState::Recording {
+                started,
+                promoted: false,
+            },
+            Wake::Timeout,
+        ) => (
+            PttState::Recording {
+                started,
+                promoted: true,
+            },
+            PttAction::Promote,
+        ),
+        // runaway guard: a hold longer than PTT_MAX_RECORD_MS is auto-sent
+        (
+            PttState::Recording {
+                started,
+                promoted: true,
+            },
+            Wake::Timeout,
+        ) => (
+            PttState::Idle,
+            PttAction::Commit {
+                held: started.elapsed(),
+            },
+        ),
+        (PttState::Recording { started, promoted }, Wake::Event(PttEvent::Up(t))) => (
+            PttState::Releasing {
+                started,
+                released: t,
+                promoted,
+            },
+            PttAction::None,
+        ),
+        (PttState::Recording { started, promoted }, Wake::Event(PttEvent::Down(_))) => (
+            PttState::Recording { started, promoted },
+            PttAction::None,
+        ),
+
+        // key-bounce: re-down within the settle window resumes the same recording
+        (
+            PttState::Releasing {
+                started, promoted, ..
+            },
+            Wake::Event(PttEvent::Down(_)),
+        ) => (
+            PttState::Recording { started, promoted },
+            PttAction::None,
+        ),
+        (
+            PttState::Releasing {
+                started,
+                released,
+                promoted,
+            },
+            Wake::Event(PttEvent::Up(_)),
+        ) => (
+            PttState::Releasing {
+                started,
+                released,
+                promoted,
+            },
+            PttAction::None,
+        ),
+        // settle elapsed with no re-down → commit (tap vs hold decided in ptt_commit)
+        (
+            PttState::Releasing {
+                started, released, ..
+            },
+            Wake::Timeout,
+        ) => (
+            PttState::Idle,
+            PttAction::Commit {
+                held: released.duration_since(started),
+            },
+        ),
+    }
+}
+
+fn recv_until(rx: &Receiver<PttEvent>, deadline: Instant) -> Option<Wake> {
+    match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(ev) => Some(Wake::Event(ev)),
+        Err(RecvTimeoutError::Timeout) => Some(Wake::Timeout),
+        Err(RecvTimeoutError::Disconnected) => None,
+    }
+}
+
+// Show the "listening" UI: cursor halo + notch capsule + the recording-truth event
+// (the frontend `shouldIdleClose` guard keys off this so the capsule can't auto-hide).
+fn ptt_promote(app: &tauri::AppHandle) {
+    crate::klog!(ptt, info, "hold confirmed → listening");
+    let _ = app.emit("cursor:listening", ());
+    let _ = app.emit("ptt:recording", serde_json::json!({ "active": true }));
+    let app_main = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let notch_state = app_main.state::<NotchState>();
+        if let Err(error) =
+            show_notch_with_payload(&app_main, notch_state.inner(), Some(listening_notch_payload()))
+        {
+            crate::klog!(ptt, error, "failed to show notch: {error}");
+        }
+    });
+}
+
+fn ptt_commit(app: &tauri::AppHandle, held: Duration) {
+    let _ = app.emit("ptt:recording", serde_json::json!({ "active": false }));
+    match classify_press(held, constants::PTT_TAP_MAX_MS) {
+        PttOutcome::Tap => {
+            crate::klog!(ptt, info, ms = held.as_millis(), "tap → typing");
+            send_audio_command(app, AudioCommand::Cancel);
+            let _ = app.emit("cursor:idle", ());
+            let app_main = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                let notch_state = app_main.state::<NotchState>();
+                if let Err(error) = show_notch_with_payload(
+                    &app_main,
+                    notch_state.inner(),
+                    Some(typing_notch_payload()),
+                ) {
+                    crate::klog!(ptt, error, "failed to show typing notch: {error}");
+                }
+                let _ = app_main.emit("notch:focus-input", ());
+            });
+        }
+        PttOutcome::Hold => {
+            crate::klog!(ptt, info, ms = held.as_millis(), "hold → send");
+            send_audio_command(app, AudioCommand::Stop);
+            let _ = app.emit("cursor:thinking", ());
+        }
+    }
+}
+
+// The controller thread: owns the state machine, serial + single-owner. Timers are
+// `recv_timeout` deadlines, so there are NO per-edge spawned threads and NO shared
+// atomics to race. Guarantees one Start per press + one Stop/Cancel per release.
+fn spawn_ptt_controller(app: tauri::AppHandle, rx: Receiver<PttEvent>) {
+    std::thread::spawn(move || {
+        let mut state = PttState::Idle;
+        loop {
+            let wake = match &state {
+                PttState::Idle => rx.recv().ok().map(Wake::Event),
+                PttState::Recording { started, promoted } => {
+                    let ms = if *promoted {
+                        constants::PTT_MAX_RECORD_MS
+                    } else {
+                        constants::PTT_TAP_MAX_MS
+                    };
+                    recv_until(&rx, *started + Duration::from_millis(ms))
+                }
+                PttState::Releasing { released, .. } => recv_until(
+                    &rx,
+                    *released + Duration::from_millis(constants::PTT_RELEASE_SETTLE_MS),
+                ),
+            };
+            let Some(wake) = wake else {
+                crate::klog!(ptt, warn, "PTT controller channel closed; exiting");
+                break;
+            };
+            let is_max_record = matches!(
+                (&state, &wake),
+                (
+                    PttState::Recording { promoted: true, .. },
+                    Wake::Timeout
+                )
+            );
+            let (next, action) = ptt_transition(state, wake);
+            state = next;
+            match action {
+                PttAction::None => {}
+                PttAction::StartCapture => {
+                    crate::klog!(ptt, info, "⌥⌃ down");
+                    send_audio_command(&app, AudioCommand::Start(Instant::now()));
+                }
+                PttAction::Promote => ptt_promote(&app),
+                PttAction::Commit { held } => {
+                    if is_max_record {
+                        crate::klog!(ptt, warn, ms = held.as_millis(), "max record reached → auto-send");
+                    }
+                    ptt_commit(&app, held);
+                }
+            }
+        }
+    });
+}
+
+// Thin event tap: forward clean ⌥⌃ Down/Up edges to the controller. Owns nothing
+// but a local edge-detector; all timing/state lives in the controller.
+pub(crate) fn spawn_ptt(app: &tauri::AppHandle) {
+    let (tx, rx) = channel::<PttEvent>();
+    spawn_ptt_controller(app.clone(), rx);
+    spawn_ptt_tap(tx);
+}
+
+fn spawn_ptt_tap(tx: Sender<PttEvent>) {
     use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
     use core_graphics::event::{
         CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
         CGEventType, CallbackResult,
     };
-
-    let app = app.clone();
     std::thread::spawn(move || {
+        let chord_down = AtomicBool::new(false);
         let tap = CGEventTap::new(
             CGEventTapLocation::Session,
             CGEventTapPlacement::HeadInsertEventTap,
             CGEventTapOptions::ListenOnly,
             vec![CGEventType::FlagsChanged],
             move |_proxy, _event_type, event| {
-                // ⌥⌃ (Option+Control) both held → start recording; released → send.
-                // Pure modifiers can't be a normal global shortcut, so we watch the
-                // held state on this tap instead.
                 let flags = event.get_flags();
                 let both = flags.contains(CGEventFlags::CGEventFlagAlternate)
                     && flags.contains(CGEventFlags::CGEventFlagControl);
-                let was = watch.ptt_active.load(Ordering::SeqCst);
+                let was = chord_down.swap(both, Ordering::SeqCst);
                 if both && !was {
-                    watch.ptt_active.store(true, Ordering::SeqCst);
-                    // Start native mic capture immediately (instant; indicator on now).
-                    crate::klog!(ptt, info, "⌥⌃ chord down");
-                    send_audio_command(&app, AudioCommand::Start(Instant::now()));
-                    // Cursor shows the listening halo (global emit so it lands).
-                    let _ = app.emit("cursor:listening", ());
-                    // Show the notch (listening UI) on the MAIN thread — this also
-                    // wakes its otherwise-suspended webview so it can receive the
-                    // captured audio on release.
-                    let app2 = app.clone();
-                    let _ = app.run_on_main_thread(move || {
-                        let notch_state = app2.state::<NotchState>();
-                        if let Err(error) = show_notch_with_payload(
-                            &app2,
-                            notch_state.inner(),
-                            Some(listening_notch_payload()),
-                        ) {
-                            crate::klog!(ptt, error, "failed to show notch: {error}");
-                        }
-                    });
+                    let _ = tx.send(PttEvent::Down(Instant::now()));
                 } else if !both && was {
-                    watch.ptt_active.store(false, Ordering::SeqCst);
-                    // Stop capture → the audio thread encodes WAV + emits `ptt:audio`
-                    // to the (now awake) notch, which transcribes + runs the turn.
-                    send_audio_command(&app, AudioCommand::Stop);
-                    let _ = app.emit("cursor:thinking", ());
+                    let _ = tx.send(PttEvent::Up(Instant::now()));
                 }
                 CallbackResult::Keep
             },
         );
         let Ok(tap) = tap else {
-            crate::klog!(
-                ptt,
-                warn,
-                "tap unavailable; grant Input Monitoring + relaunch to enable ⌥⌃"
-            );
+            crate::klog!(ptt, warn, "tap unavailable; grant Input Monitoring + relaunch to enable ⌥⌃");
             return;
         };
         unsafe {
@@ -199,4 +426,55 @@ pub(crate) fn spawn_ptt_tap(app: &tauri::AppHandle, watch: ContextWatch) {
             CFRunLoop::run_current();
         }
     });
+}
+
+#[cfg(test)]
+mod ptt_tests {
+    use super::*;
+
+    #[test]
+    fn quick_press_is_a_tap() {
+        assert_eq!(classify_press(Duration::from_millis(120), 250), PttOutcome::Tap);
+    }
+    #[test]
+    fn at_or_over_threshold_is_a_hold() {
+        assert_eq!(classify_press(Duration::from_millis(250), 250), PttOutcome::Hold);
+    }
+    #[test]
+    fn idle_down_starts_capture_once() {
+        let (s, a) = ptt_transition(PttState::Idle, Wake::Event(PttEvent::Down(Instant::now())));
+        assert_eq!(a, PttAction::StartCapture);
+        assert!(matches!(s, PttState::Recording { promoted: false, .. }));
+    }
+    #[test]
+    fn recording_threshold_promotes() {
+        let (s, a) = ptt_transition(
+            PttState::Recording { started: Instant::now(), promoted: false }, Wake::Timeout);
+        assert_eq!(a, PttAction::Promote);
+        assert!(matches!(s, PttState::Recording { promoted: true, .. }));
+    }
+    #[test]
+    fn release_bounce_resumes_same_recording_no_new_start() {
+        let t = Instant::now();
+        let (s, a) = ptt_transition(
+            PttState::Releasing { started: t, released: t, promoted: true },
+            Wake::Event(PttEvent::Down(t)));
+        assert_eq!(a, PttAction::None); // NOT StartCapture — the stream keeps running
+        assert!(matches!(s, PttState::Recording { promoted: true, .. }));
+    }
+    #[test]
+    fn release_settle_commits_and_returns_idle() {
+        let t = Instant::now();
+        let (s, a) = ptt_transition(
+            PttState::Releasing { started: t, released: t, promoted: true }, Wake::Timeout);
+        assert!(matches!(a, PttAction::Commit { .. }));
+        assert!(matches!(s, PttState::Idle));
+    }
+    #[test]
+    fn max_record_commits_and_returns_idle() {
+        let (s, a) = ptt_transition(
+            PttState::Recording { started: Instant::now(), promoted: true }, Wake::Timeout);
+        assert!(matches!(a, PttAction::Commit { .. }));
+        assert!(matches!(s, PttState::Idle));
+    }
 }

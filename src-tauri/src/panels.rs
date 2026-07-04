@@ -3,7 +3,7 @@
 
 #[cfg(target_os = "macos")]
 use crate::capture::main_display_bounds;
-use crate::env::env_flag;
+use crate::constants;
 use crate::types::{MousePoint, NotchPayload, OverlayPayload};
 use crate::{CursorPanel, CursorState, NotchPanel, NotchState, OverlayPanel, OverlayState};
 use std::time::Duration;
@@ -113,8 +113,8 @@ pub(crate) fn ensure_notch_panel(
     // Keep the panel alive across hide/show so the shortcut can reopen it.
     panel.set_released_when_closed(false);
     // Hide the notch from all screen capture (screenshots/recordings + the tutor's
-    // own screenshot) unless KAIRO_SHOW_IN_CAPTURE is set (e.g. for a demo).
-    if !env_flag("KAIRO_SHOW_IN_CAPTURE") {
+    // own screenshot) unless SHOW_IN_CAPTURE is set (e.g. for a demo).
+    if !constants::SHOW_IN_CAPTURE {
         exclude_window_from_screen_capture(&window);
     }
 
@@ -167,9 +167,9 @@ pub(crate) fn ensure_overlay_panel(
     panel.set_released_when_closed(false);
     // Hide the overlay (annotations + AI pointer) from screen capture by default, so
     // screenshots/recordings stay clean. The user still SEES it on screen (capture
-    // exclusion doesn't affect display). KAIRO_SHOW_IN_CAPTURE makes it captured —
+    // exclusion doesn't affect display). SHOW_IN_CAPTURE makes it captured —
     // which also lets the tutor's own screenshot include the user's pen marks.
-    if !env_flag("KAIRO_SHOW_IN_CAPTURE") {
+    if !constants::SHOW_IN_CAPTURE {
         exclude_window_from_screen_capture(&window);
     }
 
@@ -246,7 +246,7 @@ pub(crate) fn ensure_cursor_panel(
             .map_err(|error| format!("Failed to size cursor window: {error}"))?;
     }
 
-    if !env_flag("KAIRO_SHOW_IN_CAPTURE") {
+    if !constants::SHOW_IN_CAPTURE {
         exclude_window_from_screen_capture(&window);
     }
 
@@ -351,12 +351,12 @@ pub(crate) fn configure_overlay_window(
     // with KAIRO_SHOW_IN_CAPTURE=false: INCLUDE the overlay while it shows the user's
     // drawing (annotate / preview) so the marks land in the tutor's screenshot, but
     // EXCLUDE it while it shows Kairo's own box (visual) so guidance stays out of
-    // captures. With KAIRO_SHOW_IN_CAPTURE=true, always include (demo mode).
+    // captures. With SHOW_IN_CAPTURE=true, always include (demo mode).
     let shows_user_marks = matches!(
         payload.mode.as_deref(),
         Some("annotate") | Some("annotation_preview")
     );
-    if shows_user_marks || env_flag("KAIRO_SHOW_IN_CAPTURE") {
+    if shows_user_marks || constants::SHOW_IN_CAPTURE {
         include_window_in_screen_capture(window);
     } else {
         exclude_window_from_screen_capture(window);

@@ -15,7 +15,6 @@
 //! Fields come first, the message literal comes LAST (tracing's grammar). Never log
 //! secrets or raw media — use the redaction helpers (`transcript_field`, size fields).
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -27,14 +26,12 @@ use tracing_subscriber::EnvFilter;
 /// Keeps the background writer alive for the whole process. Dropping this flushes
 /// and stops the writer thread, so it must live as long as the app.
 static GUARD: OnceLock<WorkerGuard> = OnceLock::new();
-/// Cached at init so hot paths don't re-read env/.env files per log line.
-static LOG_TRANSCRIPTS: AtomicBool = AtomicBool::new(false);
 
 /// Emit a structured event under a subsystem `target`. Prefer the ergonomic
 /// `klog!(subsystem, level, field = val, "message")` form below.
 // All Kairo subsystems log under a `kairo::<subsystem>` target so one directive
 // (`kairo=debug`) turns our logs verbose while third-party crates (hyper, wry,
-// reqwest, …) stay quiet at the root level. See DEFAULT_DIRECTIVES.
+// reqwest, …) stay quiet at the root level. See `constants::LOG_FILTER`.
 #[macro_export]
 macro_rules! klog {
     ($sub:ident, error, $($rest:tt)*) => { tracing::error!(target: concat!("kairo::", stringify!($sub)), $($rest)*) };
@@ -44,27 +41,19 @@ macro_rules! klog {
     ($sub:ident, trace, $($rest:tt)*) => { tracing::trace!(target: concat!("kairo::", stringify!($sub)), $($rest)*) };
 }
 
-/// Default filter: everything at INFO, our own `kairo::*` subsystems at DEBUG.
-/// Keeps dependency internals out of the file while logging every Kairo step.
-/// Override with `KAIRO_LOG` (RUST_LOG syntax), e.g. `KAIRO_LOG=kairo=trace` or
-/// `KAIRO_LOG=debug` (everything, incl. deps) or `KAIRO_LOG=info,kairo::vision=trace`.
-const DEFAULT_DIRECTIVES: &str = "info,kairo=debug";
-
 /// Install the global logger. Call ONCE, first thing in `run()`, before any
 /// subsystem starts. Never panics — on any failure it degrades (temp dir, then
 /// stderr-only) so logging can never crash the app.
 pub(crate) fn init() {
-    LOG_TRANSCRIPTS.store(
-        crate::env::env_flag("KAIRO_LOG_TRANSCRIPTS"),
-        Ordering::Relaxed,
-    );
-
-    // Directive string, RUST_LOG-style. Default `debug` for dev. Per-subsystem
-    // overrides work for free, e.g. `KAIRO_LOG=info,vision=trace,mic=warn`.
-    let directives = crate::env::provider_env("KAIRO_LOG", DEFAULT_DIRECTIVES);
+    // Directive string, RUST_LOG-style. Default lives in `constants::LOG_FILTER`
+    // (everything at INFO, our `kairo::*` subsystems at DEBUG). `KAIRO_LOG` still
+    // overrides at runtime, e.g. `KAIRO_LOG=info,kairo::vision=trace,kairo::mic=warn`
+    // or `KAIRO_LOG=debug` (everything, incl. deps).
+    let directives = crate::env::provider_env("KAIRO_LOG", crate::constants::LOG_FILTER);
     // Never fail on a bad directive — fall back to the default filter.
-    let make_filter =
-        || EnvFilter::try_new(&directives).unwrap_or_else(|_| EnvFilter::new(DEFAULT_DIRECTIVES));
+    let make_filter = || {
+        EnvFilter::try_new(&directives).unwrap_or_else(|_| EnvFilter::new(crate::constants::LOG_FILTER))
+    };
 
     let dir = log_dir();
     let _ = std::fs::create_dir_all(&dir);
@@ -98,7 +87,8 @@ pub(crate) fn init() {
 
     // Optional stderr mirror (off by default — the packaged .app launched via
     // `open` has no useful stderr, and we avoid any blocking write on a hot path).
-    let stderr_layer = if crate::env::env_flag("KAIRO_LOG_STDERR") {
+    // Toggle in `constants::LOG_TO_STDERR`.
+    let stderr_layer = if crate::constants::LOG_TO_STDERR {
         Some(
             tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
@@ -188,11 +178,13 @@ impl Drop for Timer {
     }
 }
 
-/// Format a transcript for logging. Metadata-only (`len=N`) by default; full text
-/// only when `KAIRO_LOG_TRANSCRIPTS=true` (dev escape hatch). Never log raw audio,
-/// screenshot pixels/base64, or secrets — pass byte/size counts instead.
+/// Format a transcript for logging. Returns the full text when
+/// `constants::LOG_TRANSCRIPTS` is true (the default — this is a local dev tool and
+/// the log file is our primary debugging surface), otherwise metadata-only
+/// (`len=N`). Never log raw audio, screenshot pixels/base64, or secrets — pass
+/// byte/size counts instead.
 pub(crate) fn transcript_field(text: &str) -> String {
-    if LOG_TRANSCRIPTS.load(Ordering::Relaxed) {
+    if crate::constants::LOG_TRANSCRIPTS {
         text.to_string()
     } else {
         format!("len={}", text.chars().count())

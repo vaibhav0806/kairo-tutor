@@ -94,22 +94,9 @@ pub(crate) fn provider_env(name: &str, fallback: &str) -> String {
     provider_env_optional(name).unwrap_or_else(|| fallback.to_string())
 }
 
-// True when an env var is set to a truthy value (1/true/yes/on). Read at runtime
-// from the process env or the project .env, so a relaunch (no rebuild) applies it.
-pub(crate) fn env_flag(name: &str) -> bool {
-    provider_env_optional(name)
-        .map(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false)
-}
-
 pub(crate) fn provider_timeout_ms(raw_value: Option<String>) -> u64 {
     raw_value
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(30_000)
+        .unwrap_or(crate::constants::OPENROUTER_REQUEST_TIMEOUT_MS)
 }

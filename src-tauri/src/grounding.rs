@@ -3,6 +3,7 @@
 //! OCR/box regions.
 
 use crate::color::{sample_background, vibrant_accent};
+use crate::constants;
 use crate::env::{provider_env, provider_env_optional};
 use crate::ocr::build_box_locator_context;
 use crate::prompts::box_locator_prompt;
@@ -11,21 +12,11 @@ use crate::types::{DetectedBox, OcrElement, OverlayDisplayBounds, ScreenRegion};
 use serde_json::{json, Value};
 use std::time::Duration;
 
-// Longest edge (px) we downscale the screenshot to before sending it to Claude
-// vision. Aspect ratio is preserved so returned pixel boxes map back cleanly.
-// Tunable at runtime via KAIRO_VISION_MAX_EDGE (no rebuild) — raise toward 2576
-// for tiny pro-app icons, browser chrome, and dense professional toolbars.
-const DEFAULT_VISION_MAX_EDGE: u32 = 1568;
-
 // Ask the grounding provider for the target boxes as raw JSON text. Both providers
 // receive the SAME prompt + resized JPEG and return the same {"elements":[...]}
 // shape, so the caller parses one format regardless of which provider ran.
 fn grounding_timeout() -> Duration {
-    let timeout_ms = provider_env_optional("KAIRO_GROUNDING_TIMEOUT_MS")
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(12_000);
-    Duration::from_millis(timeout_ms)
+    Duration::from_millis(constants::GROUNDING_TIMEOUT_MS)
 }
 
 async fn anthropic_vision_text(
@@ -37,8 +28,8 @@ async fn anthropic_vision_text(
     if api_key.trim().is_empty() {
         return None;
     }
-    let model = provider_env("ANTHROPIC_VISION_MODEL", "claude-opus-4-8");
-    let base_url = provider_env("ANTHROPIC_BASE_URL", "https://api.anthropic.com");
+    let model = provider_env("ANTHROPIC_VISION_MODEL", constants::ANTHROPIC_VISION_MODEL);
+    let base_url = provider_env("ANTHROPIC_BASE_URL", constants::ANTHROPIC_BASE_URL);
     let body = json!({
         "model": model,
         "max_tokens": 1024,
@@ -78,6 +69,85 @@ async fn anthropic_vision_text(
                 .collect::<String>()
         })
         .unwrap_or_default();
+    Some(text)
+}
+
+/// Anthropic Messages call with a system prompt, one user text block, and one
+/// image. Returns the assistant's text (JSON expected via the prompt — Anthropic
+/// has no json_object mode, so callers parse defensively with `clean_model_json`).
+/// Fails loud: logs + times the round-trip and returns `None` on any non-2xx or
+/// empty body so the caller can degrade gracefully.
+pub(crate) async fn anthropic_vision_chat(
+    system: &str,
+    user_text: &str,
+    image_base64: &str,
+    media_type: &str,
+    model: &str,
+    timeout: Duration,
+) -> Option<String> {
+    let api_key = provider_env_optional("ANTHROPIC_API_KEY")?;
+    if api_key.trim().is_empty() {
+        crate::klog!(grounding, warn, "opus vision chat: ANTHROPIC_API_KEY empty");
+        return None;
+    }
+    let base_url = provider_env("ANTHROPIC_BASE_URL", constants::ANTHROPIC_BASE_URL);
+    let body = json!({
+        "model": model,
+        "max_tokens": 1200,
+        "system": system,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": user_text },
+                { "type": "image", "source": {
+                    "type": "base64", "media_type": media_type, "data": image_base64
+                }}
+            ]
+        }]
+    });
+    let _t = crate::klog::timer("grounding", "opus_vision_chat");
+    let response = match shared_http_client()
+        .post(format!("{}/v1/messages", base_url.trim_end_matches('/')))
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .timeout(timeout)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            crate::klog!(grounding, warn, model = %model, "opus vision chat request failed: {error}");
+            return None;
+        }
+    };
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        crate::klog!(grounding, warn, status = %status, model = %model, "opus vision chat failed: {}", body.chars().take(220).collect::<String>());
+        return None;
+    }
+    let payload = response.json::<Value>().await.ok()?;
+    if payload.get("stop_reason").and_then(Value::as_str) == Some("max_tokens") {
+        crate::klog!(grounding, warn, model = %model, "opus vision response truncated at max_tokens");
+    }
+    // Concatenate every text block (Anthropic can split output across blocks).
+    let text = payload
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    if text.trim().is_empty() {
+        crate::klog!(grounding, warn, model = %model, "opus vision chat returned no text");
+        return None;
+    }
+    crate::klog!(grounding, info, model = %model, chars = text.len(), "opus vision chat ok");
     Some(text)
 }
 
@@ -154,12 +224,12 @@ pub(crate) async fn detect_element_boxes(
     // (Opus, default), `openrouter` (qwen3.7-plus via the user's OpenRouter key,
     // ~12x cheaper), or `qwen` (direct DashScope). All share this prompt + image.
     let _t = crate::klog::timer("grounding", "detect_boxes");
-    let provider = provider_env("KAIRO_GROUNDING_PROVIDER", "anthropic").to_lowercase();
+    let provider = provider_env("KAIRO_GROUNDING_PROVIDER", constants::GROUNDING_PROVIDER).to_lowercase();
     let timeout = grounding_timeout();
     let max_edge = provider_env_optional("KAIRO_VISION_MAX_EDGE")
         .and_then(|v| v.trim().parse::<u32>().ok())
         .filter(|v| *v >= 256)
-        .unwrap_or(DEFAULT_VISION_MAX_EDGE);
+        .unwrap_or(constants::VISION_MAX_EDGE);
     let bounds_summary = format!(
         "x={:.1} y={:.1} w={:.1} h={:.1} scale={:.3}",
         bounds.x, bounds.y, bounds.width, bounds.height, bounds.scale_factor
@@ -204,8 +274,8 @@ pub(crate) async fn detect_element_boxes(
         // Cheap Qwen grounding via the user's existing OpenRouter key.
         "openrouter" | "open-router" => match provider_env_optional("OPENROUTER_API_KEY") {
             Some(key) if !key.trim().is_empty() => {
-                let base = provider_env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1");
-                let model = provider_env("KAIRO_GROUNDING_MODEL", "qwen/qwen3.7-plus");
+                let base = provider_env("OPENROUTER_BASE_URL", constants::OPENROUTER_BASE_URL);
+                let model = provider_env("KAIRO_GROUNDING_MODEL", constants::OPENROUTER_GROUNDING_MODEL);
                 let text = openai_compatible_vision_text(
                     &base,
                     &key,
@@ -225,11 +295,8 @@ pub(crate) async fn detect_element_boxes(
                 .or_else(|| provider_env_optional("QWEN_API_KEY"))
             {
                 Some(key) if !key.trim().is_empty() => {
-                    let base = provider_env(
-                        "QWEN_BASE_URL",
-                        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-                    );
-                    let model = provider_env("QWEN_VISION_MODEL", "qwen3.7-plus");
+                    let base = provider_env("QWEN_BASE_URL", constants::QWEN_BASE_URL);
+                    let model = provider_env("QWEN_VISION_MODEL", constants::QWEN_VISION_MODEL);
                     let text = openai_compatible_vision_text(
                         &base,
                         &key,
@@ -245,7 +312,7 @@ pub(crate) async fn detect_element_boxes(
             }
         }
         _ => {
-            let model = provider_env("ANTHROPIC_VISION_MODEL", "claude-opus-4-8");
+            let model = provider_env("ANTHROPIC_VISION_MODEL", constants::ANTHROPIC_VISION_MODEL);
             let text = anthropic_vision_text(&prompt, &resized_base64, timeout).await;
             (model, text)
         }
@@ -369,6 +436,57 @@ fn json_body(content: &str) -> &str {
     let inner = trimmed.trim_start_matches('`');
     let inner = inner.strip_prefix("json").unwrap_or(inner);
     inner.trim_matches(|c: char| c == '`' || c.is_whitespace())
+}
+
+// Return the first balanced JSON object substring (from the first `{` to its
+// matching `}`), ignoring braces inside strings. Anthropic has no json_object
+// mode, so Opus can prepend prose ("Here's the guidance:\n{...}") or add trailing
+// text; this recovers the object so serde parses and the frontend never receives
+// non-JSON. Returns the input unchanged when no balanced object is found (callers
+// still attempt to parse). Brace/quote/backslash are all ASCII, so byte scanning
+// is safe on UTF-8 (multibyte continuation bytes are >= 0x80 and never collide).
+fn extract_json_object(content: &str) -> &str {
+    let bytes = content.as_bytes();
+    let Some(start) = content.find('{') else {
+        return content;
+    };
+    let mut depth: i32 = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut i = start;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == b'\\' {
+                escaped = true;
+            } else if c == b'"' {
+                in_string = false;
+            }
+        } else {
+            match c {
+                b'"' => in_string = true,
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &content[start..=i];
+                    }
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    content
+}
+
+// Strip a code fence then extract the first balanced JSON object, so callers hand
+// a clean object to serde/the frontend even when the model wraps its JSON in prose
+// or trailing text. Idempotent on already-clean JSON.
+pub(crate) fn clean_model_json(content: &str) -> String {
+    extract_json_object(json_body(content)).to_string()
 }
 
 fn display_point_bounds(bounds: &OverlayDisplayBounds) -> (f64, f64, f64, f64) {
@@ -723,4 +841,146 @@ pub(crate) fn ground_visual_targets(
         object.insert("visualTargets".to_string(), Value::Array(grounded));
     }
     serde_json::to_string(&parsed).unwrap_or(content)
+}
+
+// Pure: parse the tutor JSON and return (label, [nx1,ny1,nx2,ny2]) for the FIRST
+// target carrying a valid normalized box. Kept separate from image sampling so it
+// is unit-testable without a screenshot.
+pub(crate) fn boxes_from_content_norm(content: &str) -> Vec<(String, [f64; 4])> {
+    let Ok(parsed) = serde_json::from_str::<Value>(extract_json_object(json_body(content))) else {
+        return Vec::new();
+    };
+    let Some(targets) = parsed.get("visualTargets").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    for target in targets {
+        let Some(arr) = target.get("box").and_then(Value::as_array) else {
+            continue;
+        };
+        if arr.len() != 4 {
+            continue;
+        }
+        let v: Vec<f64> = arr.iter().filter_map(Value::as_f64).collect();
+        if v.len() != 4 {
+            continue;
+        }
+        let [x1, y1, x2, y2] = [v[0], v[1], v[2], v[3]];
+        let in_range = [x1, y1, x2, y2].iter().all(|c| (0.0..=1.0).contains(c));
+        if !in_range || x2 <= x1 || y2 <= y1 {
+            continue;
+        }
+        let label = target
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("target")
+            .to_string();
+        return vec![(label, [x1, y1, x2, y2])];
+    }
+    Vec::new()
+}
+
+// Build a DetectedBox from the tutor's normalized box, sampling the accent colour
+// from the screenshot so the highlight pops (mirrors detect_element_boxes).
+pub(crate) fn boxes_from_content(content: &str, image_base64: &str) -> Vec<DetectedBox> {
+    let norm = boxes_from_content_norm(content);
+    let Some((label, [nx1, ny1, nx2, ny2])) = norm.into_iter().next() else {
+        return Vec::new();
+    };
+    // Default accent if the image can't be decoded; sampled below when it can.
+    let mut color = vibrant_accent(90.0, 90.0, 90.0);
+    use base64::Engine;
+    if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(image_base64) {
+        if let Ok(image) = image::load_from_memory(&bytes) {
+            let rgb = image.to_rgb8();
+            let (w, h) = (rgb.width() as f64, rgb.height() as f64);
+            let (ar, ag, ab) = sample_background(
+                &rgb,
+                (nx1 * w) as u32,
+                (ny1 * h) as u32,
+                (nx2 * w) as u32,
+                (ny2 * h) as u32,
+            );
+            color = vibrant_accent(ar, ag, ab);
+        }
+    }
+    crate::klog!(grounding, debug, label = %label, norm = %format!("[{nx1:.4},{ny1:.4},{nx2:.4},{ny2:.4}]"), "box from tutor content");
+    vec![DetectedBox {
+        norm_x1: nx1,
+        norm_y1: ny1,
+        norm_x2: nx2,
+        norm_y2: ny2,
+        label,
+        color,
+    }]
+}
+
+#[cfg(test)]
+mod content_box_tests {
+    use super::boxes_from_content_norm;
+
+    #[test]
+    fn extracts_first_target_with_a_normalized_box() {
+        let content = r#"{
+          "voiceText": "Click New — I've highlighted it.",
+          "visualTargets": [
+            { "kind": "pointer", "label": "New repo", "box": [0.10, 0.20, 0.30, 0.28] },
+            { "kind": "highlight_box", "label": "Sidebar", "elementId": "screen-3" }
+          ]
+        }"#;
+        let boxes = boxes_from_content_norm(content);
+        assert_eq!(boxes.len(), 1);
+        assert_eq!(boxes[0].0, "New repo");
+        assert_eq!(boxes[0].1, [0.10, 0.20, 0.30, 0.28]);
+    }
+
+    #[test]
+    fn returns_empty_when_no_target_has_a_box() {
+        let content = r#"{ "visualTargets": [ { "kind": "underline", "elementId": "screen-1" } ] }"#;
+        assert!(boxes_from_content_norm(content).is_empty());
+    }
+
+    #[test]
+    fn ignores_out_of_range_or_inverted_boxes() {
+        let content = r#"{ "visualTargets": [ { "label": "x", "box": [0.9, 0.2, 0.1, 0.4] } ] }"#;
+        assert!(boxes_from_content_norm(content).is_empty());
+    }
+
+    #[test]
+    fn extracts_box_despite_prose_preamble_and_trailing_text() {
+        // Opus (no json_object mode) may wrap the object in prose on both sides.
+        let content = "Sure! Here's the guidance:\n{ \"visualTargets\": [ { \"label\": \"New\", \"box\": [0.1, 0.2, 0.3, 0.4] } ] }\nHope that helps!";
+        let boxes = boxes_from_content_norm(content);
+        assert_eq!(boxes.len(), 1);
+        assert_eq!(boxes[0].0, "New");
+        assert_eq!(boxes[0].1, [0.1, 0.2, 0.3, 0.4]);
+    }
+}
+
+#[cfg(test)]
+mod json_extract_tests {
+    use super::extract_json_object;
+
+    #[test]
+    fn strips_prose_preamble() {
+        assert_eq!(
+            extract_json_object("Here's the guidance:\n{\"voiceText\":\"hi\"}"),
+            "{\"voiceText\":\"hi\"}"
+        );
+    }
+
+    #[test]
+    fn strips_trailing_text() {
+        assert_eq!(extract_json_object("{\"a\":1}\nThanks!"), "{\"a\":1}");
+    }
+
+    #[test]
+    fn ignores_braces_and_quotes_inside_strings() {
+        let s = "{\"t\":\"a } b { c \\\" d\"}";
+        assert_eq!(extract_json_object(s), s);
+    }
+
+    #[test]
+    fn returns_input_when_no_object_present() {
+        assert_eq!(extract_json_object("no json here"), "no json here");
+    }
 }

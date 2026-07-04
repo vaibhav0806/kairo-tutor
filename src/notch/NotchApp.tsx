@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { emit, listen } from '@tauri-apps/api/event';
 import { activationStateToNotchPayload } from '../activation/activationState';
 import { loadBrowserEnv } from '../config/env';
+import { klog } from '../core/logger';
 import type { UserAnnotation } from '../core/types';
 import {
   createNativeBridge,
@@ -10,6 +11,7 @@ import {
 } from '../native/nativeBridge';
 import { type NotchAnnotationTool } from './annotationActions';
 import { buildAudioDataUrl } from './audioPlayback';
+import { shouldIdleClose } from './idleClose';
 import { subscribeToNotchPayload } from './notchEvents';
 import { askTutorFromNotch } from './notchTutor';
 import {
@@ -197,6 +199,10 @@ export function NotchApp() {
   // True while a push-to-talk (⌥⌃ hold) capture is in flight, so the monitor keeps
   // recording until release instead of auto-stopping on silence.
   const pttModeRef = useRef(false);
+  // Native recording truth from the ⌥⌃ tap (`ptt:recording` event): true from the
+  // moment a hold is confirmed (~250ms) until release. The idle-close timer reads this
+  // so the listening capsule can never auto-close mid-hold.
+  const pttRecordingRef = useRef(false);
   // Screenshot taken at voice-start, reused by the tutor turn so the ask doesn't
   // wait on a fresh capture.
   const capturedScreenRef = useRef<NativeScreenCapture | null>(null);
@@ -560,6 +566,10 @@ export function NotchApp() {
         return;
       }
 
+      // Diagnostic: which input started this turn (pairs with the native STT
+      // transcript + gate question/answer lines in the same log file).
+      klog('notch', 'info', 'ask submit', { source, query_len: trimmedQuery.length });
+
       const thinkingPayload = activationStateToNotchPayload('thinking');
       stopAnswerPlayback();
       // A new turn supersedes the last answer: mark it unsettled (blocks auto-close)
@@ -588,6 +598,16 @@ export function NotchApp() {
             ? await runGate(trimmedQuery)
             : { needsScreen: true, voiceText: '' };
         const needsScreen = source === 'typed' || annotations.length > 0 || gate.needsScreen;
+
+        // Diagnostic: which route this turn took and whether the gate actually ran,
+        // so an "unrelated answer" can be traced to the gate vs the vision turn.
+        klog('notch', 'info', 'gate decision', {
+          source,
+          gate_ran: source === 'voice' && annotations.length === 0,
+          needs_screen: needsScreen,
+          path: needsScreen ? 'vision' : 'direct',
+          answer_len: gate.voiceText.trim().length
+        });
 
         if (!needsScreen && gate.voiceText.trim().length > 0) {
           // Direct answer — no screenshot, no grounding, no vision cost.
@@ -773,26 +793,62 @@ export function NotchApp() {
   // never keeps it open or forces it closed.
   useEffect(() => {
     const id = setInterval(() => {
-      if (
-        !answerSettledRef.current ||
-        isSubmittingRef.current ||
-        voiceCaptureStateRef.current !== 'idle' ||
-        queryRef.current.trim().length > 0
-      ) {
-        return;
-      }
       const now = performance.now();
       const pointerHolding =
         pointerInsideNotchRef.current && now - lastNotchPointerAt.current < 4000;
-      if (pointerHolding) {
-        return;
-      }
-      if (now - lastNotchActivityAt.current >= NOTCH_IDLE_CLOSE_MS) {
+      if (
+        shouldIdleClose({
+          answerSettled: answerSettledRef.current,
+          isSubmitting: isSubmittingRef.current,
+          voiceCaptureState: voiceCaptureStateRef.current,
+          queryLen: queryRef.current.trim().length,
+          pointerHolding,
+          recording: pttRecordingRef.current,
+          idleElapsedMs: now - lastNotchActivityAt.current,
+          idleThresholdMs: NOTCH_IDLE_CLOSE_MS
+        })
+      ) {
         hideNotch();
       }
     }, 350);
     return () => clearInterval(id);
   }, [hideNotch]);
+
+  // Native recording truth: the ⌥⌃ tap emits `ptt:recording` {active} when a hold is
+  // confirmed (~250ms) and again on release. The idle-close timer reads this ref so the
+  // listening capsule can never auto-close mid-hold.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ active?: boolean }>('ptt:recording', (event) => {
+      pttRecordingRef.current = Boolean(event.payload?.active);
+      klog('notch', 'debug', 'ptt recording', { active: pttRecordingRef.current });
+    })
+      .then((next) => {
+        unlisten = next;
+      })
+      .catch(() => {
+        /* browser preview / tests have no event bus */
+      });
+    return () => unlisten?.();
+  }, []);
+
+  // A quick ⌥⌃ tap opens the typing notch and emits `notch:focus-input` so the user can
+  // start typing immediately.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('notch:focus-input', () => {
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLInputElement>('input[data-notch-input]')?.focus();
+      });
+    })
+      .then((next) => {
+        unlisten = next;
+      })
+      .catch(() => {
+        /* browser preview / tests have no event bus */
+      });
+    return () => unlisten?.();
+  }, []);
 
   // Typing a follow-up counts as notch activity (keeps it open).
   useEffect(() => {
@@ -1314,6 +1370,7 @@ export function NotchApp() {
               <input
                 aria-label="Ask Kairo"
                 autoFocus
+                data-notch-input
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Ask about this screen — or hold ⌥⌃ to talk"
                 value={query}

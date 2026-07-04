@@ -192,7 +192,14 @@ Build frontend:
 npm run build
 ```
 
-Build macOS app bundle:
+Build, sign, verify, and (re)launch the macOS app — one command:
+
+```bash
+npm run app             # quit running app → build+sign → verify signature → launch
+npm run app -- --check  # same, but run typecheck + tests + cargo check first
+```
+
+Or just build the bundle (signs automatically via `tauri.conf.json`):
 
 ```bash
 npm run tauri:build -- --bundles app
@@ -299,3 +306,14 @@ codesign -d --entitlements :- "src-tauri/target/release/bundle/macos/Kairo Tutor
 ```
 
 - Verification used for this capability: `npm test -- --run`, `npm run build`, `cargo check`, `cargo test`, `npm exec tauri info`, `npm run tauri:build`, and `git diff --check`.
+
+One command to quit Kairo, rebuild + sign, verify the signature, and relaunch:
+```bash
+npm run app
+```
+This wraps `scripts/rebuild-run.sh`, equivalent to:
+```bash
+osascript -e 'quit app "Kairo Tutor"'; npm run tauri:build -- --bundles app \
+  && codesign --verify --deep --strict "src-tauri/target/release/bundle/macos/Kairo Tutor.app" \
+  && open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
+```

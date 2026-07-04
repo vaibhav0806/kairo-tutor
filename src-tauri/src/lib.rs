@@ -12,6 +12,8 @@ use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 mod prompts;
 
+mod constants;
+
 #[macro_use]
 mod klog;
 
@@ -55,17 +57,15 @@ mod panels;
 use panels::{
     configure_overlay_window, cursor_window, emit_overlay_payload, ensure_cursor_panel,
     ensure_notch_panel, ensure_overlay_panel, overlay_window, show_notch_with_payload,
-    spawn_mouse_tracker, store_notch_payload, store_overlay_payload, typing_notch_payload,
+    spawn_mouse_tracker, store_notch_payload, store_overlay_payload,
 };
 
 mod input;
-use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt_tap};
+use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt};
 
-const KAIRO_ACTIVATION_SHORTCUT: &str = "CommandOrControl+Shift+Space";
 // Toggle the pen directly without opening the notch first. Avoids ⌥⌃ (the
 // push-to-talk chord) so holding it never starts a recording.
 const KAIRO_PEN_SHORTCUT: &str = "Alt+Shift+P";
-const DEFAULT_OPENROUTER_VISION_MODEL: &str = "google/gemini-2.5-flash";
 
 // Non-activating NSPanel for the notch. A non-activating panel can receive
 // input without activating the app, so showing it does not pull the user out
@@ -141,8 +141,6 @@ struct ContextWatch {
     // When arming happened; enforces a short settle window so the reveal's own
     // transient (or the click that opened the notch) never trips an instant reset.
     armed_at: Arc<Mutex<Option<Instant>>>,
-    // Push-to-talk: true while the ⌥⌃ chord is held. Shares the same input tap.
-    ptt_active: Arc<AtomicBool>,
 }
 
 impl Default for ContextWatch {
@@ -151,7 +149,6 @@ impl Default for ContextWatch {
             armed: Arc::new(AtomicBool::new(false)),
             baseline: Arc::new(Mutex::new(None)),
             armed_at: Arc::new(Mutex::new(None)),
-            ptt_active: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -173,6 +170,9 @@ enum AudioCommand {
     // Carries the chord-down instant so we can log time-to-record-start.
     Start(Instant),
     Stop,
+    // Stop + discard: drop the stream and clear the buffer WITHOUT encoding or
+    // emitting `ptt:audio`. Used when a ⌥⌃ press turns out to be a tap (→ typing).
+    Cancel,
 }
 
 #[derive(Default)]
@@ -443,32 +443,18 @@ pub fn run() {
     let pen_shortcut: Shortcut = KAIRO_PEN_SHORTCUT
         .parse()
         .expect("failed to parse Kairo pen shortcut");
-    let activation_shortcut: Shortcut = KAIRO_ACTIVATION_SHORTCUT
-        .parse()
-        .expect("failed to parse Kairo activation shortcut");
     let global_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts([activation_shortcut, pen_shortcut.clone()])
+        .with_shortcuts([pen_shortcut.clone()])
         .expect("failed to register Kairo shortcuts")
         .with_handler(move |app, shortcut, event| {
             if event.state != ShortcutState::Pressed {
                 return;
             }
-
-            // ⌥⇧P toggles the pen directly (no notch trip).
+            // ⌥⇧P toggles the pen. (Voice + typing now both live on ⌥⌃: hold to
+            // talk, tap to type — handled by the PTT event tap, not this plugin.)
             if shortcut == &pen_shortcut {
                 let _ = app.emit("pen:toggle", ());
-                return;
             }
-
-            // ⌘⇧Space opens the notch for typing (voice is push-to-talk via ⌥⌃).
-            let notch_state = app.state::<NotchState>();
-            if let Err(error) =
-                show_notch_with_payload(app, notch_state.inner(), Some(typing_notch_payload()))
-            {
-                klog!(activation, error, "shortcut failed to show notch: {error}");
-            }
-
-            let _ = app.emit("activation:shortcut", ());
         })
         .build();
 
@@ -542,7 +528,7 @@ pub fn run() {
             // keyboard access can't disturb the mouse/scroll reset tap above. Request
             // the grant first so Kairo shows up in the Input Monitoring settings list.
             ensure_input_monitoring_access();
-            spawn_ptt_tap(app.handle(), context_watch);
+            spawn_ptt(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -577,7 +563,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::DEFAULT_OPENROUTER_VISION_MODEL;
+    use crate::constants;
     use crate::env::{parse_local_env, provider_timeout_ms};
     use crate::grounding::{apply_box_targets, ground_visual_targets};
     use crate::panels::notch_window_size;
@@ -636,9 +622,18 @@ mod tests {
     #[test]
     fn provider_timeout_ms_uses_positive_values_or_default() {
         assert_eq!(provider_timeout_ms(Some("12000".to_string())), 12000);
-        assert_eq!(provider_timeout_ms(Some("0".to_string())), 30000);
-        assert_eq!(provider_timeout_ms(Some("not-a-number".to_string())), 30000);
-        assert_eq!(provider_timeout_ms(None), 30000);
+        assert_eq!(
+            provider_timeout_ms(Some("0".to_string())),
+            constants::OPENROUTER_REQUEST_TIMEOUT_MS
+        );
+        assert_eq!(
+            provider_timeout_ms(Some("not-a-number".to_string())),
+            constants::OPENROUTER_REQUEST_TIMEOUT_MS
+        );
+        assert_eq!(
+            provider_timeout_ms(None),
+            constants::OPENROUTER_REQUEST_TIMEOUT_MS
+        );
     }
 
     #[test]
@@ -683,10 +678,10 @@ mod tests {
         let (model, include_screenshot) = select_openrouter_request_model(
             &input,
             "qwen/qwen3.6-flash",
-            DEFAULT_OPENROUTER_VISION_MODEL,
+            constants::OPENROUTER_VISION_MODEL,
         );
 
-        assert_eq!(model, DEFAULT_OPENROUTER_VISION_MODEL);
+        assert_eq!(model, constants::OPENROUTER_VISION_MODEL);
         assert!(include_screenshot);
     }
 
@@ -698,7 +693,7 @@ mod tests {
         let (model, include_screenshot) = select_openrouter_request_model(
             &input,
             "qwen/qwen3.6-flash",
-            DEFAULT_OPENROUTER_VISION_MODEL,
+            constants::OPENROUTER_VISION_MODEL,
         );
 
         assert_eq!(model, "qwen/qwen3.6-flash");

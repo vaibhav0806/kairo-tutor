@@ -216,6 +216,9 @@ pub(crate) fn spawn_audio_capture(
                 // Nothing to warm — build-per-press keeps the mic closed when idle.
                 AudioCommand::Warm => {}
                 AudioCommand::Start(chord_down) => {
+                    // Defense-in-depth: tear down any prior stream FIRST so a mic stream
+                    // can never accumulate (N× sample rate) even if a Stop were ever missed.
+                    current.take();
                     if let Ok(mut buf) = samples.lock() {
                         buf.clear();
                     }
@@ -269,6 +272,17 @@ pub(crate) fn spawn_audio_capture(
                             json!({ "audioBase64": audio_base64, "mimeType": "audio/wav" }),
                         );
                     }
+                }
+                AudioCommand::Cancel => {
+                    capturing_worker.store(false, Ordering::SeqCst);
+                    level_worker.store(0, Ordering::SeqCst);
+                    // Drop the stream (closes the device / turns the mic indicator off) and
+                    // throw the buffer away — no WAV, no `ptt:audio`, so no transcription runs.
+                    current.take();
+                    if let Ok(mut buf) = samples.lock() {
+                        buf.clear();
+                    }
+                    crate::klog!(ptt, info, "capture cancelled (tap → typing)");
                 }
             }
         }

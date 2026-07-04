@@ -5,13 +5,13 @@ const speechProviderSchema = z.enum(['mock', 'sarvam', 'elevenlabs']);
 
 const rawEnvSchema = z.object({
   KAIRO_APP_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  KAIRO_AI_PROVIDER: providerSchema.default('mock'),
-  KAIRO_STT_PROVIDER: speechProviderSchema.default('mock'),
-  KAIRO_TTS_PROVIDER: speechProviderSchema.default('mock'),
+  KAIRO_AI_PROVIDER: providerSchema.default('openrouter'),
+  KAIRO_STT_PROVIDER: speechProviderSchema.default('sarvam'),
+  KAIRO_TTS_PROVIDER: speechProviderSchema.default('sarvam'),
   KAIRO_DEFAULT_SKILL: z.string().min(1).default('blender'),
   KAIRO_ENABLE_WEB_RESEARCH: z.string().default('false'),
   OPENROUTER_API_KEY: z.string().optional(),
-  OPENROUTER_MODEL: z.string().default('~openai/gpt-latest'),
+  OPENROUTER_MODEL: z.string().default('qwen/qwen3.6-flash'),
   OPENROUTER_VISION_MODEL: z.string().default('google/gemini-2.5-flash'),
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   OPENROUTER_SITE_URL: z.string().url().optional(),
