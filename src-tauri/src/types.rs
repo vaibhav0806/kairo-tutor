@@ -198,6 +198,17 @@ pub(crate) struct TutorTurnInput {
     pub(crate) recent_context: Option<String>,
 }
 
+// The notch capsule's bounding rect in CSS px (viewport-relative), reported by the
+// frontend so the hit-tracker can make the area around it click-through.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HitRect {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) width: f64,
+    pub(crate) height: f64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TranscribeAudioInput {

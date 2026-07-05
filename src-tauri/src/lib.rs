@@ -57,7 +57,7 @@ mod panels;
 use panels::{
     configure_overlay_window, cursor_window, emit_overlay_payload, ensure_cursor_panel,
     ensure_notch_panel, ensure_overlay_panel, overlay_window, show_notch_with_payload,
-    spawn_mouse_tracker, store_notch_payload, store_overlay_payload,
+    spawn_mouse_tracker, spawn_notch_hit_tracker, store_notch_payload, store_overlay_payload,
 };
 
 mod input;
@@ -115,6 +115,11 @@ struct NotchState {
     // (for show/hide) and its backing window (for size/position/emit).
     panel: Mutex<Option<PanelHandle<tauri::Wry>>>,
     window: Mutex<Option<tauri::WebviewWindow>>,
+    // The capsule's bounding rect in CSS px (left, top, width, height) within the
+    // notch viewport, reported by the frontend. The notch hit-tracker makes the
+    // panel click-through everywhere EXCEPT this rect, so clicks in the empty area
+    // around the small capsule reach the app below. None → whole notch clickable.
+    hit_rect: Mutex<Option<(f64, f64, f64, f64)>>,
 }
 
 // The always-on companion cursor lives in its own click-through panel so it is
@@ -409,6 +414,17 @@ fn get_current_notch_payload(state: State<'_, NotchState>) -> Result<Option<Notc
         .map_err(|_| "Failed to lock notch payload state.".to_string())
 }
 
+// Frontend reports the capsule's rect (CSS px within the notch viewport) so the
+// hit-tracker can make the empty area around it click-through. `None` (capsule
+// hidden) → whole notch clickable (fail-safe; never traps the capsule).
+#[tauri::command]
+fn set_notch_hit_rect(state: State<'_, NotchState>, rect: Option<HitRect>) -> Result<(), String> {
+    if let Ok(mut guard) = state.hit_rect.lock() {
+        *guard = rect.map(|r| (r.x, r.y, r.width, r.height));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn hide_notch(state: State<'_, NotchState>) -> Result<(), String> {
     store_notch_payload(&state, None)?;
@@ -498,6 +514,9 @@ pub fn run() {
                 Ok(panel) => {
                     panel.show();
                     spawn_mouse_tracker(app.handle());
+                    // Make the notch click-through everywhere except the capsule, so
+                    // the empty area around the small card doesn't swallow clicks.
+                    spawn_notch_hit_tracker(app.handle());
                 }
                 Err(error) => {
                     klog!(app, error, "failed to pre-create cursor panel: {error}");
@@ -555,6 +574,7 @@ pub fn run() {
             disarm_context_watch,
             show_notch,
             get_current_notch_payload,
+            set_notch_hit_rect,
             hide_notch,
             run_tutor_turn,
             run_gate_turn,

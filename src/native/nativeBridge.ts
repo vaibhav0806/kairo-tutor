@@ -134,6 +134,9 @@ export type NativeBridge = {
   disarmContextWatch(): Promise<void>;
   showNotch(payload?: NotchPayload): Promise<void>;
   getCurrentNotchPayload(): Promise<NotchPayload | null>;
+  // Report the capsule's rect (CSS px, viewport-relative) so the notch is
+  // click-through everywhere except the capsule. null → whole notch clickable.
+  setNotchHitRect(rect: { x: number; y: number; width: number; height: number } | null): Promise<void>;
   hideNotch(): Promise<void>;
   runTutorTurn(input: TutorTurnInput): Promise<string>;
   // Text-only "do I need to look at the screen?" gate. Returns raw JSON
@@ -426,6 +429,14 @@ export function createNativeBridge(
         return await invoke<NotchPayload | null>('get_current_notch_payload');
       } catch {
         return null;
+      }
+    },
+
+    async setNotchHitRect(rect) {
+      try {
+        await invoke<void>('set_notch_hit_rect', { rect });
+      } catch {
+        // Browser previews do not have a native notch window.
       }
     },
 

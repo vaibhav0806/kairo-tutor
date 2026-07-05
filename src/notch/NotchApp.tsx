@@ -1669,6 +1669,34 @@ export function NotchApp() {
             ? 'typing'
             : 'idle';
 
+  // Tell native the capsule's rect so the notch panel is click-through everywhere
+  // around the small capsule (the empty panel area otherwise swallows clicks). Also
+  // re-report on capsule resize (e.g. the typing input growing). idle → clear (null).
+  useEffect(() => {
+    const report = () => {
+      const el = capsuleRef.current;
+      if (capsuleMode === 'idle' || !el) {
+        void nativeBridge.setNotchHitRect(null);
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      void nativeBridge.setNotchHitRect({
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height
+      });
+    };
+    report();
+    const el = capsuleRef.current;
+    if (capsuleMode === 'idle' || !el || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(report);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [capsuleMode, nativeBridge]);
+
   const noteCapsulePointer = () => {
     pointerInsideNotchRef.current = true;
     lastNotchPointerAt.current = performance.now();

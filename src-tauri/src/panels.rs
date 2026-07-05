@@ -323,6 +323,66 @@ pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
     });
 }
 
+// Make the notch panel click-through everywhere EXCEPT the capsule. The notch
+// window covers a large frame (760x236) but the visible capsule is small, so
+// without this the transparent area around it swallows every click. The frontend
+// reports the capsule's rect (CSS px, viewport-relative) into NotchState.hit_rect;
+// here we poll the global cursor and flip ignore-cursor-events when it crosses the
+// capsule boundary. Fail-safe: when no rect is reported (or the notch is hidden)
+// the notch stays fully clickable rather than trapping the capsule.
+pub(crate) fn spawn_notch_hit_tracker(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // None = unknown (force the first toggle); Some(bool) = last applied state.
+        let mut applied: Option<bool> = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(24));
+            let Ok(cursor) = app.cursor_position() else {
+                continue;
+            };
+            let notch_state = app.state::<NotchState>();
+            let window = match notch_state.window.lock() {
+                Ok(guard) => guard.clone(),
+                Err(_) => None,
+            };
+            let Some(window) = window else { continue };
+            if !window.is_visible().unwrap_or(false) {
+                // Hidden: nothing to click; leave it clickable so the next show is ready.
+                if applied != Some(true) {
+                    let _ = window.set_ignore_cursor_events(false);
+                    applied = Some(true);
+                }
+                continue;
+            }
+            let rect = notch_state.hit_rect.lock().ok().and_then(|guard| *guard);
+            let want_clickable = match rect {
+                // Capsule rect known → clickable only when the cursor is over it (+ a
+                // small margin for unit rounding). Everywhere else → click-through.
+                Some((left, top, w, h)) => {
+                    let scale = window.scale_factor().unwrap_or(1.0);
+                    match window.outer_position() {
+                        Ok(pos) => {
+                            let margin = 6.0 * scale;
+                            let x0 = pos.x as f64 + left * scale - margin;
+                            let y0 = pos.y as f64 + top * scale - margin;
+                            let x1 = x0 + w * scale + 2.0 * margin;
+                            let y1 = y0 + h * scale + 2.0 * margin;
+                            cursor.x >= x0 && cursor.x <= x1 && cursor.y >= y0 && cursor.y <= y1
+                        }
+                        Err(_) => true,
+                    }
+                }
+                // No rect reported → fail safe to fully clickable (old behavior).
+                None => true,
+            };
+            if applied != Some(want_clickable) {
+                let _ = window.set_ignore_cursor_events(!want_clickable);
+                applied = Some(want_clickable);
+            }
+        }
+    });
+}
+
 pub(crate) fn configure_overlay_window(
     window: &tauri::WebviewWindow,
     payload: &OverlayPayload,
