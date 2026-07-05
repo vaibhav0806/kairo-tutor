@@ -2,8 +2,6 @@ export type ActiveAppContext = {
   activeApp: string;
   bundleId?: string;
   windowTitle?: string;
-  // Active-tab URL when the frontmost app is a supported browser.
-  url?: string;
 };
 
 export type UserAnnotation = {
@@ -19,8 +17,11 @@ export type TutorRequest = ActiveAppContext & {
 };
 
 export type VisualTarget = {
-  kind: 'highlight_box' | 'ghost_cursor' | 'arrow' | 'underline' | 'spotlight' | 'pointer';
+  // Only two render today: a pointer (companion-cursor click point) and a
+  // highlight_box (the rectangle drawn around the target).
+  kind: 'pointer' | 'highlight_box';
   targetId: string;
+  // Kept for logs/debug only — the overlay no longer renders on-screen labels.
   label: string;
   confidence: number;
   screenRegion: ScreenRegion;

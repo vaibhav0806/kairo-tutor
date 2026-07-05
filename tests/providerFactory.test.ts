@@ -23,22 +23,6 @@ describe('createProviderAdapters', () => {
     });
   });
 
-  test('requires OpenRouter secret material when OpenRouter planning is selected', () => {
-    const env = loadKairoEnv(
-      {
-        KAIRO_AI_PROVIDER: 'openrouter',
-        KAIRO_STT_PROVIDER: 'mock',
-        KAIRO_TTS_PROVIDER: 'mock',
-        OPENROUTER_API_KEY: 'present-for-env-validation'
-      },
-      { requireProviderKeys: false }
-    );
-
-    expect(() => createProviderAdapters({ env })).toThrow(
-      'OPENROUTER_API_KEY is required to create the OpenRouter planner adapter'
-    );
-  });
-
   test('creates explicitly selected real provider adapters from env and secrets', () => {
     const env = loadKairoEnv(
       {

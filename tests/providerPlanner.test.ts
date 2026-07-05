@@ -1,10 +1,6 @@
-import { describe, expect, test, vi } from 'vitest';
-import {
-  createOpenRouterTutorPlanner,
-  parseTutorPlannerResponse
-} from '../src/server/providers/tutorPlanner';
+import { describe, expect, test } from 'vitest';
+import { parseTutorPlannerResponse } from '../src/server/providers/tutorPlanner';
 import type { TutorTurnInput } from '../src/core/orchestrator';
-import type { OpenRouterMessage } from '../src/server/providers/openRouter';
 
 const tutorInput: TutorTurnInput = {
   userQuery: 'Help me make my first animation',
@@ -42,87 +38,7 @@ const tutorInput: TutorTurnInput = {
   constraints: ['Return one short tutor step.']
 };
 
-describe('OpenRouter tutor planner adapter', () => {
-  test('sends screenshot context and annotation guidance through an OpenAI-compatible message payload', async () => {
-    const chat = vi.fn(async () =>
-      JSON.stringify({
-        mode: 'guided_lesson',
-        skillSlug: 'blender',
-        voiceText: 'Click the cube once.',
-        screenText: 'Select the cube.',
-        visualTargets: [
-          {
-            kind: 'highlight_box',
-            targetId: 'cube',
-            label: 'Cube',
-            confidence: 0.88,
-            screenRegion: { x: 900, y: 420, width: 180, height: 180 }
-          }
-        ],
-        expectedNextState: 'cube_selected'
-      })
-    );
-    const planner = createOpenRouterTutorPlanner({ chat });
-
-    await expect(planner(tutorInput)).resolves.toMatchObject({
-      mode: 'guided_lesson',
-      visualTargets: [expect.objectContaining({ confidence: 0.88 })],
-      providerMetadata: expect.objectContaining({ confidenceState: 'high' })
-    });
-
-    const messages = (chat.mock.calls as unknown as Array<[OpenRouterMessage[]]>)[0][0];
-    const userMessage = messages[1];
-    expect(userMessage.content).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: 'text' }),
-        {
-          type: 'image_url',
-          image_url: { url: 'data:image/png;base64,abc123' }
-        }
-      ])
-    );
-    expect(JSON.stringify(userMessage.content)).toContain('annotationSummary');
-    expect(JSON.stringify(userMessage.content)).toContain('Kairo user markup');
-    expect(JSON.stringify(userMessage.content)).toContain('visual attention guidance');
-    expect(JSON.stringify(userMessage.content)).toContain('markedAreas');
-    expect(JSON.stringify(userMessage.content)).toContain('first marked area');
-    expect(JSON.stringify(userMessage.content)).toContain('rectangle');
-    expect(JSON.stringify(userMessage.content)).not.toContain('annotation-1');
-    expect(JSON.stringify(userMessage.content)).not.toContain('User annotations: exactly 1');
-  });
-
-  test('instructs providers to answer general questions instead of treating Blender as the only scope', async () => {
-    const chat = vi.fn(async () =>
-      JSON.stringify({
-        mode: 'stuck_help',
-        skillSlug: 'blender',
-        voiceText: 'General questions are allowed.',
-        screenText: 'General questions are allowed.',
-        visualTargets: [],
-        expectedNextState: 'user_reads_answer'
-      })
-    );
-    const planner = createOpenRouterTutorPlanner({ chat });
-
-    await planner({ ...tutorInput, userQuery: 'What is the capital of France?' });
-
-    const messages = (chat.mock.calls as unknown as Array<[OpenRouterMessage[]]>)[0][0];
-    expect(String(messages[0].content)).toContain('Answer general user questions directly');
-    expect(String(messages[0].content)).toContain('Use visualTargets as Kairo-generated instructional overlays');
-    expect(String(messages[0].content)).toContain('pointer = exact click/tap/action point');
-    expect(String(messages[0].content)).toContain('arrow = direction or drag path');
-    expect(String(messages[0].content)).toContain('WHERE/SHOW QUESTIONS');
-    expect(String(messages[0].content)).toContain('rectangle/box is usually a square outline icon');
-    expect(String(messages[0].content)).toContain('Selected skill context, when relevant: Blender');
-    expect(String(messages[0].content)).toContain(
-      'Do not mention a specific app, tool, or course by name'
-    );
-    expect(String(messages[0].content)).toContain('Annotation IDs are internal coordinate references only');
-    expect(String(messages[0].content)).toContain('Infer the intended target from arrow heads');
-    expect(String(messages[0].content)).toContain('answer what the annotations appear to highlight');
-    expect(String(messages[0].content)).not.toContain('Skill: Blender');
-  });
-
+describe('parseTutorPlannerResponse', () => {
   test('sanitizes unsafe provider targets and marks low-confidence responses', () => {
     const response = parseTutorPlannerResponse(
       JSON.stringify({
@@ -139,7 +55,7 @@ describe('OpenRouter tutor planner adapter', () => {
             screenRegion: { x: 10, y: 10, width: -20, height: 40 }
           },
           {
-            kind: 'spotlight',
+            kind: 'highlight_box',
             targetId: 'valid-region',
             label: 'Valid region',
             confidence: 0.3,
@@ -171,6 +87,31 @@ describe('OpenRouter tutor planner adapter', () => {
     expect(response.providerMetadata?.confidenceState).toBe('low');
     expect(response.screenText).toBe('Click around and see what happens.');
     expect(response.voiceText).toBe('Click around and see what happens.');
+  });
+
+  test('defaults mode when the slim native response omits it', () => {
+    const response = parseTutorPlannerResponse(
+      JSON.stringify({
+        voiceText: 'Click New — I have highlighted it.',
+        box: [0.1, 0.2, 0.3, 0.28],
+        visualTargets: [
+          {
+            kind: 'pointer',
+            targetId: 'vision-primary',
+            label: 'New',
+            confidence: 0.95,
+            screenRegion: { x: 100, y: 200, width: 44, height: 44 }
+          }
+        ]
+      }),
+      tutorInput
+    );
+
+    expect(response.mode).toBe('stuck_help');
+    expect(response.voiceText).toBe('Click New — I have highlighted it.');
+    expect(response.visualTargets).toEqual([
+      expect.objectContaining({ targetId: 'vision-primary', kind: 'pointer' })
+    ]);
   });
 
   test('uses voice text when provider returns valid JSON with empty screen text', () => {

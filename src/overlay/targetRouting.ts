@@ -2,13 +2,9 @@ import type { VisualTarget } from '../core/types';
 import { klog } from '../core/logger';
 import type { NativeBridge, NativeOverlayDisplayBounds } from '../native/nativeBridge';
 
-// Target kinds the companion cursor flies to. The overlay suppresses duplicate
-// point cursors when a persistent highlight/label is already on screen.
-export const POINT_KINDS: ReadonlySet<VisualTarget['kind']> = new Set([
-  'pointer',
-  'arrow',
-  'ghost_cursor'
-]);
+// Target kinds the companion cursor flies to. The overlay suppresses a duplicate
+// point cursor when a persistent highlight is already on screen.
+export const POINT_KINDS: ReadonlySet<VisualTarget['kind']> = new Set(['pointer']);
 
 // Single source of truth for how an answer's visual targets reach the screen.
 // The primary point-like target drives the companion cursor; persistent shapes

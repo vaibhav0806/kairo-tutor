@@ -8,7 +8,7 @@ const rawEnvSchema = z.object({
   KAIRO_AI_PROVIDER: providerSchema.default('openrouter'),
   KAIRO_STT_PROVIDER: speechProviderSchema.default('sarvam'),
   KAIRO_TTS_PROVIDER: speechProviderSchema.default('sarvam'),
-  KAIRO_DEFAULT_SKILL: z.string().min(1).default('blender'),
+  KAIRO_DEFAULT_SKILL: z.string().min(1).default('general'),
   KAIRO_ENABLE_WEB_RESEARCH: z.string().default('false'),
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('qwen/qwen3.6-flash'),

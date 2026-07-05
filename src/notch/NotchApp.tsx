@@ -501,8 +501,7 @@ export function NotchApp() {
         const raw = await nativeBridge.runGateTurn({
           userQuery: query,
           activeApp: active?.activeApp,
-          windowTitle: active?.windowTitle ?? undefined,
-          url: active?.url ?? undefined
+          windowTitle: active?.windowTitle ?? undefined
         });
         const start = raw.indexOf('{');
         const end = raw.lastIndexOf('}');

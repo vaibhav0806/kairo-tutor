@@ -2,7 +2,6 @@ import type { KairoEnv } from '../../config/env';
 import { createMockTutorPlanner } from '../../core/mockTutor';
 import type { TutorPlannerAdapter } from '../../core/orchestrator';
 import { createElevenLabsSpeechClient } from './elevenLabs';
-import { createOpenRouterClient } from './openRouter';
 import { createSarvamSpeechClient } from './sarvam';
 import {
   createMockSpeechToTextAdapter,
@@ -12,7 +11,6 @@ import {
   type SpeechToTextAdapter,
   type TextToSpeechAdapter
 } from './types';
-import { createOpenRouterTutorPlanner } from './tutorPlanner';
 
 export type CreateProviderAdaptersOptions = {
   env: KairoEnv;
@@ -39,30 +37,12 @@ function requireSecret(value: string | undefined, message: string) {
   return value;
 }
 
-function createPlannerAdapter({
-  env,
-  secrets,
-  fetchImpl
-}: CreateProviderAdaptersOptions): TutorPlannerAdapter {
-  if (env.aiProvider === 'mock') {
-    return createMockPlannerAdapter();
-  }
-
-  const apiKey = requireSecret(
-    secrets?.openRouterApiKey,
-    'OPENROUTER_API_KEY is required to create the OpenRouter planner adapter'
-  );
-
-  return createOpenRouterTutorPlanner(
-    createOpenRouterClient({
-      apiKey,
-      model: env.openRouterModel,
-      baseUrl: env.openRouterBaseUrl,
-      siteUrl: env.openRouterSiteUrl,
-      appTitle: env.openRouterAppTitle,
-      fetchImpl
-    })
-  );
+// The tutor turn runs natively (nativeBridge.runTutorTurn → Rust single-call).
+// The old JS OpenRouter planner + its prompt were removed, so this factory only
+// ever returns the mock planner. Kept because createProviderAdapters still wires
+// the (native-backed) speech adapters.
+function createPlannerAdapter(_options: CreateProviderAdaptersOptions): TutorPlannerAdapter {
+  return createMockPlannerAdapter();
 }
 
 function createSarvamClient({

@@ -62,7 +62,7 @@ export function createMockTutorPlanner() {
               }
             },
             {
-              kind: 'ghost_cursor',
+              kind: 'pointer',
               targetId: 'default_cube',
               label: 'AI pointer on the cube',
               confidence: 0.86,

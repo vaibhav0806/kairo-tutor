@@ -33,10 +33,7 @@ describe('tutor orchestrator', () => {
     expect(input.skill.slug).toBe('blender');
     expect(input.constraints).toContain('Return one short tutor step.');
     expect(input.constraints).toContain(
-      'Answer general user questions directly, even when they are not related to the selected skill pack.'
-    );
-    expect(input.constraints).toContain(
-      'Use a named skill pack only when the active app or user question makes it relevant.'
+      'Do not invent app state that is not visible in the provided context.'
     );
   });
 
@@ -97,7 +94,8 @@ describe('tutor orchestrator', () => {
 
     expect(input.skill.slug).toBe('general');
     expect(input.skill.displayName).toBe('General screen');
-    expect(input.constraints).toContain(
+    // Constraints are generic now — no skill-pack / mode noise leaks into the prompt.
+    expect(input.constraints).not.toContain(
       'Configured default skill is blender; do not assume it applies unless the app or question matches it.'
     );
   });

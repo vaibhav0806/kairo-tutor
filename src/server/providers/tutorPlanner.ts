@@ -1,14 +1,9 @@
 import { z } from 'zod';
-import type { TutorPlannerAdapter, TutorTurnInput } from '../../core/orchestrator';
+import type { TutorTurnInput } from '../../core/orchestrator';
 import type { TutorResponse, VisualTarget } from '../../core/types';
-import type { OpenRouterMessage } from './openRouter';
-
-export type OpenRouterChatAdapter = {
-  chat(messages: OpenRouterMessage[]): Promise<string>;
-};
 
 const providerVisualTargetSchema = z.object({
-  kind: z.enum(['highlight_box', 'ghost_cursor', 'arrow', 'underline', 'spotlight', 'pointer']),
+  kind: z.enum(['highlight_box', 'pointer']),
   targetId: z.string().optional(),
   label: z.string().optional(),
   confidence: z.number().optional(),
@@ -21,7 +16,10 @@ const providerVisualTargetSchema = z.object({
 });
 
 const tutorResponseSchema = z.object({
-  mode: z.enum(['idle', 'stuck_help', 'guided_lesson']),
+  // The native single-call prompt returns { voiceText, box } only; mode/skillSlug/
+  // screenText/expectedNextState are legacy fields still consumed by the main-window
+  // preview + mock path, so they default here rather than being required.
+  mode: z.enum(['idle', 'stuck_help', 'guided_lesson']).default('stuck_help'),
   skillSlug: z
     .string()
     .nullish()
@@ -156,119 +154,5 @@ export function parseTutorPlannerResponse(rawContent: string, input: TutorTurnIn
       confidenceState: confidenceState(safeTargets),
       warnings
     }
-  };
-}
-
-function buildSystemPrompt(input: TutorTurnInput) {
-  return [
-    'You are Kairo Tutor, a screen-native software tutor.',
-    'Return only JSON that matches this TypeScript shape:',
-    '{ mode: "idle" | "stuck_help" | "guided_lesson", skillSlug: string, voiceText: string, screenText: string, visualTargets: VisualTarget[], expectedNextState: string }',
-    'Never return null for string fields. Use an empty string when a string field has no value.',
-    'VisualTarget kind must be one of pointer, arrow, highlight_box, ghost_cursor, underline, spotlight.',
-    'Use visualTargets as Kairo-generated instructional overlays. They are not user drawing tools; they are how you show the user exactly what to look at, click, drag, type into, or inspect.',
-    'Use one to three visualTargets for the next action. Prefer one precise target over many marks. Labels must be short action labels, usually one to three words.',
-    'VisualTarget semantics: pointer = exact click/tap/action point; ghost_cursor = where Kairo cursor should move; highlight_box = object/control/region to focus; arrow = direction or drag path from source to destination; underline = text/value/field row; spotlight = broad area to inspect.',
-    'POINT BY DEFAULT: whenever your answer or next step refers to a specific element the user can see on screen (a button, link, tab, icon, menu item, text field, logo, or control), you MUST include a visualTarget pointing at it. Use kind "pointer" with a screenRegion tightly bounding just that element.',
-    'WHERE/SHOW QUESTIONS: when the user asks where something is, show me something, or which tool/button to use, return a visible target for that exact thing. Prefer highlight_box around the control plus pointer at its click point.',
-    'Icon-only tools still count as visible elements. Infer common tools from icon shape and nearby toolbar context: rectangle/box is usually a square outline icon, pen is a pencil, arrow is an arrow, text is T, hand is pan.',
-    'For drag/move guidance, combine a highlight_box on the source, an arrow across the intended path, and a pointer or ghost_cursor near the destination when coordinates are clear.',
-    'Do not wait to be explicitly asked to point — if there is a concrete on-screen element involved in your answer, point at it.',
-    'Only omit visualTargets when the answer is purely conceptual with no on-screen element to indicate, or when you are genuinely unsure where the element is.',
-    'Use screenRegion display-point coordinates only for visible UI areas you are confident about, and keep each screenRegion as tight as possible around the target element.',
-    'Give exactly one short next step. Do not invent app state.',
-    'Answer general user questions directly. Do not refuse just because the question is outside the selected skill pack.',
-    'Use the selected skill pack only when it is relevant to the active app or user question. If the skill is general, answer from the screen and user request without mentioning any app-specific course.',
-    'Do not mention a specific app, tool, or course by name unless the active app, window title, user question, or selected skill is clearly about it.',
-    'When responding to a user question, prefer mode "stuck_help" or "guided_lesson"; reserve mode "idle" for no-op readiness.',
-    'If annotations are present, use them as user-marked screen areas and inspect the screenshot to infer what those marked areas point to.',
-    'Annotation IDs are internal coordinate references only. Never call them labels and never mention IDs like screen-annotation-1 in voiceText or screenText.',
-    'Treat Kairo user markup, arrows, circles, and doodles as visual attention guides. Infer the intended target from arrow heads, enclosed areas, nearby labels, and stroke direction.',
-    'Do not count, name, or describe the marks themselves unless the user explicitly asks about the drawing marks.',
-    'If the user asks whether you see annotations, answer what the annotations appear to highlight on the screen, not just that marks exist.',
-    'If the user asks about a marked area, answer what underlying screen content or UI element appears to be marked. If the drawing is ambiguous, say what it may be pointing to and ask a brief clarification.',
-    'Do not invent image labels or extra annotation objects.',
-    `Selected skill context, when relevant: ${input.skill.displayName} (${input.skill.slug}).`,
-    `Constraints: ${input.constraints.join(' ')}`
-  ].join('\n');
-}
-
-function buildAnnotationSummary(input: TutorTurnInput) {
-  if (input.annotations.length === 0) {
-    return 'No user annotations.';
-  }
-
-  return 'The screenshot includes Kairo user markup drawn over the screen. Interpret arrows by their heads, loops/circles by what they enclose, boxes by their enclosed region, underlines by the nearby text, and freehand strokes by nearby UI. Use the markup only as visual attention guidance. Do not count the marks or expose internal annotation IDs. Describe the underlying marked content, app UI, or likely user intent instead.';
-}
-
-function buildMarkedAreas(input: TutorTurnInput) {
-  return input.annotations.map((annotation, index) => {
-    const pointCount = annotation.points?.length ?? 0;
-    const strokeHint =
-      pointCount > 1
-        ? `${pointCount} point freehand stroke; use its endpoint, enclosed loop, and nearby UI as intent clues`
-        : 'bounded mark; inspect the underlying screen content inside or nearest this region';
-
-    return {
-      label: `${ordinalLabel(index)} marked area`,
-      drawingType: annotation.type,
-      screenRegion: annotation.screenRegion,
-      strokeHint
-    };
-  });
-}
-
-function buildUserPrompt(input: TutorTurnInput) {
-  return JSON.stringify(
-    {
-      userQuery: input.userQuery,
-      activeApp: input.activeApp,
-      annotationSummary: buildAnnotationSummary(input),
-      markedAreas: buildMarkedAreas(input),
-      screen: {
-        captured: input.screen.captured,
-        reason: input.screen.reason,
-        imageMimeType: input.screen.imageMimeType,
-        byteLength: input.screen.byteLength,
-        displayBounds: input.screen.displayBounds
-      },
-      skillLandmarks: input.skill.landmarks
-    },
-    null,
-    2
-  );
-}
-
-export function buildTutorPlannerMessages(input: TutorTurnInput): OpenRouterMessage[] {
-  const userText = buildUserPrompt(input);
-
-  if (input.screen.captured && input.screen.imageMimeType && input.screen.imageBase64) {
-    return [
-      { role: 'system', content: buildSystemPrompt(input) },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: userText },
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${input.screen.imageMimeType};base64,${input.screen.imageBase64}`
-            }
-          }
-        ]
-      }
-    ];
-  }
-
-  return [
-    { role: 'system', content: buildSystemPrompt(input) },
-    { role: 'user', content: userText }
-  ];
-}
-
-export function createOpenRouterTutorPlanner(client: OpenRouterChatAdapter): TutorPlannerAdapter {
-  return async (input) => {
-    const content = await client.chat(buildTutorPlannerMessages(input));
-    return parseTutorPlannerResponse(content, input);
   };
 }
