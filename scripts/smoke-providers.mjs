@@ -244,7 +244,7 @@ async function testAnthropicVision(env) {
   }
 
   const baseUrl = (env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '');
-  const model = env.ANTHROPIC_VISION_MODEL || 'claude-opus-4-8';
+  const model = env.ANTHROPIC_VISION_MODEL || 'claude-fable-5';
   const tinyPng = makeSmokePngBase64();
 
   const payload = await postJson(

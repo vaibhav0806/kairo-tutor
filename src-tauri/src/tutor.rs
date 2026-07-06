@@ -248,8 +248,8 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
     let separate_grounding = constants::SEPARATE_GROUNDING;
     let has_vision = input.screen.captured && input.screen.image_base64.is_some();
 
-    // DEFAULT: one Opus vision call returns the answer AND the primary target box.
-    // On ANY Opus failure (no key, non-2xx, empty, missing bounds) we fall THROUGH
+    // DEFAULT: one Opus/Fable vision call returns the answer AND the primary target box.
+    // On ANY Opus/Fable failure (no key, non-2xx, empty, missing bounds) we fall THROUGH
     // to the legacy OpenRouter answer path below — a transient hiccup must never
     // zero out the spoken answer; the user still gets an answer, grounded via OCR.
     if has_vision && !separate_grounding {
@@ -300,7 +300,7 @@ pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, Stri
                     return Ok(grounded);
                 }
                 None => {
-                    crate::klog!(tutor, warn, "opus vision turn empty; falling back to OpenRouter answer");
+                    crate::klog!(tutor, warn, "vision turn empty; falling back to OpenRouter answer");
                     // fall through to the legacy path below.
                 }
             }

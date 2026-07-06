@@ -97,7 +97,7 @@ pub(crate) const MAX_TUTOR_STEPS: usize = 7;
 
 // ---------------------------------------------------------------- Toggles
 pub(crate) const SEPARATE_GROUNDING: bool = false; // true = legacy 2-call (OpenRouter answer + Opus/Fable box)
-pub(crate) const SHOW_IN_CAPTURE: bool = false; // true = Kairo UI visible in screenshots/recordings (demo)
+pub(crate) const SHOW_IN_CAPTURE: bool = true; // true = Kairo UI visible in screenshots/recordings (demo)
 
 // ---------------------------------------------------------------- Logging
 // Log the actual transcript + answer TEXT (not just lengths). Intentionally ON:
