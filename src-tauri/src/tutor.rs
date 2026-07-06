@@ -577,17 +577,12 @@ pub(crate) async fn run_follow_turn(input: FollowTurnInput) -> Result<String, St
         timeout,
     )
     .await
-    .ok_or_else(|| "follow vision call returned no content".to_string())?;
+    .ok_or("follow vision call returned no content")?;
     let cleaned = clean_model_json(&raw);
     let shaped = apply_follow_step(&cleaned, Some(image), &bounds)?;
-    // Metadata only — never log `say`. `apply_follow_step` already logged the box.
-    if let Ok(value) = serde_json::from_str::<Value>(&shaped) {
-        let status = value.get("status").and_then(Value::as_str).unwrap_or("");
-        let expect = value.get("expect").and_then(Value::as_str).unwrap_or("");
-        crate::klog!(follow, info, status = status, expect = expect, "follow step ready");
-    } else {
-        crate::klog!(follow, info, "follow step ready");
-    }
+    // Metadata only — never log `say`. apply_follow_step already logged
+    // has_box/expect/wait/status at debug, so this is just a completion marker.
+    crate::klog!(follow, info, "follow step ready");
     Ok(shaped)
 }
 

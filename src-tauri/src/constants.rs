@@ -152,7 +152,12 @@ pub(crate) const ACK_TIMEOUT_MS: u64 = 6_000;
 
 // `wait` enum floors (ms) — the model emits the bucket, we map here. Mirrored in the
 // frontend (src/config/env.ts) — keep the two in sync.
+// (Rust-unused; canonical source, consumed frontend-side via env.ts.)
+#[allow(dead_code)]
 pub(crate) const WAIT_INSTANT_MS: u64 = 75;
+#[allow(dead_code)]
 pub(crate) const WAIT_UI_SETTLE_MS: u64 = 400;
+#[allow(dead_code)]
 pub(crate) const WAIT_PAGE_LOAD_MS: u64 = 1_500;
+#[allow(dead_code)]
 pub(crate) const WAIT_NETWORK_MS: u64 = 2_500;
