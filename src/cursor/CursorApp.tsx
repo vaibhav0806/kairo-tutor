@@ -20,6 +20,12 @@ import {
   evalDrawEase,
   lerp
 } from '../core/penDraw';
+import { klog } from '../core/logger';
+
+// How long the real mouse must sit still before the pet fades out on its own
+// (item 2). Any real movement brings it straight back. Typing-hide (item 1) is
+// independent and driven by the system cursor via the `cursor:visible` event.
+const IDLE_HIDE_MS = 3000;
 
 // Glyph: a clean filled navigation arrowhead pointing up-right (NOT the mac
 // pointer shape). Tip lives at viewBox (28,4); the element is GLYPH_SIZE px wide,
@@ -115,6 +121,13 @@ export function CursorApp() {
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
 
+  // Auto-hide state (items 1 + 2). `sysVisibleRef` mirrors the real macOS cursor
+  // (false while typing); `lastActivityRef` is the last real-move timestamp for
+  // idle-hide; `hiddenAppliedRef` dedupes opacity writes/logging.
+  const sysVisibleRef = useRef(true);
+  const lastActivityRef = useRef(0);
+  const hiddenAppliedRef = useRef(false);
+
   useEffect(() => {
     document.documentElement.classList.add('cursor-document');
     document.body.classList.add('cursor-document');
@@ -140,6 +153,8 @@ export function CursorApp() {
 
   useEffect(() => {
     let isMounted = true;
+    // Start the idle clock now so the pet is visible for a full window after launch.
+    lastActivityRef.current = globalThis.performance?.now?.() ?? 0;
 
     // Current spring target (local px) + glyph orientation for this mode.
     const resolveTarget = (): { x: number; y: number; flipX: boolean; flipY: boolean } => {
@@ -296,6 +311,32 @@ export function CursorApp() {
       writeTransform();
     };
 
+    // Decide whether the pet should be visible right now and fade it accordingly.
+    // Auto-hide only while idly shadowing the mouse with nothing happening — never
+    // while pointing/dragging or showing a status FX (listening/thinking/speaking),
+    // where the pet is an active surface the user must see.
+    const applyVisibility = () => {
+      const shell = shellRef.current;
+      if (!shell) {
+        return;
+      }
+      const now = globalThis.performance?.now?.() ?? 0;
+      const idle = now - lastActivityRef.current >= IDLE_HIDE_MS;
+      const eligible = modeRef.current === 'shadow' && fxModeRef.current === 'none';
+      const hidden = eligible && (!sysVisibleRef.current || idle);
+      if (hidden === hiddenAppliedRef.current) {
+        return;
+      }
+      hiddenAppliedRef.current = hidden;
+      shell.style.opacity = hidden ? '0' : '1';
+      klog('cursor', 'debug', hidden ? 'pet auto-hidden' : 'pet shown', {
+        sys: sysVisibleRef.current,
+        idle,
+        mode: modeRef.current,
+        fx: fxModeRef.current
+      });
+    };
+
     const setFx = (mode: CursorFx) => {
       fxModeRef.current = mode;
       if (shellRef.current) {
@@ -303,6 +344,8 @@ export function CursorApp() {
       }
       // Run a frame so the FX layer is repositioned onto the (possibly idle) tip.
       wake();
+      // FX starting/stopping changes hide-eligibility (e.g. listening un-hides).
+      applyVisibility();
     };
 
     void nativeBridge
@@ -322,7 +365,19 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
+        // Distinguish a real move from the tracker's ~300ms keepalive (same point):
+        // only a genuine position change resets idle-hide and brings the pet back.
+        const prev = mouseRef.current;
+        const moved =
+          Math.abs(event.payload.x - prev.x) > 0.5 || Math.abs(event.payload.y - prev.y) > 0.5;
         mouseRef.current = event.payload;
+        if (moved) {
+          lastActivityRef.current = globalThis.performance?.now?.() ?? 0;
+          // A physical move always makes the real cursor visible again, so un-hide
+          // immediately rather than waiting for the next `cursor:visible` tick.
+          sysVisibleRef.current = true;
+          applyVisibility();
+        }
         if (!initializedRef.current) {
           // First sighting of the mouse: place the pet there instead of flying
           // in from the origin.
@@ -427,6 +482,9 @@ export function CursorApp() {
           trailRef.current.style.opacity = '0';
         }
         modeRef.current = 'shadow';
+        // A turn just ended: grant a fresh idle window so the pet doesn't blink out
+        // the instant it returns to following (the mouse was still during the turn).
+        lastActivityRef.current = globalThis.performance?.now?.() ?? 0;
         setFx('none');
         wake();
       }),
@@ -480,6 +538,16 @@ export function CursorApp() {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
         }
         setFx('none');
+      }),
+      // System cursor visibility mirror (item 1): macOS hides the real cursor while
+      // the user types; the pet vanishes with it. Reappears on move (also handled
+      // eagerly in the cursor:mouse listener).
+      listen<{ visible: boolean }>('cursor:visible', (event) => {
+        if (!isMounted) {
+          return;
+        }
+        sysVisibleRef.current = event.payload.visible !== false;
+        applyVisibility();
       })
     ])
       .then((next) => {
@@ -489,12 +557,17 @@ export function CursorApp() {
         // Browser preview and tests run without the Tauri event bus.
       });
 
+    // Idle-hide can't ride the RAF loop (it parks when the pet is at rest), so a
+    // light standalone timer re-evaluates visibility as the idle threshold crosses.
+    const idleInterval = globalThis.setInterval(applyVisibility, 250);
+
     return () => {
       isMounted = false;
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      globalThis.clearInterval(idleInterval);
       unlisteners.forEach((unlisten) => unlisten());
     };
   }, [nativeBridge]);

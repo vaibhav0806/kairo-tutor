@@ -505,6 +505,10 @@ input {
   overflow: hidden;
   pointer-events: none;
   position: fixed;
+  /* Auto-hide fade (items 1 + 2): opacity is driven from JS; transition keeps the
+     vanish/return smooth rather than a hard cut. */
+  opacity: 1;
+  transition: opacity 180ms ease;
 }
 
 .kairo-cursor {

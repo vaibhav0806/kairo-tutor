@@ -4,7 +4,7 @@
 #[cfg(target_os = "macos")]
 use crate::capture::main_display_bounds;
 use crate::constants;
-use crate::types::{MousePoint, NotchPayload, OverlayPayload};
+use crate::types::{CursorVisible, MousePoint, NotchPayload, OverlayPayload};
 use crate::{CursorPanel, CursorState, NotchPanel, NotchState, OverlayPanel, OverlayState};
 use std::time::Duration;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
@@ -272,11 +272,35 @@ pub(crate) fn cursor_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWind
         .ok_or_else(|| "Cursor panel has no backing window".to_string())
 }
 
+// Whether the SYSTEM mouse cursor is currently visible. macOS hides the real
+// cursor while the user types (each app calls `NSCursor setHiddenUntilMouseMoves`)
+// and in a few other cases (e.g. fullscreen video); we mirror that state onto the
+// companion pet so it vanishes in exact lockstep with the real cursor. Uses the
+// deprecated-but-still-functional CGCursorIsVisible — there is no modern
+// replacement, and reading it is the whole point (it reflects Quartz's hide
+// counter, i.e. "the exact logic macOS uses").
+#[cfg(target_os = "macos")]
+fn system_cursor_visible() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGCursorIsVisible() -> std::os::raw::c_int;
+    }
+    // SAFETY: CGCursorIsVisible takes no arguments and returns a boolean_t; the
+    // call has no preconditions and no side effects.
+    unsafe { CGCursorIsVisible() != 0 }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_cursor_visible() -> bool {
+    true
+}
+
 // Poll the global cursor position at ~60 Hz and push moves to the cursor window.
 // Uses Tauri's cross-platform `cursor_position` (physical px, global top-left);
 // we convert to logical points so the webview (which works in CSS px = points)
 // can place the pet. Only emits on actual movement, so an idle mouse costs almost
-// nothing.
+// nothing. The same loop mirrors the system cursor's visibility onto the pet
+// (item 1: hide while typing) via `cursor:visible`; frontend layers idle-hide on top.
 pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
     let window = match app.state::<CursorState>().window.lock() {
         Ok(guard) => guard.clone(),
@@ -295,6 +319,7 @@ pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut last: Option<(f64, f64)> = None;
         let mut idle_ticks: u32 = 0;
+        let mut last_sys_visible: Option<bool> = None;
         loop {
             // cursor_position is in PHYSICAL pixels (global, top-left). We emit it
             // raw; the cursor webview divides by its own devicePixelRatio to get
@@ -318,6 +343,27 @@ pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
                     idle_ticks += 1;
                 }
             }
+
+            // Mirror the system cursor's visibility onto the pet (item 1: hide while
+            // typing). Emit only on change; the first tick always emits so a freshly
+            // loaded webview learns the initial state.
+            let sys_visible = system_cursor_visible();
+            if last_sys_visible != Some(sys_visible) {
+                last_sys_visible = Some(sys_visible);
+                let _ = window.emit(
+                    "cursor:visible",
+                    CursorVisible {
+                        visible: sys_visible,
+                    },
+                );
+                crate::klog!(
+                    cursor,
+                    debug,
+                    visible = sys_visible,
+                    "system cursor visibility changed"
+                );
+            }
+
             std::thread::sleep(Duration::from_millis(16));
         }
     });

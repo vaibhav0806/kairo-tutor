@@ -127,6 +127,15 @@ pub(crate) struct MousePoint {
     pub(crate) y: f64,
 }
 
+// Mirrors the SYSTEM cursor's visibility onto the companion pet. macOS hides the
+// real cursor while the user types; we forward that so the pet vanishes in lockstep
+// (see `system_cursor_visible` in panels.rs). Idle-hide is handled frontend-side.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CursorVisible {
+    pub(crate) visible: bool,
+}
+
 // Sent to the cursor window to make it fly to (and rest near) an AI target.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
