@@ -1,4 +1,4 @@
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { invoke as tauriInvoke, Channel } from '@tauri-apps/api/core';
 import { emit as tauriEmit } from '@tauri-apps/api/event';
 import { register as registerGlobalShortcut } from '@tauri-apps/plugin-global-shortcut';
 import { klog } from '../core/logger';
@@ -88,6 +88,14 @@ export type NativeSpeechSynthesisResult = {
   provider: string;
 };
 
+// A message on the streaming-TTS channel (mirrors the Rust `TtsStreamMsg` enum).
+// `chunk.data` is base64 raw PCM (linear16, s16le, mono) at `start.sampleRate`.
+export type NativeTtsStreamMsg =
+  | { type: 'start'; sampleRate: number; channels: number }
+  | { type: 'chunk'; data: string }
+  | { type: 'end' }
+  | { type: 'error'; message: string };
+
 export type NativeOverlayPayload = {
   mode?: 'visual' | 'annotate' | 'annotation_preview';
   displayBounds: NativeOverlayDisplayBounds;
@@ -162,6 +170,13 @@ export type NativeBridge = {
   runGateTurn(input: NativeGateInput): Promise<string>;
   transcribeAudio(input: NativeTranscribeAudioInput): Promise<NativeTranscriptionResult>;
   synthesizeSpeech(input: NativeSynthesizeSpeechInput): Promise<NativeSpeechSynthesisResult>;
+  // Streaming TTS: PCM chunks arrive on `onChunk` as they're synthesized; resolves
+  // when the stream completes. Sarvam only — other providers reject (caller falls
+  // back to the buffered synthesizeSpeech).
+  synthesizeSpeechStream(
+    input: NativeSynthesizeSpeechInput,
+    onChunk: Channel<NativeTtsStreamMsg>
+  ): Promise<void>;
   registerActivationShortcut(onActivated: () => void | Promise<void>): Promise<NativeShortcutRegistration>;
 };
 
@@ -496,6 +511,10 @@ export function createNativeBridge(
 
     async synthesizeSpeech(input) {
       return invoke<NativeSpeechSynthesisResult>('synthesize_speech', { input });
+    },
+
+    async synthesizeSpeechStream(input, onChunk) {
+      await invoke<void>('synthesize_speech_stream', { input, onChunk });
     },
 
     async registerActivationShortcut(onActivated) {

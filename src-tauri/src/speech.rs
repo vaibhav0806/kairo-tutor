@@ -346,3 +346,138 @@ pub(crate) async fn synthesize_speech(
 
     Err(format!("Unsupported KAIRO_TTS_PROVIDER={provider}."))
 }
+
+// One message in the streaming-TTS pipe (Rust → notch webview over a Tauri Channel).
+// `Chunk.data` is base64-encoded raw PCM (linear16, s16le, mono) at `Start.sampleRate`.
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub(crate) enum TtsStreamMsg {
+    Start {
+        #[serde(rename = "sampleRate")]
+        sample_rate: u32,
+        channels: u16,
+    },
+    Chunk {
+        data: String,
+    },
+    End,
+    Error {
+        message: String,
+    },
+}
+
+// Streaming text-to-speech: forwards raw PCM chunks to the frontend as they arrive
+// from Sarvam's /text-to-speech/stream endpoint, so playback can begin at first byte
+// (~200-400ms) instead of waiting for the whole clip to synthesize. The frontend
+// schedules the PCM via the Web Audio API. Sarvam only — other providers return Err
+// so the caller transparently falls back to the buffered `synthesize_speech`.
+#[tauri::command]
+pub(crate) async fn synthesize_speech_stream(
+    input: SynthesizeSpeechInput,
+    on_chunk: tauri::ipc::Channel<TtsStreamMsg>,
+) -> Result<(), String> {
+    let _t = crate::klog::timer("tts", "synthesize_stream");
+    let provider = provider_env("KAIRO_TTS_PROVIDER", constants::TTS_PROVIDER);
+    let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(constants::TTS_TIMEOUT_MS));
+    let text = input.text.trim();
+    let sample_rate = constants::SARVAM_TTS_STREAM_SAMPLE_RATE;
+
+    if provider == "mock" || text.is_empty() {
+        let _ = on_chunk.send(TtsStreamMsg::End);
+        return Ok(());
+    }
+    if provider != "sarvam" {
+        // No streaming path for this provider; let the caller fall back to buffered.
+        return Err(format!("streaming TTS unsupported for provider {provider}"));
+    }
+
+    let api_key = provider_env_optional("SARVAM_API_KEY")
+        .ok_or_else(|| "SARVAM_API_KEY is required for Sarvam speech synthesis.".to_string())?;
+    let base_url = provider_env("SARVAM_BASE_URL", constants::SARVAM_BASE_URL);
+
+    let response = shared_http_client()
+        .post(format!(
+            "{}/text-to-speech/stream",
+            base_url.trim_end_matches('/')
+        ))
+        .header("api-subscription-key", api_key)
+        .header("Content-Type", "application/json")
+        .timeout(timeout)
+        .json(&json!({
+            "text": text,
+            "target_language_code": provider_env("SARVAM_TTS_LANGUAGE_CODE", constants::SARVAM_TTS_LANGUAGE_CODE),
+            "speaker": provider_env("SARVAM_TTS_SPEAKER", constants::SARVAM_TTS_SPEAKER),
+            "model": provider_env("SARVAM_TTS_MODEL", constants::SARVAM_TTS_MODEL),
+            "output_audio_codec": "linear16",
+            "speech_sample_rate": sample_rate,
+        }))
+        .send()
+        .await
+        .map_err(|error| {
+            let message = format!("Sarvam TTS stream request failed: {error}");
+            let _ = on_chunk.send(TtsStreamMsg::Error {
+                message: message.clone(),
+            });
+            message
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let message = format!(
+            "Sarvam TTS stream HTTP {status}: {}",
+            body.chars().take(200).collect::<String>()
+        );
+        let _ = on_chunk.send(TtsStreamMsg::Error {
+            message: message.clone(),
+        });
+        return Err(message);
+    }
+
+    let _ = on_chunk.send(TtsStreamMsg::Start {
+        sample_rate,
+        channels: 1,
+    });
+
+    use base64::Engine;
+    let mut response = response;
+    let mut total: usize = 0;
+    let mut chunks: u32 = 0;
+    loop {
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                if bytes.is_empty() {
+                    continue;
+                }
+                total += bytes.len();
+                chunks += 1;
+                let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                if on_chunk.send(TtsStreamMsg::Chunk { data }).is_err() {
+                    // Frontend dropped the channel (barge-in / navigation) → stop early.
+                    crate::klog!(tts, debug, chunks = chunks, "tts stream channel closed; stopping");
+                    return Ok(());
+                }
+            }
+            Ok(None) => break,
+            Err(error) => {
+                let message = format!("Sarvam TTS stream read failed: {error}");
+                let _ = on_chunk.send(TtsStreamMsg::Error {
+                    message: message.clone(),
+                });
+                return Err(message);
+            }
+        }
+    }
+
+    let _ = on_chunk.send(TtsStreamMsg::End);
+    crate::klog!(
+        tts,
+        info,
+        provider = %provider,
+        bytes = total,
+        chunks = chunks,
+        sample_rate = sample_rate,
+        "tts stream complete"
+    );
+    Ok(())
+}

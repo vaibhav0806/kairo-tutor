@@ -48,7 +48,7 @@ mod tutor;
 use tutor::{run_gate_turn, run_tutor_turn};
 
 mod speech;
-use speech::{synthesize_speech, transcribe_audio};
+use speech::{synthesize_speech, synthesize_speech_stream, transcribe_audio};
 
 mod audio;
 use audio::spawn_audio_capture;
@@ -582,7 +582,8 @@ pub fn run() {
             run_tutor_turn,
             run_gate_turn,
             transcribe_audio,
-            synthesize_speech
+            synthesize_speech,
+            synthesize_speech_stream
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kairo Tutor");

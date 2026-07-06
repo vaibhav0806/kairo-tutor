@@ -12,6 +12,7 @@ import {
 } from '../native/nativeBridge';
 import { type NotchAnnotationTool } from './annotationActions';
 import { buildAudioDataUrl } from './audioPlayback';
+import { createBufferedClip, createStreamingClip, type SpeechClip } from './streamingTts';
 import { shouldIdleClose } from './idleClose';
 import { subscribeToNotchPayload } from './notchEvents';
 import { askTutorFromNotch } from './notchTutor';
@@ -166,7 +167,7 @@ export function NotchApp() {
   const voiceCaptureStateRef = useRef<VoiceCaptureState>('idle');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const answerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const answerAudioRef = useRef<SpeechClip | null>(null);
   // The status capsule element, for writing the live mic level (--mic-level).
   const capsuleRef = useRef<HTMLDivElement | null>(null);
   // Set true when the real answer supersedes the gate's "let me look" filler, so a
@@ -176,7 +177,7 @@ export function NotchApp() {
   const fillerAudioUrlsRef = useRef<string[]>([]);
   // The currently-playing filler clip, kept separate from the answer so the answer
   // can QUEUE behind it (wait for it to finish) instead of cutting it off.
-  const fillerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const fillerAudioRef = useRef<SpeechClip | null>(null);
   // Resolves when the current filler finishes (or is cancelled); the answer awaits it.
   const fillerDoneRef = useRef<Promise<void> | null>(null);
   const fillerResolveRef = useRef<(() => void) | null>(null);
@@ -532,15 +533,10 @@ export function NotchApp() {
         return;
       }
 
-      // Synthesize the answer NOW, while the "let me look" filler is still playing,
-      // so there's no silent gap once the filler ends.
-      let audioUrl: string | null = null;
-      try {
-        const result = await nativeBridge.synthesizeSpeech({ text: trimmedText });
-        audioUrl = buildAudioDataUrl(result);
-      } catch {
-        audioUrl = null;
-      }
+      // Start STREAMING the answer NOW, while the "let me look" filler is still
+      // playing, so Sarvam is already synthesizing and first audio is ready the
+      // moment the filler ends (no silent gap). The clip plays progressively.
+      const clip = createStreamingClip(nativeBridge, trimmedText);
 
       // QUEUE behind the filler: wait for it to finish rather than cutting it off.
       // Guarded by a timeout so a stuck filler can't wedge the answer forever.
@@ -555,20 +551,14 @@ export function NotchApp() {
       }
       // A newer turn superseded this one while we waited → don't play a stale answer.
       if (playbackEpochRef.current !== epoch) {
+        clip.pause();
         return;
       }
 
       stopAnswerPlayback();
 
-      if (!audioUrl) {
-        // Synthesis failed; reveal the text anyway so a silent answer isn't invisible.
-        onSpeechStart?.();
-        onSettled?.();
-        return;
-      }
-
-      const audio = new Audio(audioUrl);
-      answerAudioRef.current = audio;
+      answerAudioRef.current = clip;
+      const audio = clip;
       // Reveal the answer text + teaching visuals the instant speech begins.
       audio.onplay = () => {
         setIsSpeaking(true);
@@ -621,33 +611,31 @@ export function NotchApp() {
         return;
       }
 
-      // Synthesize a step's audio with ONE retry (a transient failure/timeout must
-      // not leave a step silent). null = empty text or synth failed twice.
-      const synthStep = async (index: number): Promise<string | null> => {
-        const say = steps[index].say.trim();
-        if (!say) return null;
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          try {
-            const url = buildAudioDataUrl(
-              await nativeBridge.synthesizeSpeech({ text: say, timeoutMs: STEP_SYNTH_TIMEOUT_MS })
-            );
-            if (url) return url;
-          } catch {
-            // fall through to retry
+      // Each step is a STREAMING clip: constructing it kicks off synthesis right away
+      // (so it's effectively prefetched) and playback begins at first byte. A clip's
+      // own buffered fallback covers a failed stream, so no step is left silent.
+      // null = empty text (nothing to speak).
+      const clips: Array<SpeechClip | null | undefined> = new Array(steps.length);
+      const stopClips = () => {
+        for (const clip of clips) {
+          if (clip) {
+            try {
+              clip.pause();
+            } catch {
+              // ignore
+            }
           }
         }
-        klog('notch', 'warn', 'step synth failed after retry', { index });
-        return null;
       };
 
-      // Prefetch window: keep at most 2 TTS requests in flight. Sarvam's bulbul:v3
-      // stalls several simultaneous REST synths, so we DON'T fire all N at once —
-      // we fire step i+1 and i+2 as each step starts playing, spreading requests
-      // across playback (also keeps us well under the per-minute rate).
-      const clips: Array<Promise<string | null> | undefined> = new Array(steps.length);
+      // Prefetch window: keep at most 2 synths in flight. Sarvam's bulbul:v3 stalls
+      // several simultaneous requests, so we DON'T create all N at once — we create
+      // step i+1 and i+2 as each step starts playing, spreading requests across
+      // playback (also keeps us well under the per-minute rate).
       const prefetch = (index: number) => {
         if (index < steps.length && clips[index] === undefined) {
-          clips[index] = synthStep(index);
+          const say = steps[index].say.trim();
+          clips[index] = say ? createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS) : null;
         }
       };
       prefetch(0);
@@ -660,7 +648,10 @@ export function NotchApp() {
       if (pendingFiller) {
         await Promise.race([pendingFiller, new Promise<void>((resolve) => setTimeout(resolve, 12000))]);
       }
-      if (playbackEpochRef.current !== epoch) return;
+      if (playbackEpochRef.current !== epoch) {
+        stopClips();
+        return;
+      }
 
       // stopAnswerPlayback() bumps playbackEpoch, so capture the epoch to check the
       // loop against AFTER it — otherwise the first iteration sees epoch+1 and bails
@@ -690,19 +681,20 @@ export function NotchApp() {
       };
 
       for (let i = 0; i < steps.length; i += 1) {
-        if (playbackEpochRef.current !== playEpoch) return; // superseded → stop
-        prefetch(i); // safety: ensure this step's synth was kicked off
-        const url = await clips[i];
-        if (playbackEpochRef.current !== playEpoch) return;
+        if (playbackEpochRef.current !== playEpoch) {
+          stopClips();
+          return; // superseded → stop
+        }
+        prefetch(i); // safety: ensure this step's clip was created
+        const clip = clips[i] ?? null;
 
-        if (!url) {
-          // No audio (empty/failed synth): still reveal the step briefly.
+        if (!clip) {
+          // No audio (empty step): still reveal the step briefly.
           startStep(i);
           await new Promise<void>((resolve) => setTimeout(resolve, 900));
         } else {
           await new Promise<void>((resolve) => {
-            const audio = new Audio(url);
-            answerAudioRef.current = audio;
+            answerAudioRef.current = clip;
             let done = false;
             const finish = () => {
               if (!done) {
@@ -710,31 +702,37 @@ export function NotchApp() {
                 resolve();
               }
             };
-            audio.onplay = () => {
+            clip.onplay = () => {
               setIsSpeaking(true);
               startStep(i);
               void emit('cursor:speaking', {});
             };
-            audio.onended = () => {
+            clip.onended = () => {
               setIsSpeaking(false);
               finish();
             };
-            // stopAnswerPlayback (a new turn / interruption) pauses + clears the audio,
-            // which fires 'pause' — unblock the loop so the epoch check below bails.
-            audio.onpause = finish;
-            audio.onerror = finish;
-            void audio.play().catch(finish);
+            // stopAnswerPlayback (a new turn / interruption) pauses the clip, which
+            // fires 'pause' — unblock the loop so the epoch check below bails.
+            clip.onpause = finish;
+            clip.onerror = finish;
+            void clip.play().catch(finish);
           });
         }
 
-        if (playbackEpochRef.current !== playEpoch) return;
+        if (playbackEpochRef.current !== playEpoch) {
+          stopClips();
+          return;
+        }
         // Breathing gap between steps (not after the last).
         if (i < steps.length - 1) {
           await new Promise<void>((resolve) => setTimeout(resolve, STEP_GAP_MS));
         }
       }
 
-      if (playbackEpochRef.current !== playEpoch) return;
+      if (playbackEpochRef.current !== playEpoch) {
+        stopClips();
+        return;
+      }
       setIsSpeaking(false);
       void emit('cursor:idle', {});
       onSettled?.();
@@ -789,32 +787,29 @@ export function NotchApp() {
         fillerResolveRef.current?.();
         fillerResolveRef.current = null;
       };
-      const startClip = (audio: HTMLAudioElement) => {
+      const startClip = (audio: SpeechClip) => {
         fillerAudioRef.current = audio;
         audio.onended = finishFiller;
         audio.onerror = finishFiller;
+        // A barge-in (stopAnswerPlayback) pauses the clip → unblock the answer.
+        audio.onpause = finishFiller;
       };
 
       const trimmed = text.trim();
       // Preferred: speak the gate's OWN contextual filler (references the question,
-      // e.g. "let me look at that button"). Synthesized on the spot.
+      // e.g. "let me look at that button"). STREAMED so it starts at first byte.
       if (trimmed) {
+        // Supersede check up front — streaming plays as it arrives, so unlike the old
+        // buffered path there's no synth window to become stale within.
+        if (fillerCancelRef.current || turnEpochRef.current !== turnEpoch) {
+          finishFiller();
+          return;
+        }
         try {
-          const result = await nativeBridge.synthesizeSpeech({ text: trimmed });
-          // Authoritative supersede check: a newer turn bumped the epoch while we
-          // synthesized → this filler is stale, never play it. (fillerCancelRef kept
-          // for same-turn cancellation, e.g. the real answer arriving first.)
-          if (fillerCancelRef.current || turnEpochRef.current !== turnEpoch) {
-            finishFiller();
-            return;
-          }
-          const audioUrl = buildAudioDataUrl(result);
-          if (audioUrl) {
-            const audio = new Audio(audioUrl);
-            startClip(audio);
-            await audio.play();
-            return;
-          }
+          const clip = createStreamingClip(nativeBridge, trimmed);
+          startClip(clip);
+          await clip.play();
+          return;
         } catch {
           // fall through to the generic cached fallback
         }
@@ -823,7 +818,7 @@ export function NotchApp() {
       const cached = fillerAudioUrlsRef.current;
       if (cached.length > 0 && !fillerCancelRef.current && turnEpochRef.current === turnEpoch) {
         const url = cached[Math.floor(Math.random() * cached.length)];
-        const audio = new Audio(url);
+        const audio = createBufferedClip(url);
         startClip(audio);
         void audio.play().catch(finishFiller);
         return;

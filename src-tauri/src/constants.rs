@@ -65,6 +65,9 @@ pub(crate) const SARVAM_STT_LANGUAGE_CODE: &str = "unknown";
 pub(crate) const SARVAM_TTS_MODEL: &str = "bulbul:v3";
 pub(crate) const SARVAM_TTS_LANGUAGE_CODE: &str = "en-IN";
 pub(crate) const SARVAM_TTS_SPEAKER: &str = "shubh";
+// PCM sample rate (Hz) requested from the Sarvam streaming endpoint (codec
+// linear16). The frontend Web Audio player schedules chunks at this rate.
+pub(crate) const SARVAM_TTS_STREAM_SAMPLE_RATE: u32 = 24000;
 
 // ---------------------------------------------------------------- ElevenLabs speech
 pub(crate) const ELEVENLABS_BASE_URL: &str = "https://api.elevenlabs.io";
