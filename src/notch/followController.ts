@@ -1,13 +1,13 @@
 import {
   parseFollowStep, clickInBox, waitFloorMs, stillMoving, sameScreen,
-  type FollowAlongState, type FollowStep, type WaitFloors,
+  type FollowAlongState, type FollowStep, type FollowWait, type WaitFloors,
 } from './followAlong';
 
 export interface FollowCfg {
   settlePollMs: number;
   settleMaxIterations: number;
   settleMovingBits: number;
-  samescreenBits: number;
+  sameScreenBits: number;
   clickPadPt: number;
   pointerIdleFadeMs: number;
   waitFloors: WaitFloors;
@@ -40,11 +40,17 @@ export interface FollowController {
   stop(reason: string): void;
 }
 
+/** A model that keeps emitting box-null observe steps must not auto-flow (and
+ *  bill vision calls) forever — pause after this many consecutive observes. */
+const MAX_CONSECUTIVE_OBSERVE = 5;
+
 export function createFollowController(d: FollowDeps): FollowController {
   const state: FollowAlongState = {
     active: false, goal: '', history: [], currentStep: null, referenceHash: null,
   };
   let epoch = 0;               // bumped on stop / supersede
+  let clickLatch = false;      // synchronous re-entrancy guard against double-clicks
+  let consecutiveObserve = 0;  // capped so observe-only models can't loop forever
   let lastCtx: { activeApp?: string; windowTitle?: string } = {};
 
   function stop(reason: string) {
@@ -58,6 +64,8 @@ export function createFollowController(d: FollowDeps): FollowController {
   }
 
   async function planAndShow(myEpoch: number) {
+    // referenceHash and the model's screenshot are two separate grabs a moment
+    // apart; dHash tolerance (sameScreenBits) intentionally absorbs that gap.
     const hash = await d.captureFrameHash();
     const shot = await d.captureScreenB64();
     if (epoch !== myEpoch) return;
@@ -73,16 +81,23 @@ export function createFollowController(d: FollowDeps): FollowController {
     d.log('info', 'follow step', { expect: step.expect, wait: step.wait, status: step.status });
 
     if (step.status === 'done') {
-      if (step.say) await d.speak(step.say);
-      stop('done');
+      if (step.say) await d.speak(step.say).catch(() => {});
+      if (epoch === myEpoch) stop('done');
       return;
     }
-    if (step.say) void d.speak(step.say); // speak in parallel with showing the pointer
+    if (step.say) void d.speak(step.say).catch((e) => d.log('debug', 'speak failed', { err: String(e) }));
     if (step.box) {
+      consecutiveObserve = 0;
       d.showPointer(step);
       d.armFollowClick();
     } else {
       // observe step: no target, nothing to wait for → auto-flow to the next step
+      consecutiveObserve++;
+      if (consecutiveObserve > MAX_CONSECUTIVE_OBSERVE) {
+        d.log('warn', 'observe auto-flow cap hit — pausing', { consecutiveObserve });
+        d.fadePointer(); // leave the machine active + idle rather than looping
+        return;
+      }
       state.history.push(step.say);
       await autoFlow(myEpoch);
     }
@@ -94,9 +109,9 @@ export function createFollowController(d: FollowDeps): FollowController {
     await planAndShow(myEpoch);
   }
 
-  async function settleThenPlan(myEpoch: number, wait: string) {
+  async function settleThenPlan(myEpoch: number, wait: FollowWait) {
     // wait floor
-    await d.sleep(waitFloorMs(wait as any, d.cfg.waitFloors));
+    await d.sleep(waitFloorMs(wait, d.cfg.waitFloors));
     if (epoch !== myEpoch) return;
     // settle-diff loop (capped)
     let prev = await d.captureFrameHash();
@@ -122,9 +137,15 @@ export function createFollowController(d: FollowDeps): FollowController {
       state.active = true;
       state.goal = goal;
       state.history = [];
+      consecutiveObserve = 0;
       lastCtx = ctx;
       d.log('info', 'follow start', { goal });
-      await planAndShow(myEpoch);
+      try {
+        await planAndShow(myEpoch);
+      } catch (e) {
+        d.log('warn', 'follow plan failed', { err: String(e) });
+        stop('error');
+      }
     },
 
     async onClick(click) {
@@ -134,22 +155,37 @@ export function createFollowController(d: FollowDeps): FollowController {
         d.log('debug', 'click outside box — ignored');
         return; // passive: do nothing
       }
-      // screen-match guard: is the screen still the one we drew the pointer on?
-      const nowHash = await d.captureFrameHash();
-      if (!state.referenceHash || !sameScreen(state.referenceHash, nowHash, d.cfg.samescreenBits)) {
-        d.log('debug', 'in-box click but screen changed — ignored');
-        return; // they scrolled/navigated then clicked the same coordinate
+      if (clickLatch) {
+        d.log('debug', 'click already being processed — ignored');
+        return; // a fast double-click: only the first advances
       }
-      // VALID: disarm, fade the old pointer, ack, settle, next step.
-      // Bump epoch to supersede any stray in-flight settle/plan; stay active.
-      const myEpoch = ++epoch;
-      d.disarmFollowClick();
-      d.fadePointer();
-      const completed = step.say;
-      state.history.push(completed);
-      // ack (screen-blind) speaks immediately; failure → skip, never block
-      void d.runAckTurn(completed).then((t) => { if (t && epoch === myEpoch) return d.speak(t); });
-      await settleThenPlan(myEpoch, step.wait);
+      clickLatch = true;
+      try {
+        // screen-match guard: is the screen still the one we drew the pointer on?
+        const nowHash = await d.captureFrameHash();
+        if (!state.referenceHash || !sameScreen(state.referenceHash, nowHash, d.cfg.sameScreenBits)) {
+          d.log('debug', 'in-box click but screen changed — ignored');
+          return; // they scrolled/navigated then clicked the same coordinate
+        }
+        // VALID: disarm, fade the old pointer, ack, settle, next step.
+        // Bump epoch to supersede any stray in-flight settle/plan; stay active.
+        const myEpoch = ++epoch;
+        d.disarmFollowClick();
+        d.fadePointer();
+        consecutiveObserve = 0;
+        const completed = step.say;
+        state.history.push(completed);
+        // ack (screen-blind) speaks immediately; failure → skip, never block
+        void d.runAckTurn(completed)
+          .then((t) => { if (t && epoch === myEpoch) return d.speak(t); })
+          .catch((e) => d.log('debug', 'ack failed', { err: String(e) }));
+        await settleThenPlan(myEpoch, step.wait);
+      } catch (e) {
+        d.log('warn', 'follow click handling failed', { err: String(e) });
+        stop('error');
+      } finally {
+        clickLatch = false;
+      }
     },
 
     onScreenMoved() {
