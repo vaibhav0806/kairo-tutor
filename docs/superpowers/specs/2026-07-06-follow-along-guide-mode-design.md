@@ -75,15 +75,15 @@ never force completion.
   │        └─ normal chat turn, followAlong context injected           │
   │           (goal + history + current step) → stays active           │
   │                                                                    │
-  │  (C) user switches app / window (existing poll)                    │
-  │        └─ pause: hide pointer + soft "I'll wait for you to head     │
-  │           back…"; on return, re-capture + re-orient                │
+  │  (C) app / window switch / scroll / tab-change (poll + tap)        │
+  │        └─ fade pointer (stale now) + soft "I'll wait for you to     │
+  │           head back…"; on return/rematch, re-show or re-orient      │
   │                                                                    │
   │  (D) 30s idle, no action/voice                                     │
   │        └─ fade pointer; goal goes dormant in recentContext         │
   │                                                                    │
   │  anything else that does NOT change the screen → ignore, keep      │
-  │  pointer.  anything that DOES change the screen → hide pointer     │
+  │  pointer.  anything that DOES change the screen → FADE pointer     │
   │  (don't show a lying hint), keep step alive, do NOT re-plan.       │
   └────────────────────────────────────────────────────────────────────┘
        │  (A) VALID click
@@ -106,11 +106,27 @@ never force completion.
 
 ## The one reusable primitive: "are these two frames the same screen?"
 
-A cheap, **internal, no-model** image compare. Downscale both frames to something
-tiny (e.g. 32×32 grayscale) or compute a perceptual hash, diff, compare to a
-threshold. Microseconds, free. `capture.rs` already downscales, so this is small.
+A cheap, **internal, no-model** image compare — **must be fast AND accurate**
+(explicit requirement). Use a **perceptual hash (pHash, DCT-based)** computed
+**natively in Rust** (the `image` crate is already a dep for capture downscaling):
 
-Used in **three** places, with two thresholds:
+- **Fast:** the hash is a 64-bit value; comparison is one XOR + popcount (Hamming
+  distance) — *nanoseconds*. Not a heavy per-pixel diff.
+- **Accurate:** pHash keys on low-frequency structure, so it's *robust to trivial
+  changes* (cursor blink, clock tick, tiny UI element) yet *catches structural
+  change* (scroll, page load, navigation). This is why plain 32×32 average-diff is
+  rejected — it's both noisier and less discriminating than DCT pHash.
+- **Pixels never leave Rust** — we return/compare hashes, never raw frames (also
+  satisfies the "never log/ship raw pixels" rule).
+
+> **The cost is the capture, not the hash.** Each frame comes from the
+> `screencapture` CLI (~100–200ms, shells out). The settle loop captures
+> repeatedly, so *capture* is the weight — the pHash is free. Mitigations in the
+> plan: cap iterations (below), and consider an in-process capture (ScreenCaptureKit
+> / `CGDisplayCreateImage`) if the CLI cadence proves too slow — noted as an
+> optional perf follow-up, not v1-blocking.
+
+Used in **three** places, with two Hamming-distance thresholds:
 
 1. **Settle detection** (post-action) — *sensitive* threshold `SETTLE_DIFF_THRESHOLD`:
    "has the screen stopped moving / finished loading?" Two consecutive stable
@@ -186,13 +202,16 @@ they beat "screenshot instantly" on both the fast and the slow-network case.
 ## Component: passive staleness handling (no chase)
 
 There is **no auto re-plan** in v1. When the screen materially changes and it
-wasn't the completing click:
+wasn't the completing click (scroll, tab change, window/app switch, or any pHash
+mismatch vs R):
 
-- **Hide** the pointer (don't show a hint that now points at the wrong content) —
-  this reuses the existing `context:changed → hideOverlay` behavior.
+- **Fade the pointer out** (don't show a hint that now points at the wrong
+  content — it's stale the instant the screen moves). Reuses the existing
+  `context:changed → hideOverlay` behavior; a soft opacity fade, not a hard cut.
 - **Keep** the step + goal in state. Do **not** call Fable.
-- When the screen matches R again (they scrolled back), re-show the pointer — no
-  new call, we still hold the step.
+- When the screen matches R again (they scrolled back), fade the pointer back in —
+  no new call, we still hold the step. The click-time screen-match guard is the
+  correctness backstop regardless of whether the pointer is currently shown.
 
 This honors "don't force / don't chase," and because a cancelled Fable call is
 billed anyway (see below), there is **no cancellation logic** — instead the
@@ -216,28 +235,43 @@ fire** (settle-diff means we fire once, on a stable frame), not at cancel time �
 and we simply don't cancel.
 Source: https://support.claude.com/en/articles/8114526-how-will-i-be-billed
 
-## Component: the two-model split (ack + next step)
+## Component: the two-model split (ack + next step) — mostly already exists
+
+The two-model pattern **already ships**: the phase-1 **gate** (`run_gate_turn`,
+Gemini `flash-lite` via OpenRouter, `reasoning effort=none`, **text-only — it
+never sees the screen**) produces a short spoken `voiceText` filler while the
+expensive vision model (`claude-fable-5`) plans. The vision prompt is even told
+the filler was already spoken (`spokenIntro`) so it doesn't re-greet. The gate
+prompt already forbids screen claims (3–6 word fillers like *"Sure, let me find
+that."*). So our ack requirements are met by existing infra — we extend it, not
+rebuild it.
 
 After a VALID click, latency to the next instruction is real (settle floor +
-settle-diff + Fable ≈ several seconds). We cover it with a fast, cheap **ack** so
-the user hears *something* immediately while Fable plans:
+settle-diff + Fable ≈ several seconds). We cover it with the same idea:
 
-- **Ack model** — Gemini (cheap), **text-only, no screenshot**. It knows what the
-  user just did (the completed step's instruction), so it needs no vision.
-  - **Hard constraint:** the ack **must not claim any on-screen result.** It
-    acknowledges the *action*, never the *outcome* — because Fable, seeing the new
-    screen, is the only one who can assert reality. This avoids "nice, it's open!
-    …oh wait, my bad, it's not." Allowed shape (AI-generated, not hardcoded):
-    *"Okay, I see you clicked what I pointed to — let me take you to the next
-    step."* Not allowed: *"Great, the editor is open now."*
+- **Per-action ack** — a cheap **text-only** call (same flash-lite/OpenRouter path
+  as the gate, reusing the prewarmed pooled client), triggered by the completed
+  click, given the just-completed step's instruction.
+  - **Hard constraint (already the gate's rule):** the ack **must not claim any
+    on-screen result.** It acknowledges the *action*, never the *outcome* — Fable,
+    seeing the new screen, is the only one who asserts reality. Avoids "nice, it's
+    open! …oh wait, my bad, it's not." Allowed (AI-generated): *"Okay, I see you
+    clicked what I pointed to — let me take you to the next step."* Not allowed:
+    *"Great, the editor is open now."*
+  - **Playback:** speak it via `createStreamingClip(bridge, text, timeout)` (the
+    streaming-TTS primitive) on a **dedicated follow-along clip slot + epoch** —
+    NOT `speakFiller`, which is wired to the per-turn filler-queue (`fillerDoneRef`)
+    and would collide.
 - **Next-step model** — Fable, **vision**: goal + history + settled frame S →
   `{ say, box?, expect, wait, status }`.
 - Net cost per action: **one vision call (Fable) + one tiny text call (ack)**. Ack
-  speaks first; Fable's instruction follows; the cursor "thinking" state (already
+  speaks first; Fable's instruction follows; the cursor "thinking" fx (already
   exists) covers the gap after the ack.
-- **Entry ack** ("sure, let's do it") reuses the **existing gate `voiceText`
-  filler** — no new code for the entry beat; the only new entry work is the gate
-  flagging `mode: follow_along`.
+- **Entry ack** ("sure, let's do it") = the **existing gate `voiceText` filler**,
+  no new code for the entry beat. The only new entry work is the gate flagging
+  `mode: follow_along`. Note the gate only runs for **voice** asks with no
+  annotations — which is exactly how follow-along is entered (spoken "walk me
+  through…"), so the entry ack comes for free.
 
 ## Model contract
 
@@ -327,6 +361,47 @@ existing `recentContext` mechanism) so voice turns stay goal-aware.
 - Follow-along Fable system prompt (goal + history → step schema + `status`).
 - Gate follow-along intent detection + `mode: follow_along`.
 - The constrained ack prompt.
+
+## Interactions with recent changes (verified 2026-07-06)
+
+The plan must respect these already-shipped behaviors:
+
+- **`SHOW_IN_CAPTURE` (capture poisoning).** Compile-time const, **default `true`
+  in dev** (`npm run app`) → Kairo's own UI (notch, pet cursor, animated guidance
+  box) is *in the tutor's screenshots*; the prod DMG forces it `false` (clean).
+  The overlay's 650ms box-draw/ink animation, if present in diffed frames, reads as
+  "screen still moving." **Mitigations:** (1) at a valid click, **hide the old
+  overlay + release the cursor before the settle captures** so those frames are
+  clean; (2) pHash's tolerant threshold absorbs the small, static notch; (3) test
+  follow-along with `KAIRO_SHOW_IN_CAPTURE=false` (prod-equivalent) for match
+  accuracy — and the Fable follow-along capture should be UI-clean regardless so
+  Fable never boxes our own UI.
+- **Streaming TTS** (`createStreamingClip(bridge, text, timeout)` in
+  `src/notch/streamingTts.ts`) is the "speak now" primitive for both the ack and
+  each follow-along step. There is a **single current-clip slot** (`answerAudioRef`)
+  + `playbackEpochRef`; give the follow-along ack/step **its own slot/epoch** so
+  they don't fight. Streaming is Sarvam-only; other providers fall back to buffered
+  (still speaks).
+- **Cursor auto-hide** (`applyVisibility`, `CursorApp.tsx`) only fires when the pet
+  is `mode='shadow' & fx='none'`. Keep the follow-along pointer in `pointing`/`drag`
+  (or set an fx) while awaiting a click → auto-hide won't interfere.
+- **Voice turn mid-follow-along.** `submitQuery` at turn-start already calls
+  `stopAnswerPlayback()` (bumps `playbackEpochRef`), `cursorRelease()`, and
+  `hideOverlay()` — so a PTT turn naturally drops the follow-along pointer. Design
+  rule: **`followAlong` state lives outside the per-turn visual teardown.** The
+  voice turn is follow-along-aware (goal + history injected), answers normally, and
+  the pointer rebuilds afterward if guidance continues. Nothing "breaks" from the
+  user being "in the loop" — waiting-for-click and voice turns are independent.
+- **Gate routing.** The gate (and thus the free entry ack) runs only for **voice**
+  asks with no annotations — which is how follow-along is entered. Typed/annotated
+  asks skip the gate.
+
+## Optional visual (from `competitor_notes.txt`, not v1-blocking)
+
+Clicky uses **circles for click-targets** and **boxes for "look at this."** Our
+schema already distinguishes `expect: "click"` vs `"observe"`, so a natural
+enhancement: render a **circle** for `expect:click` steps and keep the **box** for
+`observe`. Nice-to-have; core v1 keeps the existing box/pointer render.
 
 ## Non-goals / v1 limits
 
