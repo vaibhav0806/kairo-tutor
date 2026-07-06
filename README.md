@@ -317,3 +317,5 @@ osascript -e 'quit app "Kairo Tutor"'; npm run tauri:build -- --bundles app \
   && codesign --verify --deep --strict "src-tauri/target/release/bundle/macos/Kairo Tutor.app" \
   && open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
 ```
+
+Change I'm making for pull request
