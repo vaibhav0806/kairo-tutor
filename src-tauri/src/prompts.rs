@@ -19,9 +19,55 @@ pub(crate) fn gate_system_prompt() -> String {
         "needsScreen=true — you must look. Use this when the answer is about their screen: where something is, how to do something in the app they're using, or finding/clicking/showing something. Put a SHORT spoken filler in voiceText that references what they asked — one brief phrase of about 3 to 6 words, not a full sentence: e.g. \"Sure, let me find that.\", \"On it, one sec.\", \"Let me take a look.\" Snappy but natural — it plays instantly while Kairo looks.",
         "Greetings and chit-chat are NEVER needsScreen=true — only look when there is something on their screen to point at, or if the user seems to be talking about something on their screen.",
         "The app and window title are context, not a reason to look.",
-        "Return ONLY JSON: { \"needsScreen\": boolean, \"voiceText\": string }.",
+        "Set followAlong=true ONLY when the user wants to be guided hands-on through DOING a multi-step task on their screen (\"walk me through…\", \"guide me to…\", \"help me do…\", \"teach me to <perform action>\"). For \"explain / what is this / orient me\" set followAlong=false. followAlong=true implies needsScreen=true.",
+        "Return ONLY JSON: { \"needsScreen\": boolean, \"voiceText\": string, \"followAlong\": boolean }.",
     ]
     .join("\n")
+}
+
+/// System prompt for one follow-along step. The model sees ONE settled
+/// screenshot plus the goal and the steps already done, and returns exactly ONE
+/// next step. It NEVER pre-plans the whole task.
+pub(crate) fn follow_turn_system_prompt(goal: &str, history: &[String]) -> String {
+    let done = if history.is_empty() {
+        "Nothing done yet — this is the first step.".to_string()
+    } else {
+        format!("Steps already completed:\n- {}", history.join("\n- "))
+    };
+    format!(
+        "You are guiding the user hands-on toward a goal, ONE step at a time, on \
+their real screen. GOAL: {goal}\n{done}\n\n\
+Look at the screenshot (the user's CURRENT screen). Return ONLY JSON: \
+{{ \"say\": string, \"box\": [x1,y1,x2,y2] | null, \"expect\": \"click\"|\"observe\", \
+\"wait\": \"instant\"|\"ui-settle\"|\"page-load\"|\"network\", \"status\": \"guiding\"|\"done\" }}.\n\
+Rules:\n\
+- Exactly ONE next action. If the goal is already achieved on this screen, set \
+status \"done\" and say a short congratulations; box null.\n\
+- `box` = normalized fractions 0..1, tight around the single control to act on. \
+Use null only for a pure explanation/observe step.\n\
+- `expect`: \"click\" when the user must click the boxed control; \"observe\" for a \
+pure explanation with no action.\n\
+- `wait`: how long the screen will take to settle AFTER this action — \"instant\" \
+(focus/toggle), \"ui-settle\" (menu/panel opens), \"page-load\" (open file / switch \
+tab), \"network\" (submit / merge / server round-trip).\n\
+- No positional words (no \"top-right\"/\"left\"). The box shows WHERE; your words say \
+WHAT and WHY. Refer to the target as \"this\" / \"the one I've highlighted\".\n\
+- Do NOT claim what will happen after the click; describe the action to take.\n\
+Output ONLY the JSON object."
+    )
+}
+
+/// Text-only ack spoken immediately after a valid click, while the vision model
+/// plans the next step. MUST NOT claim any on-screen result — only acknowledge
+/// the action and bridge to the next step.
+pub(crate) fn ack_system_prompt() -> String {
+    "The user just did the action you asked for in a hands-on guide. Say ONE short, \
+warm, forward-looking spoken line (about 4 to 8 words) that acknowledges they did \
+it and that you're moving to the next step. You have NOT seen the result — do NOT \
+claim anything is now open/done/changed. Good: \"Nice — let me line up the next \
+step.\" \"Got it, one moment for what's next.\" Bad: \"Great, the editor is open now.\" \
+Return ONLY the sentence, no quotes, no JSON."
+        .to_string()
 }
 
 /// Pixel-grounding prompt: the SINGLE exact target box for the cursor/highlight.
