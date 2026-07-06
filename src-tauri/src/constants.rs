@@ -26,14 +26,28 @@ pub(crate) const GROUNDING_PROVIDER: &str = "anthropic"; // anthropic | openrout
 // has thinking off by default, so the gate answers in ~1-2s instead of qwen's ~10s.
 pub(crate) const OPENROUTER_MODEL: &str = "google/gemini-2.5-flash-lite";
 pub(crate) const OPENROUTER_VISION_MODEL: &str = "google/gemini-2.5-flash"; // legacy 2-call path
+// Output cap for the OpenAI-compatible grounding path (OpenRouter/Qwen). A separate
+// provider with NO always-on thinking, so it stays small — kept distinct from the
+// Anthropic cap on purpose (do not merge the two).
+pub(crate) const OPENROUTER_VISION_MAX_TOKENS: u32 = 1024;
 pub(crate) const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 pub(crate) const OPENROUTER_SITE_URL: &str = "https://kairo.tutor";
 pub(crate) const OPENROUTER_APP_TITLE: &str = "Kairo Tutor";
 
 // ---------------------------------------------------------------- Anthropic
 pub(crate) const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
-pub(crate) const ANTHROPIC_VISION_MODEL: &str = "claude-fable-5"; // Opus grounding
+pub(crate) const ANTHROPIC_VISION_MODEL: &str = "claude-fable-5"; // Opus/Fable grounding
 pub(crate) const TUTOR_VISION_MODEL: &str = "claude-fable-5"; // single-call answer + box
+// ONE output cap for BOTH Anthropic vision calls (single-call answer+box AND the
+// separate box-detection call) — deliberately a single knob to avoid confusion.
+// Fable thinks on every request and thinking counts against max_tokens, so a tight
+// 1200 truncated the JSON on think-heavy asks. 3000 gives a full 5–7 step walkthrough
+// room after thinking (still bounded by GROUNDING_TIMEOUT_MS).
+pub(crate) const ANTHROPIC_VISION_MAX_TOKENS: u32 = 3000;
+// Throttles Fable's thinking depth (low | medium | high | xhigh | max). GA, no beta
+// header. `medium` keeps box coordinates accurate while cutting the thinking that
+// drove the 21s latency; drop to `low` for more speed, raise for more accuracy.
+pub(crate) const ANTHROPIC_VISION_EFFORT: &str = "medium";
 
 // ------------------------------------------- Alt grounding (when selected)
 pub(crate) const OPENROUTER_GROUNDING_MODEL: &str = "qwen/qwen3.7-plus";
@@ -82,7 +96,7 @@ pub(crate) const VISION_MAX_EDGE: u32 = 1568; // longest screenshot edge sent to
 pub(crate) const MAX_TUTOR_STEPS: usize = 7;
 
 // ---------------------------------------------------------------- Toggles
-pub(crate) const SEPARATE_GROUNDING: bool = false; // true = legacy 2-call (OpenRouter answer + Opus box)
+pub(crate) const SEPARATE_GROUNDING: bool = false; // true = legacy 2-call (OpenRouter answer + Opus/Fable box)
 pub(crate) const SHOW_IN_CAPTURE: bool = false; // true = Kairo UI visible in screenshots/recordings (demo)
 
 // ---------------------------------------------------------------- Logging

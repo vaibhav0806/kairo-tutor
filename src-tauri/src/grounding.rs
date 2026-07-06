@@ -32,7 +32,8 @@ async fn anthropic_vision_text(
     let base_url = provider_env("ANTHROPIC_BASE_URL", constants::ANTHROPIC_BASE_URL);
     let body = json!({
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": constants::ANTHROPIC_VISION_MAX_TOKENS,
+        "output_config": { "effort": constants::ANTHROPIC_VISION_EFFORT },
         "messages": [{
             "role": "user",
             "content": [
@@ -87,13 +88,14 @@ pub(crate) async fn anthropic_vision_chat(
 ) -> Option<String> {
     let api_key = provider_env_optional("ANTHROPIC_API_KEY")?;
     if api_key.trim().is_empty() {
-        crate::klog!(grounding, warn, "opus vision chat: ANTHROPIC_API_KEY empty");
+        crate::klog!(grounding, warn, "vision chat: ANTHROPIC_API_KEY empty");
         return None;
     }
     let base_url = provider_env("ANTHROPIC_BASE_URL", constants::ANTHROPIC_BASE_URL);
     let body = json!({
         "model": model,
-        "max_tokens": 1200,
+        "max_tokens": constants::ANTHROPIC_VISION_MAX_TOKENS,
+        "output_config": { "effort": constants::ANTHROPIC_VISION_EFFORT },
         "system": system,
         "messages": [{
             "role": "user",
@@ -117,19 +119,19 @@ pub(crate) async fn anthropic_vision_chat(
     {
         Ok(response) => response,
         Err(error) => {
-            crate::klog!(grounding, warn, model = %model, "opus vision chat request failed: {error}");
+            crate::klog!(grounding, warn, model = %model, "vision chat request failed: {error}");
             return None;
         }
     };
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        crate::klog!(grounding, warn, status = %status, model = %model, "opus vision chat failed: {}", body.chars().take(220).collect::<String>());
+        crate::klog!(grounding, warn, status = %status, model = %model, "vision chat failed: {}", body.chars().take(220).collect::<String>());
         return None;
     }
     let payload = response.json::<Value>().await.ok()?;
     if payload.get("stop_reason").and_then(Value::as_str) == Some("max_tokens") {
-        crate::klog!(grounding, warn, model = %model, "opus vision response truncated at max_tokens");
+        crate::klog!(grounding, warn, model = %model, "vision response truncated at max_tokens");
     }
     // Concatenate every text block (Anthropic can split output across blocks).
     let text = payload
@@ -144,10 +146,10 @@ pub(crate) async fn anthropic_vision_chat(
         })
         .unwrap_or_default();
     if text.trim().is_empty() {
-        crate::klog!(grounding, warn, model = %model, "opus vision chat returned no text");
+        crate::klog!(grounding, warn, model = %model, "vision chat returned no text");
         return None;
     }
-    crate::klog!(grounding, info, model = %model, chars = text.len(), "opus vision chat ok");
+    crate::klog!(grounding, info, model = %model, chars = text.len(), "vision chat ok");
     Some(text)
 }
 
@@ -166,7 +168,7 @@ async fn openai_compatible_vision_text(
     let data_url = format!("data:image/jpeg;base64,{image_jpeg_base64}");
     let body = json!({
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": constants::OPENROUTER_VISION_MAX_TOKENS,
         "messages": [{
             "role": "user",
             "content": [
@@ -221,7 +223,7 @@ pub(crate) async fn detect_element_boxes(
     ocr_elements: &[OcrElement],
 ) -> Vec<DetectedBox> {
     // Swappable at runtime (no rebuild) via KAIRO_GROUNDING_PROVIDER: `anthropic`
-    // (Opus, default), `openrouter` (qwen3.7-plus via the user's OpenRouter key,
+    // (Opus/Fable, default), `openrouter` (qwen3.7-plus via the user's OpenRouter key,
     // ~12x cheaper), or `qwen` (direct DashScope). All share this prompt + image.
     let _t = crate::klog::timer("grounding", "detect_boxes");
     let provider = provider_env("KAIRO_GROUNDING_PROVIDER", constants::GROUNDING_PROVIDER).to_lowercase();
@@ -440,7 +442,7 @@ fn json_body(content: &str) -> &str {
 
 // Return the first balanced JSON object substring (from the first `{` to its
 // matching `}`), ignoring braces inside strings. Anthropic has no json_object
-// mode, so Opus can prepend prose ("Here's the guidance:\n{...}") or add trailing
+// mode, so Opus/Fable can prepend prose ("Here's the guidance:\n{...}") or add trailing
 // text; this recovers the object so serde parses and the frontend never receives
 // non-JSON. Returns the input unchanged when no balanced object is found (callers
 // still attempt to parse). Brace/quote/backslash are all ASCII, so byte scanning
