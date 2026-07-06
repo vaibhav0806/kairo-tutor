@@ -256,6 +256,11 @@ export function NotchApp() {
   // First pointer of a follow-along session is DRAWN; later ones GLIDE (mirrors
   // playSteps). Reset to true when a new session starts (submitQuery branch).
   const followFirstPointerRef = useRef(true);
+  // True while the follow controller currently has the notch/cursor in the Thinking
+  // state. onThinking() can fire repeatedly (once per observe-flow step + at both
+  // planAndShow and settleThenPlan starts), so this coalesces consecutive calls to a
+  // single notch/cursor round-trip. Cleared when speak/showPointer transitions away.
+  const followThinkingRef = useRef(false);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
   const env = loadBrowserEnv();
 
@@ -300,10 +305,25 @@ export function NotchApp() {
         }
         const clip = createStreamingClip(nativeBridge, trimmed, STEP_SYNTH_TIMEOUT_MS);
         followClipRef.current = clip;
+        // Drive the speaking status EXACTLY like the normal path (playSteps /
+        // playAnswerAudio): show the speaking indicator + cursor speaking pulse on
+        // play, and clear it on ANY terminal event (end/pause/error) so a failed or
+        // barged-in clip never leaves the capsule stuck in "speaking".
+        const clearSpeaking = () => setIsSpeaking(false);
+        clip.onplay = () => {
+          // Speaking supersedes the Thinking card — leave the thinking coalesced state.
+          followThinkingRef.current = false;
+          setIsSpeaking(true);
+          void emit('cursor:speaking', {});
+        };
+        clip.onended = clearSpeaking;
+        clip.onpause = clearSpeaking;
+        clip.onerror = clearSpeaking;
         try {
           await clip.play();
         } catch {
           // Best-effort: the guide continues even if a single line fails to speak.
+          setIsSpeaking(false);
         } finally {
           if (followClipRef.current === clip) {
             followClipRef.current = null;
@@ -326,6 +346,20 @@ export function NotchApp() {
       // keeping the cursor in a pointing/drag mode (so the shadow+none auto-hide can't
       // fire). Draw the first pointer of a session, glide the rest.
       showPointer: (step: FollowStep) => {
+        // A step is ready to point at (waiting for the user's click): leave the
+        // Thinking state so the Thinking card clears while the pointer is up (mirrors
+        // the normal path, where the box shows on a showing_step card, not "Thinking").
+        // Also clear the thinking coalescing guard so the next plan re-arms onThinking.
+        followThinkingRef.current = false;
+        const stepPayload: NotchPayload = {
+          state: 'showing_step',
+          layout: 'answer',
+          title: 'Kairo is guiding',
+          detail: ''
+        };
+        setPayload(stepPayload);
+        setDetailHidden(false);
+        void nativeBridge.showNotch(stepPayload);
         const bounds =
           followDisplayBoundsRef.current ??
           capturedScreenRef.current?.displayBounds ??
@@ -357,10 +391,21 @@ export function NotchApp() {
       disarmFollowClick: () => {
         void nativeBridge.disarmFollowClick();
       },
-      // "Kairo is working" signal (planning / settling). Fix FC wires the real Thinking
-      // indicator; for now just log so the transition is observable in the packaged app.
+      // "Kairo is working" signal (planning / settling): show the SAME Thinking card +
+      // cursor swirl as the normal path. Coalesced via followThinkingRef so the repeated
+      // calls (per observe step + at planAndShow/settleThenPlan starts) don't thrash the
+      // notch panel / cursor — a redundant call while already thinking is a cheap no-op.
       onThinking: () => {
+        if (followThinkingRef.current) {
+          return;
+        }
+        followThinkingRef.current = true;
         klog('follow', 'debug', 'thinking');
+        const thinkingPayload = activationStateToNotchPayload('thinking');
+        setPayload(thinkingPayload);
+        setDetailHidden(false);
+        void nativeBridge.showNotch(thinkingPayload);
+        void emit('cursor:thinking', {});
       },
       sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
       log: (level, msg, fields) =>
@@ -1106,24 +1151,25 @@ export function NotchApp() {
             (await nativeBridge.getActiveApp().catch(() => null));
           // A newer turn superseded this one while resolving the active app.
           if (turnEpochRef.current !== turnEpoch) return;
-          // The controller owns the pointer + step speech from here; show an idle
-          // (hidden) capsule so the notch isn't stuck on "Thinking" while it guides.
-          const followPayload: NotchPayload = {
-            state: 'showing_step',
-            layout: 'answer',
-            title: 'Kairo is guiding',
-            detail: ''
-          };
+          // The controller drives the notch card from here (thinking → speaking →
+          // showing_step) via its onThinking/speak/showPointer deps. Enter on the
+          // Thinking state — we're about to plan the first step — and let start() →
+          // planAndShow() → onThinking() take over immediately (it fires synchronously
+          // as start() runs, emitting the cursor swirl for typed + voice follows alike).
+          const thinkingPayload = activationStateToNotchPayload('thinking');
           contextBaselineRef.current = null;
           revealVisualsRef.current = async () => {};
-          setPayload(followPayload);
+          setPayload(thinkingPayload);
           setDetailHidden(false);
           setQuery('');
           setAnnotations([]);
           setActiveAnnotationTool(null);
-          void nativeBridge.showNotch(followPayload);
+          void nativeBridge.showNotch(thinkingPayload);
           // First pointer of this session is drawn; later ones glide.
           followFirstPointerRef.current = true;
+          // Fresh session: let the controller's first onThinking do the full round-trip
+          // (a stale-true guard from a prior session would otherwise no-op it).
+          followThinkingRef.current = false;
           // Fire-and-forget: the controller drives the reactive loop from here. Its
           // followAlong state lives in the ref, surviving later voice turns.
           void followRef.current?.start(trimmedQuery, {
