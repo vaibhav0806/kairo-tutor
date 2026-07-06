@@ -741,10 +741,14 @@ export function NotchApp() {
   );
 
   // Phase 1 gate: text-only "do I need to look at the screen?". Returns the parsed
-  // { needsScreen, voiceText }; defaults to looking on any failure.
+  // { needsScreen, voiceText, followAlong }; defaults to looking on any failure.
+  // `followAlong` marks a hands-on guide request (implies needsScreen); Task 5.3
+  // reads `gate.followAlong` in submitQuery to route into the follow controller.
   const runGate = useCallback(
-    async (query: string): Promise<{ needsScreen: boolean; voiceText: string }> => {
-      const fallback = { needsScreen: true, voiceText: '' };
+    async (
+      query: string
+    ): Promise<{ needsScreen: boolean; voiceText: string; followAlong: boolean }> => {
+      const fallback = { needsScreen: true, voiceText: '', followAlong: false };
       try {
         const active =
           capturedScreenRef.current?.activeApp ??
@@ -762,7 +766,8 @@ export function NotchApp() {
         const parsed = JSON.parse(raw.slice(start, end + 1));
         return {
           needsScreen: Boolean(parsed.needsScreen),
-          voiceText: typeof parsed.voiceText === 'string' ? parsed.voiceText : ''
+          voiceText: typeof parsed.voiceText === 'string' ? parsed.voiceText : '',
+          followAlong: parsed.followAlong === true
         };
       } catch {
         return fallback;
@@ -879,7 +884,7 @@ export function NotchApp() {
         const gate =
           source === 'voice' && annotations.length === 0
             ? await runGate(trimmedQuery)
-            : { needsScreen: true, voiceText: '' };
+            : { needsScreen: true, voiceText: '', followAlong: false };
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
         if (turnEpochRef.current !== turnEpoch) return;
         const needsScreen = source === 'typed' || annotations.length > 0 || gate.needsScreen;

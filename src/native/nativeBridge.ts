@@ -136,6 +136,17 @@ export type NativeGateInput = {
   windowTitle?: string;
 };
 
+// One follow-along guide step: the goal + step history + one settled frame → the
+// next step. Mirrors the Rust `FollowTurnInput` (camelCase over the wire).
+export type NativeFollowTurnInput = {
+  goal: string;
+  history: string[];
+  imageBase64: string;
+  mediaType: string;
+  activeApp?: string;
+  windowTitle?: string;
+};
+
 export type NativeBridge = {
   getActiveApp(): Promise<NativeActiveApp>;
   getPermissionStatus(): Promise<NativePermissionStatus>;
@@ -166,8 +177,22 @@ export type NativeBridge = {
   hideNotch(): Promise<void>;
   runTutorTurn(input: TutorTurnInput): Promise<string>;
   // Text-only "do I need to look at the screen?" gate. Returns raw JSON
-  // { needsScreen: boolean, voiceText: string }.
+  // { needsScreen: boolean, voiceText: string, followAlong: boolean }.
   runGateTurn(input: NativeGateInput): Promise<string>;
+  // --- Follow-along guide mode ---
+  // Perceptual dHash of the current screen (8×u32) for cheap, model-free "did the
+  // screen change?" checks. Returns a zero hash if no native runtime is available.
+  captureFrameHash(): Promise<number[]>;
+  // One follow-along step (vision). Returns raw JSON for the caller to JSON.parse,
+  // mirroring runTutorTurn; provider/runtime errors propagate to the caller.
+  runFollowTurn(input: NativeFollowTurnInput): Promise<string>;
+  // Cheap text-only ack after a completed step. Returns the ack sentence (may be
+  // empty); mirrors runTutorTurn (errors propagate — the caller's ack is best-effort).
+  runAckTurn(completedStep: string): Promise<string>;
+  // Arm/disarm the native mouse-down watch that emits `input:click { x, y }`
+  // (display points) while a follow-along click step is showing.
+  armFollowClick(): Promise<void>;
+  disarmFollowClick(): Promise<void>;
   transcribeAudio(input: NativeTranscribeAudioInput): Promise<NativeTranscriptionResult>;
   synthesizeSpeech(input: NativeSynthesizeSpeechInput): Promise<NativeSpeechSynthesisResult>;
   // Streaming TTS: PCM chunks arrive on `onChunk` as they're synthesized; resolves
@@ -501,7 +526,44 @@ export function createNativeBridge(
         return await invoke<string>('run_gate_turn', { input });
       } catch {
         // No native runtime / failure → default to looking at the screen.
-        return JSON.stringify({ needsScreen: true, voiceText: '' });
+        return JSON.stringify({ needsScreen: true, voiceText: '', followAlong: false });
+      }
+    },
+
+    async captureFrameHash() {
+      try {
+        const result = await invoke<{ hash: number[] }>('capture_frame_hash');
+        return result.hash;
+      } catch {
+        // No native runtime → a zero hash (every comparison reads as "unchanged").
+        return [0, 0, 0, 0, 0, 0, 0, 0];
+      }
+    },
+
+    async runFollowTurn(input) {
+      // Mirrors runTutorTurn: raw JSON string for the caller to JSON.parse; lets
+      // provider/runtime errors propagate (the follow controller catches them).
+      return invoke<string>('run_follow_turn', { input });
+    },
+
+    async runAckTurn(completedStep) {
+      // Mirrors runTutorTurn: raw string; errors propagate (caller's ack is best-effort).
+      return invoke<string>('run_ack_turn', { input: { completedStep } });
+    },
+
+    async armFollowClick() {
+      try {
+        await invoke<void>('arm_follow_click');
+      } catch {
+        // Browser previews have no native click watcher.
+      }
+    },
+
+    async disarmFollowClick() {
+      try {
+        await invoke<void>('disarm_follow_click');
+      } catch {
+        // Browser previews have no native click watcher.
       }
     },
 
