@@ -72,6 +72,15 @@ impl Default for FollowClickWatch {
     }
 }
 
+// Payload for the `input:click` event: a left mouse-down location. `CGEvent::location()`
+// gives global display coordinates; whether those are points or pixels is verified in
+// Phase 6 on the real app (this unit emits the raw value as-is).
+#[derive(serde::Serialize, Clone)]
+struct ClickPoint {
+    x: f64,
+    y: f64,
+}
+
 // Low-frequency poll (only costs anything while armed) that catches app switches
 // and tab/page changes: the frontmost bundle id changing, or the front window
 // title changing within the same app. Covers keyboard-driven switches (Cmd+Tab,
@@ -114,7 +123,11 @@ pub(crate) fn spawn_context_poll(app: &tauri::AppHandle, watch: ContextWatch) {
 // the Accessibility grant Kairo already has — no Input Monitoring prompt). If the
 // tap can't be created it degrades gracefully; the poll above still covers
 // app/tab switches.
-pub(crate) fn spawn_context_input_tap(app: &tauri::AppHandle, watch: ContextWatch) {
+pub(crate) fn spawn_context_input_tap(
+    app: &tauri::AppHandle,
+    watch: ContextWatch,
+    follow: FollowClickWatch,
+) {
     use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
     use core_graphics::event::{
         CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
@@ -133,9 +146,21 @@ pub(crate) fn spawn_context_input_tap(app: &tauri::AppHandle, watch: ContextWatc
                 CGEventType::RightMouseDown,
                 CGEventType::OtherMouseDown,
             ],
-            move |_proxy, _event_type, _event| {
+            move |_proxy, event_type, event| {
+                // Existing context-reset behavior (unchanged): any watched scroll/click
+                // while a context watch is armed + settled means the user moved on.
                 if context_watch_settled(&watch) {
                     fire_context_reset(&app, &watch, "input");
+                }
+                // Follow-along: emit the click location on a left mouse-down while armed.
+                // `event.location()` is a CGPoint in global display coordinates; whether
+                // those are points or pixels is verified in Phase 6 on the real app.
+                if matches!(event_type, CGEventType::LeftMouseDown)
+                    && follow.armed.load(Ordering::SeqCst)
+                {
+                    let p = event.location();
+                    let _ = app.emit("input:click", ClickPoint { x: p.x, y: p.y });
+                    crate::klog!(follow, debug, x = p.x, y = p.y, "emit input:click");
                 }
                 // Listen-only: never modify the event stream, always keep the event.
                 CallbackResult::Keep

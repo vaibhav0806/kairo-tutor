@@ -545,8 +545,9 @@ pub fn run() {
             // Context watcher: detect app/tab switches + scroll/click so stale
             // guidance is cleared when the user moves on. Threads idle-cheap until armed.
             let context_watch = app.state::<ContextWatch>().inner().clone();
+            let follow_watch = app.state::<FollowClickWatch>().inner().clone();
             spawn_context_poll(app.handle(), context_watch.clone());
-            spawn_context_input_tap(app.handle(), context_watch.clone());
+            spawn_context_input_tap(app.handle(), context_watch.clone(), follow_watch);
             // Native mic capture for push-to-talk: spawn the audio thread and hand
             // its command sender to the managed AudioCapture state.
             {
