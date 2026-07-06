@@ -49,8 +49,8 @@ pub(crate) fn hamming(a: &[u32; HASH_U32S], b: &[u32; HASH_U32S]) -> u32 {
 /// `bytes_per_row` (the source stride) may exceed `width*4` due to row alignment,
 /// so we index each row by the stride rather than assuming packed rows — getting
 /// this wrong shears the image and poisons the hash. Returns None if the geometry
-/// is degenerate or the source slice is too short. Pure + unit-tested; channel
-/// order is preserved as-is (irrelevant to the dHash — see `capture_frame_hash`).
+/// is degenerate or the source slice is too short. Pure + unit-tested; byte order
+/// is preserved as-is (the caller does the BGRA→RGBA swap — see `swap_rb`).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn pack_stride_rows(
     bytes: &[u8],
@@ -78,6 +78,19 @@ fn pack_stride_rows(
     Some(packed)
 }
 
+/// In place, swap byte 0 and byte 2 of every 4-byte pixel: `[B,G,R,A] → [R,G,B,A]`.
+/// CGDisplay bitmaps are BGRA; the PNG-decode fallback yields RGBA. Swapping here
+/// makes the fast path's true-luma dHash identical to the PNG path's, so the two
+/// are interchangeable within a session (a transient fast→png fallback can't flip
+/// a saturated-color frame's hash and cause a false "changed" verdict). Trailing
+/// bytes that don't complete a 4-byte pixel are left untouched. Pure + unit-tested.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn swap_rb(buf: &mut [u8]) {
+    for px in buf.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
+}
+
 /// In-process capture of the main display → 256-bit dHash. No temp file, no
 /// `screencapture` process spawn: grabs the display's CGImage bitmap directly,
 /// packs its rows (respecting stride), hashes it, and drops the full-frame buffer
@@ -86,10 +99,11 @@ fn pack_stride_rows(
 /// repeatedly). Returns None on any failure so the caller falls back to PNG.
 ///
 /// Needs the same Screen Recording TCC grant `screencapture` already relies on —
-/// no new entitlement. Channel order (CGDisplay images are BGRA) is irrelevant to
-/// correctness: `dhash` reduces to luma and we only ever compare hashes produced
-/// by this same call path, so a consistent R/B swap cancels out. We keep the raw
-/// byte order (no swap) for speed.
+/// no new entitlement. CGDisplay bitmaps are BGRA, so we swap R/B (`swap_rb`) into
+/// true RGBA before hashing: that makes this path's true-luma dHash identical to
+/// the PNG fallback's, so the fast and png paths are interchangeable within one
+/// session (a transient fallback can't produce a false "changed" verdict). The
+/// extra pass is negligible — the frame is discarded immediately after.
 #[cfg(target_os = "macos")]
 fn capture_display_dhash_fast() -> Option<[u32; HASH_U32S]> {
     use core_graphics::display::CGDisplay;
@@ -110,7 +124,8 @@ fn capture_display_dhash_fast() -> Option<[u32; HASH_U32S]> {
     let height = cg_image.height();
     let bytes_per_row = cg_image.bytes_per_row();
     let data = cg_image.data(); // CFData owning a copy of the bitmap
-    let packed = pack_stride_rows(data.bytes(), width, height, bytes_per_row)?;
+    let mut packed = pack_stride_rows(data.bytes(), width, height, bytes_per_row)?;
+    swap_rb(&mut packed); // BGRA → RGBA, so this hash matches the PNG path's
 
     let buf = image::RgbaImage::from_raw(width as u32, height as u32, packed)?;
     let dynimg = image::DynamicImage::ImageRgba8(buf);
@@ -203,6 +218,22 @@ mod tests {
         let src: Vec<u8> = (0..24u8).collect(); // 2x3 @ 4bpp, stride 8
         let packed = pack_stride_rows(&src, 2, 3, 8).expect("should pack");
         assert_eq!(packed, src);
+    }
+
+    #[test]
+    fn swap_rb_turns_bgra_into_rgba() {
+        // Two pixels: [B,G,R,A]. Swapping bytes 0 and 2 yields [R,G,B,A].
+        let mut buf = vec![10, 20, 30, 40, 50, 60, 70, 80];
+        swap_rb(&mut buf);
+        assert_eq!(buf, vec![30, 20, 10, 40, 70, 60, 50, 80]);
+    }
+
+    #[test]
+    fn swap_rb_leaves_trailing_partial_pixel_untouched() {
+        // 4 whole bytes + 2 stragglers: only the complete pixel is swapped.
+        let mut buf = vec![1, 2, 3, 4, 5, 6];
+        swap_rb(&mut buf);
+        assert_eq!(buf, vec![3, 2, 1, 4, 5, 6]);
     }
 
     #[test]
