@@ -155,4 +155,48 @@ describe('follow controller', () => {
     expect((d.runFollowTurn as any).mock.calls.length).toBe(6);
     expect(c.state.active).toBe(true); // active + idle, not torn down
   });
+
+  // A controllable sleep: the 30s idle-fade wait is a promise the test resolves by
+  // hand, while every other sleep (wait floors, settle poll) resolves instantly.
+  const gatedFadeDeps = (release: { fn?: () => void }) =>
+    deps({
+      sleep: vi.fn((ms: number) =>
+        ms === 30000
+          ? new Promise<void>((r) => {
+              release.fn = r;
+            })
+          : Promise.resolve()
+      ) as any,
+    });
+
+  it('a shown click-step schedules an idle fade that fires when nothing intervenes', async () => {
+    const release: { fn?: () => void } = {};
+    const d = gatedFadeDeps(release);
+    const c = createFollowController(d);
+    await c.start('goal', {});
+    expect(d.fadePointer).not.toHaveBeenCalled(); // pointer shown, fade still pending
+    release.fn?.();                               // the idle timer elapses
+    await flush();
+    expect(d.fadePointer).toHaveBeenCalled();
+    expect(d.disarmFollowClick).toHaveBeenCalled();
+    expect(c.state.active).toBe(true);            // dormant — goal + step kept
+    expect(c.state.currentStep).not.toBeNull();
+  });
+
+  it('a valid click before the idle timer cancels the scheduled fade', async () => {
+    const release: { fn?: () => void } = {};
+    const d = gatedFadeDeps(release);
+    const c = createFollowController(d);
+    await c.start('goal', {});
+    // Next plan is a terminal step so the click resolves cleanly.
+    d.runFollowTurn = vi.fn(async () => ({
+      say: 'done', box: null, visualTargets: [], expect: 'observe', wait: 'instant', status: 'done',
+    })) as any;
+    await c.onClick({ x: 120, y: 115 }); // valid → cancels the pending idle fade
+    const fadesAfterClick = (d.fadePointer as any).mock.calls.length;
+    release.fn?.();                       // the (now-cancelled) idle timer elapses
+    await flush();
+    // The cancelled fade must NOT fire again.
+    expect((d.fadePointer as any).mock.calls.length).toBe(fadesAfterClick);
+  });
 });

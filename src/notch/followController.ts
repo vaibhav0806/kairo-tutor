@@ -51,10 +51,32 @@ export function createFollowController(d: FollowDeps): FollowController {
   let epoch = 0;               // bumped on stop / supersede
   let clickLatch = false;      // synchronous re-entrancy guard against double-clicks
   let consecutiveObserve = 0;  // capped so observe-only models can't loop forever
+  let idleFadeToken = 0;       // bumped to cancel a scheduled idle fade
   let lastCtx: { activeApp?: string; windowTitle?: string } = {};
+
+  // Idle fade: when a click-step pointer is shown and nothing happens for
+  // cfg.pointerIdleFadeMs, hide the hint but keep the goal + step DORMANT (state
+  // stays active) so a later click/turn can resume. Uses the injected sleep + an
+  // epoch/token guard so it is cancellable and unit-testable. Cancelled by: a valid
+  // click, stop, onScreenMoved, and by the next scheduleIdleFade (token bump) when
+  // the next pointer is shown.
+  function scheduleIdleFade(myEpoch: number) {
+    const token = ++idleFadeToken;
+    void d.sleep(d.cfg.pointerIdleFadeMs).then(() => {
+      if (epoch !== myEpoch || token !== idleFadeToken || !state.active) return;
+      d.fadePointer();
+      d.disarmFollowClick();
+      d.log('info', 'idle fade');
+    });
+  }
+
+  function clearIdleFade() {
+    idleFadeToken++;
+  }
 
   function stop(reason: string) {
     epoch++;
+    clearIdleFade();
     state.active = false;
     state.currentStep = null;
     state.referenceHash = null;
@@ -90,6 +112,7 @@ export function createFollowController(d: FollowDeps): FollowController {
       consecutiveObserve = 0;
       d.showPointer(step);
       d.armFollowClick();
+      scheduleIdleFade(myEpoch);
     } else {
       // observe step: no target, nothing to wait for → auto-flow to the next step
       consecutiveObserve++;
@@ -170,6 +193,7 @@ export function createFollowController(d: FollowDeps): FollowController {
         // VALID: disarm, fade the old pointer, ack, settle, next step.
         // Bump epoch to supersede any stray in-flight settle/plan; stay active.
         const myEpoch = ++epoch;
+        clearIdleFade();
         d.disarmFollowClick();
         d.fadePointer();
         consecutiveObserve = 0;
@@ -190,7 +214,8 @@ export function createFollowController(d: FollowDeps): FollowController {
 
     onScreenMoved() {
       if (!state.active || !state.currentStep) return;
-      d.fadePointer(); // stale — hide the hint; keep the step + goal
+      clearIdleFade();  // we're fading now — cancel the pending idle fade
+      d.fadePointer();  // stale — hide the hint; keep the step + goal
       d.log('debug', 'screen moved — pointer faded, step kept');
     },
 
