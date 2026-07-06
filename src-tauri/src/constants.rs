@@ -97,7 +97,33 @@ pub(crate) const MAX_TUTOR_STEPS: usize = 7;
 
 // ---------------------------------------------------------------- Toggles
 pub(crate) const SEPARATE_GROUNDING: bool = false; // true = legacy 2-call (OpenRouter answer + Opus/Fable box)
-pub(crate) const SHOW_IN_CAPTURE: bool = true; // true = Kairo UI visible in screenshots/recordings (demo)
+// Whether Kairo's OWN UI (notch, pet cursor, guidance box) shows up in screen
+// captures/recordings AND the tutor's own screenshot. Overridable at BUILD time via
+// KAIRO_SHOW_IN_CAPTURE (build.rs declares rerun-if-env-changed so a changed value
+// recompiles). Default `true` = demo-visible for local dev. The production DMG build
+// (scripts/build-dmg.sh → `npm run dist`) sets KAIRO_SHOW_IN_CAPTURE=false so real
+// users never get Kairo's UI in their captures and the AI's screenshot stays clean.
+// Pen marks are UNAFFECTED either way — they're always included via the mode-based
+// rule in panels.rs (`shows_user_marks`).
+const fn str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+pub(crate) const SHOW_IN_CAPTURE: bool = match option_env!("KAIRO_SHOW_IN_CAPTURE") {
+    // Off only when explicitly disabled (the production DMG build sets "false").
+    Some(v) => !(str_eq(v, "false") || str_eq(v, "0")),
+    None => true, // unset → dev/demo default
+};
 
 // ---------------------------------------------------------------- Logging
 // Log the actual transcript + answer TEXT (not just lengths). Intentionally ON:
