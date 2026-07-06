@@ -1020,6 +1020,15 @@ export function NotchApp() {
             : { needsScreen: true, voiceText: '', followAlong: false };
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
         if (turnEpochRef.current !== turnEpoch) return;
+        // A genuinely new, unrelated turn ENDS any active follow-along (v1: no
+        // persist-in-background across tangents). Runs at the single point where the
+        // gate is known for EVERY entry type (voice/typed/annotation), before any
+        // branching, so a normal answer's auto-close + context teardown are never
+        // blocked by leaked follow state. A new follow request (gate.followAlong) is
+        // NOT stopped here — the controller's own start() supersedes its prior session.
+        if (!gate.followAlong && followRef.current?.state.active) {
+          followRef.current.stop('superseded by new turn');
+        }
         const needsScreen = source === 'typed' || annotations.length > 0 || gate.needsScreen;
 
         // Diagnostic: which route this turn took and whether the gate actually ran,
@@ -1274,6 +1283,9 @@ export function NotchApp() {
 
   const hideNotch = useCallback(() => {
     stopAnswerPlayback();
+    // Explicit dismiss also tears down an active follow-along (disarms the click
+    // watch + fades the pointer via the controller's stop). No-op when inactive.
+    followRef.current?.stop('dismissed');
     answerSettledRef.current = false;
     pointerInsideNotchRef.current = false;
     void nativeBridge.disarmContextWatch();
