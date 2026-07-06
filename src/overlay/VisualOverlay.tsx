@@ -80,7 +80,10 @@ export function VisualOverlay({
     <div className="visual-overlay" aria-label="Tutor visual targets">
       {targets.map((target) => (
         <OverlayTarget
-          key={`${target.kind}-${target.targetId}`}
+          // The highlight box is a stable singleton so across walkthrough steps the
+          // SAME node glides to the next target (CSS transition) instead of
+          // remounting — which would re-run its one-shot draw animation.
+          key={target.kind === 'highlight_box' ? 'highlight_box' : `${target.kind}-${target.targetId}`}
           target={target}
           dimensions={dimensions}
           displayBounds={displayBounds}
