@@ -250,6 +250,12 @@ export function NotchApp() {
   const pendingAwaitClickRef = useRef<{ visualTargets: VisualTarget[]; bounds: NativeOverlayDisplayBounds } | null>(
     null
   );
+  // Snapshot of "was a guide pointer pending when the CURRENT turn re-engaged?".
+  // resetPreviousTurn clears the watch (pending → false) long before the gate runs on
+  // the native PTT path, so runGate reads this pre-clear snapshot instead of the live
+  // `pending` to still tell the gate "a guide pointer was on screen". Consumed + reset
+  // by runGate; only ever SET true (so the 2nd resetPreviousTurn can't clobber it).
+  const pointerWasPendingRef = useRef(false);
   // A DEDICATED clip slot for the mid-guide ack ("nice, one sec") so it never
   // collides with the turn's filler/answer clip. Cut by stopAnswerPlayback.
   const followClipRef = useRef<SpeechClip | null>(null);
@@ -433,6 +439,12 @@ export function NotchApp() {
     stopAnswerPlayback();
     // A re-engage supersedes any pending guide pointer: clear the watch + native
     // click arm so the next turn starts clean (it re-arms if it points again).
+    // Snapshot the pre-clear pending state FIRST so the gate can still learn this
+    // voice turn interrupted a live guide pointer (set-on-true only, so the second
+    // resetPreviousTurn call — pending already false — can't clobber it).
+    if (pointerWatchRef.current?.pending) {
+      pointerWasPendingRef.current = true;
+    }
     pointerWatchRef.current?.clear();
     pendingAwaitClickRef.current = null;
     void nativeBridge.disarmFollowClick();
@@ -881,6 +893,7 @@ export function NotchApp() {
   const armPointerFromAwaitClick = useCallback(
     async (
       awaitClick: { visualTargets: VisualTarget[]; wait: string },
+      turnEpoch: number,
       boundsOverride?: NativeOverlayDisplayBounds | null
     ) => {
       const bounds =
@@ -908,6 +921,17 @@ export function NotchApp() {
         return;
       }
       const refHash = await nativeBridge.captureFrameHash();
+      // A newer turn superseded this one while we drew the pointer + hashed the frame
+      // (e.g. a PTT hold re-engaged → resetPreviousTurn cleared the watch). Do NOT
+      // re-arm a stale pointer + native click watch: tear down what we drew and bail.
+      if (turnEpochRef.current !== turnEpoch) {
+        klog('follow', 'debug', 'arm superseded mid-draw — clearing stale pointer');
+        pendingAwaitClickRef.current = null;
+        void nativeBridge.hideOverlay();
+        void nativeBridge.cursorRelease();
+        void nativeBridge.disarmFollowClick();
+        return;
+      }
       pointerWatchRef.current?.setPending(
         region as ScreenRegion,
         refHash,
@@ -926,7 +950,7 @@ export function NotchApp() {
   const playResponseAndArm = useCallback(
     (
       result: AskTutorResult,
-      _turnEpoch: number,
+      turnEpoch: number,
       meta: { userSide: string; gateFiller: string }
     ) => {
       const {
@@ -981,7 +1005,7 @@ export function NotchApp() {
             // AFTER narration: arm the pointer (await_click) instead of idle-closing;
             // otherwise arm the context watch + idle-close exactly as today.
             if (hasAwaitClick && awaitClick) {
-              void armPointerFromAwaitClick(awaitClick, displayBounds);
+              void armPointerFromAwaitClick(awaitClick, turnEpoch, displayBounds);
             } else {
               armCtxWatch();
             }
@@ -1002,7 +1026,7 @@ export function NotchApp() {
           },
           () => {
             if (hasAwaitClick && awaitClick) {
-              void armPointerFromAwaitClick(awaitClick, displayBounds);
+              void armPointerFromAwaitClick(awaitClick, turnEpoch, displayBounds);
             }
             markAnswerSettled();
           }
@@ -1018,6 +1042,12 @@ export function NotchApp() {
   const runGate = useCallback(
     async (query: string): Promise<{ needsScreen: boolean; voiceText: string }> => {
       const fallback = { needsScreen: true, voiceText: '' };
+      // Consume-and-reset the pre-clear snapshot: resetPreviousTurn (PTT re-engage)
+      // already cleared the live watch, so the snapshot is the source of truth for
+      // "did this turn interrupt a guide pointer?". OR-in live pending for any path
+      // that didn't reset (WebView voice), where the watch is still armed.
+      const pointerPending = pointerWasPendingRef.current || (pointerWatchRef.current?.pending ?? false);
+      pointerWasPendingRef.current = false;
       try {
         const active =
           capturedScreenRef.current?.activeApp ??
@@ -1027,7 +1057,7 @@ export function NotchApp() {
           activeApp: active?.activeApp,
           windowTitle: active?.windowTitle ?? undefined,
           history: buildGateHistory(),
-          pointerPending: pointerWatchRef.current?.pending ?? false
+          pointerPending
         });
         const start = raw.indexOf('{');
         const end = raw.lastIndexOf('}');
@@ -1155,10 +1185,14 @@ export function NotchApp() {
         // Phase 1 gate: keep it for voice, where direct answers can avoid a screen
         // turn. Typed asks are already explicit text, so route them screen-first;
         // the tutor/grounder then decides whether any visual target is useful.
-        const gate =
-          source === 'voice' && annotations.length === 0
-            ? await runGate(trimmedQuery)
-            : { needsScreen: true, voiceText: '' };
+        const gateRan = source === 'voice' && annotations.length === 0;
+        const gate = gateRan ? await runGate(trimmedQuery) : { needsScreen: true, voiceText: '' };
+        // The typed/annotation path skips runGate (the only snapshot consumer), so
+        // consume the pointer-pending snapshot here too — otherwise a typed turn that
+        // interrupted a guide would leak "was pending" into a later voice gate.
+        if (!gateRan) {
+          pointerWasPendingRef.current = false;
+        }
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
         if (turnEpochRef.current !== turnEpoch) return;
         const needsScreen =
@@ -1168,7 +1202,7 @@ export function NotchApp() {
         // so an "unrelated answer" can be traced to the gate vs the vision turn.
         klog('notch', 'info', 'gate decision', {
           source,
-          gate_ran: source === 'voice' && annotations.length === 0,
+          gate_ran: gateRan,
           needs_screen: needsScreen,
           path: needsScreen ? 'vision' : 'direct',
           answer_len: gate.voiceText.trim().length
