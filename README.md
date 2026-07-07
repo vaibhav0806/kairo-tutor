@@ -319,3 +319,6 @@ osascript -e 'quit app "Kairo Tutor"'; npm run tauri:build -- --bundles app \
 ```
 
 Change I'm making for pull request
+
+My first PR!!
+My new PR change
