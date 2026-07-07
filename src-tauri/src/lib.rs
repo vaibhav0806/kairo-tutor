@@ -422,11 +422,9 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::tray::TrayIconBuilder;
 
     let show_item = MenuItem::with_id(app, "tray_show_notch", "Show Notch", true, None::<&str>)?;
-    let restart_item =
-        MenuItem::with_id(app, "tray_restart", "Restart Kairo", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "tray_quit", "Quit Kairo", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show_item, &restart_item, &separator, &quit_item])?;
+    let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
 
     let mut builder = TrayIconBuilder::with_id("kairo-menu-bar")
         .tooltip("Kairo Tutor")
@@ -435,10 +433,6 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
             "tray_quit" => {
                 klog!(app, info, "menu bar: quit selected");
                 app.exit(0);
-            }
-            "tray_restart" => {
-                klog!(app, info, "menu bar: restart selected");
-                app.restart();
             }
             "tray_show_notch" => {
                 klog!(app, info, "menu bar: show notch selected");
