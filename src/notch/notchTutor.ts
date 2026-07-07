@@ -4,10 +4,11 @@ import { createTutorOrchestrator } from '../core/orchestrator';
 import { createRuntimeTutorPlanner, type RuntimeTutorProvider } from '../core/runtimePlanner';
 import { createTutorRuntimeErrorResponse } from '../core/tutorErrors';
 import { klog } from '../core/logger';
-import type { TutorStep, UserAnnotation } from '../core/types';
+import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
 import type {
   NativeBridge,
   NativeContextBaseline,
+  NativeOverlayDisplayBounds,
   NativeScreenCapture
 } from '../native/nativeBridge';
 import { routeVisualTargets, type RevealTransition } from '../overlay/targetRouting';
@@ -43,6 +44,14 @@ export type AskTutorResult = {
   // The app the guidance points at, used to arm the context watcher. null when the
   // answer has no on-screen target to protect from going stale.
   context: NativeContextBaseline | null;
+  // Unified turn (RU5): the SINGLE target the user should click, kept up after
+  // narration → the notch arms the pointer-watch instead of idle-closing. null ⇒
+  // today's single/steps behavior. Its box carries the click region; `wait` = settle.
+  awaitClick: { visualTargets: VisualTarget[]; wait: string } | null;
+  // The user's goal is achieved → celebrate + no pending pointer.
+  done: boolean;
+  // The frame this answer was grounded on, reused to place the await_click pointer.
+  displayBounds: NativeOverlayDisplayBounds | null;
 };
 
 export async function askTutorFromNotch({
@@ -146,7 +155,10 @@ export async function askTutorFromNotch({
       revealVisuals,
       context: anyTargets
         ? { bundleId: activeApp.bundleId, windowTitle: activeApp.windowTitle }
-        : null
+        : null,
+      awaitClick: response.awaitClick ?? null,
+      done: response.done ?? false,
+      displayBounds: displayBounds ?? null
     };
   } catch (error) {
     const response = createTutorRuntimeErrorResponse({
@@ -161,7 +173,10 @@ export async function askTutorFromNotch({
       steps: response.steps ?? [],
       revealStep: hideOnly,
       revealVisuals: hideOnly,
-      context: null
+      context: null,
+      awaitClick: null,
+      done: false,
+      displayBounds: null
     };
   }
 }

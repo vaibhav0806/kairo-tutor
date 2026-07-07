@@ -26,6 +26,19 @@ const tutorStepSchema = z.object({
     .transform((value) => value ?? [])
 });
 
+// Unified turn (RU1): the optional single click-target Kairo keeps up after
+// narration. Same visualTargets shape as a step (a highlight_box + a pointer).
+const awaitClickSchema = z.object({
+  visualTargets: z
+    .array(providerVisualTargetSchema)
+    .nullish()
+    .transform((value) => value ?? []),
+  wait: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? 'ui-settle')
+});
+
 const tutorResponseSchema = z.object({
   // The native single-call prompt returns { mode, voiceText, steps:[{say, visualTargets}] }.
   // skillSlug/screenText/expectedNextState are legacy fields still consumed by the
@@ -35,6 +48,15 @@ const tutorResponseSchema = z.object({
     .array(tutorStepSchema)
     .nullish()
     .transform((value) => value ?? []),
+  // Unified turn: a click-target the notch arms the pointer-watch on, plus a done
+  // flag. Absent/null ⇒ today's single/steps behavior (the golden rule).
+  awaitClick: awaitClickSchema
+    .nullish()
+    .transform((value) => value ?? null),
+  done: z
+    .boolean()
+    .nullish()
+    .transform((value) => value ?? false),
   skillSlug: z
     .string()
     .nullish()
@@ -175,6 +197,15 @@ export function parseTutorPlannerResponse(rawContent: string, input: TutorTurnIn
   const voiceText = sanitizeInternalAnnotationIds(parsed.voiceText, input);
   const screenText = sanitizeInternalAnnotationIds(parsed.screenText.trim() || voiceText, input);
 
+  // Unified turn: normalize the await_click target's boxes the same way steps are
+  // (drop unsafe regions, clamp confidence). null passes straight through.
+  const awaitClick = parsed.awaitClick
+    ? {
+        visualTargets: safeTargetsOf(parsed.awaitClick.visualTargets).targets,
+        wait: parsed.awaitClick.wait
+      }
+    : null;
+
   return {
     ...parsed,
     skillSlug: parsed.skillSlug.trim() || input.skill.slug,
@@ -182,6 +213,8 @@ export function parseTutorPlannerResponse(rawContent: string, input: TutorTurnIn
     screenText,
     visualTargets: primaryTargets,
     steps,
+    awaitClick,
+    done: parsed.done,
     providerMetadata: {
       confidenceState: confidenceState(primaryTargets),
       warnings

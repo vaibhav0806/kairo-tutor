@@ -73,6 +73,13 @@ export type TutorResponse = {
   // Sequential steps for the notch executor. Absent for mock/legacy responses,
   // which the notch treats as a single voiceText answer.
   steps?: TutorStep[];
+  // Unified turn (RU1/RU5): the SINGLE thing the user should click, kept up after
+  // narration so the notch arms the pointer-watch instead of idle-closing. null (or
+  // absent) ⇒ exactly today's single/steps behavior. `wait` is how long the screen
+  // takes to settle AFTER the click ('instant'|'ui-settle'|'page-load'|'network').
+  awaitClick?: { visualTargets: VisualTarget[]; wait: string } | null;
+  // The user's goal is achieved — celebrate + no pending pointer. Defaults false.
+  done?: boolean;
   expectedNextState: string;
   providerMetadata?: {
     confidenceState: 'high' | 'medium' | 'low';
