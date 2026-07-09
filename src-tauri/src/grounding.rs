@@ -446,6 +446,8 @@ pub(crate) async fn detect_click_point_openai(
     }
     let model = provider_env("OPENAI_COMPUTER_USE_MODEL", constants::OPENAI_COMPUTER_USE_MODEL);
     let base_url = provider_env("OPENAI_BASE_URL", constants::OPENAI_BASE_URL);
+    // Same reasoning effort as the Claude path (defaults to ANTHROPIC_VISION_EFFORT).
+    let effort = provider_env("OPENAI_VISION_EFFORT", constants::OPENAI_VISION_EFFORT);
     let timeout = grounding_timeout();
     let max_edge = provider_env_optional("KAIRO_VISION_MAX_EDGE")
         .and_then(|v| v.trim().parse::<u32>().ok())
@@ -497,6 +499,9 @@ pub(crate) async fn detect_click_point_openai(
     let body = json!({
         "model": model,
         "tools": [{ "type": "computer" }],
+        // Mirror the Claude path's effort knob (Anthropic sends output_config.effort;
+        // OpenAI's equivalent is reasoning.effort).
+        "reasoning": { "effort": effort },
         "input": [{
             "role": "user",
             "content": [
@@ -511,6 +516,7 @@ pub(crate) async fn detect_click_point_openai(
         debug,
         provider = "openai",
         model = %model,
+        effort = %effort,
         resized = %format!("{rw}x{rh}"),
         max_edge = max_edge,
         timeout_ms = timeout.as_millis(),

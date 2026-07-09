@@ -70,7 +70,12 @@ pub(crate) const QWEN_BASE_URL: &str = "https://dashscope-intl.aliyuncs.com/comp
 // execute the click — the AI points, the user acts. Key = OPENAI_API_KEY in .env.
 // Model/base are overridable via the env var of the same name (default = these).
 pub(crate) const OPENAI_BASE_URL: &str = "https://api.openai.com";
-pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.6";
+pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.6-sol";
+// Reasoning effort — kept IDENTICAL to the Claude path (aliases ANTHROPIC_VISION_EFFORT)
+// so both pointing engines think equally hard; change that one knob and both move.
+// Sent as OpenAI's `reasoning.effort` (accepts minimal | low | medium | high).
+// Overridable at runtime via OPENAI_VISION_EFFORT.
+pub(crate) const OPENAI_VISION_EFFORT: &str = ANTHROPIC_VISION_EFFORT;
 // Half-size of the box synthesized around OpenAI's click POINT, as a fraction of the
 // screenshot's longest (resized) edge. computer-use returns a point, not a box, so we
 // draw a small square target around it for the highlight; the cursor uses its center.
