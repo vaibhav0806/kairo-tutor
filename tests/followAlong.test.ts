@@ -4,6 +4,9 @@ import {
   stillMoving,
   sameScreen,
   screenReacted,
+  asFollowButton,
+  buttonMatches,
+  shouldNudge,
   clickInBox,
   waitFloorMs,
   parseFollowStep,
@@ -50,6 +53,35 @@ describe('screenReacted (settle Phase 1 gate)', () => {
     for (const live of [[...baseline], bigChange, [0, 0, 0, 0, 0, 0, 0, 0b111111]]) {
       expect(screenReacted(baseline, live, 28)).toBe(!sameScreen(baseline, live, 28));
     }
+  });
+});
+
+describe('button helpers', () => {
+  it('asFollowButton defaults anything not "right" to left', () => {
+    expect(asFollowButton('right')).toBe('right');
+    expect(asFollowButton('left')).toBe('left');
+    expect(asFollowButton(undefined)).toBe('left');
+    expect(asFollowButton(null)).toBe('left');
+    expect(asFollowButton('middle')).toBe('left');
+  });
+
+  it('buttonMatches is a plain equality gate', () => {
+    expect(buttonMatches('right', 'right')).toBe(true);
+    expect(buttonMatches('left', 'left')).toBe(true);
+    expect(buttonMatches('right', 'left')).toBe(false);
+    expect(buttonMatches('left', 'right')).toBe(false);
+  });
+});
+
+describe('shouldNudge (wrong-button cooldown)', () => {
+  it('a fresh pointer (-Infinity) always allows the first nudge', () => {
+    expect(shouldNudge(1000, Number.NEGATIVE_INFINITY, 3500)).toBe(true);
+    expect(shouldNudge(50, Number.NEGATIVE_INFINITY, 3500)).toBe(true);
+  });
+  it('blocks a too-soon repeat, allows once the cooldown has passed', () => {
+    expect(shouldNudge(4000, 1000, 3500)).toBe(false); // 3000ms gap < 3500 → suppressed
+    expect(shouldNudge(4500, 1000, 3500)).toBe(true);  // 3500ms gap → allowed again
+    expect(shouldNudge(9000, 1000, 3500)).toBe(true);  // well past → allowed
   });
 });
 

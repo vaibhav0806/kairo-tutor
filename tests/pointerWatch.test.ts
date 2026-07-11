@@ -13,6 +13,7 @@ function deps(overrides: Partial<PointerWatchDeps> = {}): PointerWatchDeps {
     fadePointer: vi.fn(),
     reshowPointer: vi.fn(),
     onValidClick: vi.fn(),
+    onWrongButton: vi.fn(),
     onIdleFade: vi.fn(),
     // Both background timers (the ~800ms armed-watch poll and the ~30s idle fade) never
     // resolve by default so neither can spuriously drive the watch — and the poll's
@@ -55,8 +56,9 @@ describe('pointerWatch', () => {
     expect(w.pending).toBe(true);
     w.onClick(IN_BOX);
     expect(d.onValidClick).toHaveBeenCalledTimes(1);
-    // the pending step's wait + the pre-click baseline (the ref the box was drawn on)
-    expect(d.onValidClick).toHaveBeenCalledWith('page-load', REF);
+    // the pending step's wait + the pre-click baseline (the ref the box was drawn on) +
+    // the button used (defaults to 'left')
+    expect(d.onValidClick).toHaveBeenCalledWith('page-load', REF, 'left');
     expect(w.pending).toBe(false);
   });
 
@@ -106,7 +108,7 @@ describe('pointerWatch', () => {
     // pointer is back (guard cleared) → a valid in-box click now advances
     w.onClick(IN_BOX);
     expect(d.onValidClick).toHaveBeenCalledTimes(1);
-    expect(d.onValidClick).toHaveBeenCalledWith('ui-settle', REF);
+    expect(d.onValidClick).toHaveBeenCalledWith('ui-settle', REF, 'left');
   });
 
   it('idle-fade fires after idleFadeMs → fadePointer + onIdleFade, pending false', async () => {
@@ -121,6 +123,56 @@ describe('pointerWatch', () => {
     expect(d.fadePointer).toHaveBeenCalledTimes(1);
     expect(d.onIdleFade).toHaveBeenCalledTimes(1);
     expect(w.pending).toBe(false);
+  });
+
+  it('right-expected + right-click advances (button matches)', () => {
+    const d = deps();
+    const w = createPointerWatch(d);
+    w.setPending(BOX, REF, 'ui-settle', 'right');
+    w.onClick(IN_BOX, 'right');
+    expect(d.onValidClick).toHaveBeenCalledWith('ui-settle', REF, 'right');
+    expect(d.onWrongButton).not.toHaveBeenCalled();
+    expect(w.pending).toBe(false);
+  });
+
+  it('right-expected + LEFT-click nudges, does NOT advance, stays pending', () => {
+    const d = deps();
+    const w = createPointerWatch(d);
+    w.setPending(BOX, REF, 'ui-settle', 'right');
+    w.onClick(IN_BOX, 'left');
+    expect(d.onWrongButton).toHaveBeenCalledTimes(1);
+    expect(d.onWrongButton).toHaveBeenCalledWith('right');
+    expect(d.onValidClick).not.toHaveBeenCalled();
+    expect(w.pending).toBe(true); // still waiting for the correct button
+  });
+
+  it('left-expected + RIGHT-click nudges (symmetric), stays pending', () => {
+    const d = deps();
+    const w = createPointerWatch(d);
+    w.setPending(BOX, REF, 'instant', 'left');
+    w.onClick(IN_BOX, 'right');
+    expect(d.onWrongButton).toHaveBeenCalledWith('left');
+    expect(d.onValidClick).not.toHaveBeenCalled();
+    expect(w.pending).toBe(true);
+  });
+
+  it('a wrong-button click OUTSIDE the box does NOT nudge (button check is after in-box)', () => {
+    const d = deps();
+    const w = createPointerWatch(d);
+    w.setPending(BOX, REF, 'instant', 'right');
+    w.onClick(OUT_OF_BOX, 'left');
+    expect(d.onWrongButton).not.toHaveBeenCalled();
+    expect(d.onValidClick).not.toHaveBeenCalled();
+    expect(w.pending).toBe(true);
+  });
+
+  it('default expected button is left (3-arg setPending + no-button onClick unchanged)', () => {
+    const d = deps();
+    const w = createPointerWatch(d);
+    w.setPending(BOX, REF, 'instant'); // no button → left
+    w.onClick(IN_BOX);                 // no button → left
+    expect(d.onValidClick).toHaveBeenCalledTimes(1);
+    expect(d.onWrongButton).not.toHaveBeenCalled();
   });
 
   it('a fast double-click advances exactly once (latch)', () => {

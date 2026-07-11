@@ -43,6 +43,9 @@ const rawEnvSchema = z.object({
   // while the OLD screen is still up. The reaction, once started, is ridden out by the
   // settle-diff loop; a click that genuinely changes nothing falls through after this.
   FOLLOW_CHANGE_WAIT_MIN_MS: z.coerce.number().default(1_500),
+  // Wrong-button nudge cooldown: min gap between spoken "use the other button" hints
+  // on one pending pointer, so a fumbling user isn't nagged on every click.
+  FOLLOW_NUDGE_COOLDOWN_MS: z.coerce.number().default(3_500),
   WAIT_INSTANT_MS: z.coerce.number().default(75),
   WAIT_UI_SETTLE_MS: z.coerce.number().default(400),
   WAIT_PAGE_LOAD_MS: z.coerce.number().default(2_500),
@@ -79,6 +82,7 @@ export type KairoEnv = {
   followPointerIdleFadeMs: number;
   followArmedPollMs: number;
   followChangeWaitMinMs: number;
+  followNudgeCooldownMs: number;
   waitInstantMs: number;
   waitUiSettleMs: number;
   waitPageLoadMs: number;
@@ -146,6 +150,7 @@ export function loadKairoEnv(
     followPointerIdleFadeMs: parsed.FOLLOW_POINTER_IDLE_FADE_MS,
     followArmedPollMs: parsed.FOLLOW_ARMED_POLL_MS,
     followChangeWaitMinMs: parsed.FOLLOW_CHANGE_WAIT_MIN_MS,
+    followNudgeCooldownMs: parsed.FOLLOW_NUDGE_COOLDOWN_MS,
     waitInstantMs: parsed.WAIT_INSTANT_MS,
     waitUiSettleMs: parsed.WAIT_UI_SETTLE_MS,
     waitPageLoadMs: parsed.WAIT_PAGE_LOAD_MS,

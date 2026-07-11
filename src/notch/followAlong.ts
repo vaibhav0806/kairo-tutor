@@ -3,6 +3,8 @@
 export type FollowExpect = 'click' | 'observe';
 export type FollowWait = 'instant' | 'ui-settle' | 'page-load' | 'network';
 export type FollowStatus = 'guiding' | 'done';
+/** Which mouse button a click-step expects. Defaults to 'left' everywhere. */
+export type FollowButton = 'left' | 'right';
 
 export interface ScreenRegion { x: number; y: number; width: number; height: number }
 export interface FrameHashV { hash: number[] } // 8 x u32
@@ -73,6 +75,24 @@ export function clickInBox(
     click.y >= box.y - padPt &&
     click.y <= box.y + box.height + padPt
   );
+}
+
+/** Coerce a raw button string (from await_click) to a known button. Unknown → 'left'. */
+export function asFollowButton(raw: unknown): FollowButton {
+  return raw === 'right' ? 'right' : 'left';
+}
+
+/** Does the actual mouse button match the button the step expects? */
+export function buttonMatches(expected: FollowButton, actual: FollowButton): boolean {
+  return expected === actual;
+}
+
+/**
+ * Cooldown gate for the wrong-button nudge: true only once enough time has passed
+ * since the last nudge. Keeps a fumbling user from being nagged on every click.
+ */
+export function shouldNudge(now: number, lastNudgeAt: number, cooldownMs: number): boolean {
+  return now - lastNudgeAt >= cooldownMs;
 }
 
 /** Map a `wait` bucket to its floor in ms. Unknown → uiSettle. */

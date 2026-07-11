@@ -19,7 +19,14 @@
 // frame after the click — so a click that itself navigates the page can't be falsely
 // rejected by the already-navigated screen.
 
-import { clickInBox, sameScreen, type ScreenRegion, type FollowWait } from './followAlong';
+import {
+  buttonMatches,
+  clickInBox,
+  sameScreen,
+  type FollowButton,
+  type ScreenRegion,
+  type FollowWait,
+} from './followAlong';
 
 export interface PointerWatchCfg {
   armedPollMs: number;      // poll interval while a pointer is pending (~800)
@@ -36,7 +43,11 @@ export interface PointerWatchDeps {
   // pre-click screen (the reference the box was drawn on, kept valid by the click
   // guard) — the caller uses it to tell "the screen reacted" from "still the old
   // screen" while settling before its next screenshot.
-  onValidClick: (wait: FollowWait, baselineHash: number[]) => void;
+  onValidClick: (wait: FollowWait, baselineHash: number[], button: FollowButton) => void;
+  // A click landed IN the box, on the right target, but with the WRONG button (e.g. a
+  // left-click where a right-click was expected). The pointer stays pending; the caller
+  // nudges the user to use the other button. Never fires on a correct click or a miss.
+  onWrongButton: (expected: FollowButton) => void;
   onIdleFade: () => void;              // the pointer faded due to idle timeout (caller decides what next)
   sleep: (ms: number) => Promise<void>;
   log: (level: string, msg: string, fields?: Record<string, unknown>) => void;
@@ -44,10 +55,18 @@ export interface PointerWatchDeps {
 }
 
 export interface PointerWatch {
-  /** Begin watching a pending click-target drawn from `referenceHash`, whose click needs `wait` settle. */
-  setPending(box: ScreenRegion, referenceHash: number[], wait: FollowWait): void;
-  /** A raw click at display-point coords (from input:click). */
-  onClick(coords: { x: number; y: number }): void;
+  /**
+   * Begin watching a pending click-target drawn from `referenceHash`, whose click needs
+   * `wait` settle. `expectedButton` is which mouse button advances it (default 'left').
+   */
+  setPending(
+    box: ScreenRegion,
+    referenceHash: number[],
+    wait: FollowWait,
+    expectedButton?: FollowButton,
+  ): void;
+  /** A raw click at display-point coords (from input:click), with which button was used (default 'left'). */
+  onClick(coords: { x: number; y: number }, button?: FollowButton): void;
   /** Stop watching (no pending pointer). */
   clear(): void;
   readonly pending: boolean;
@@ -58,6 +77,7 @@ export function createPointerWatch(d: PointerWatchDeps): PointerWatch {
   let box: ScreenRegion | null = null;     // the pending click-target
   let referenceHash: number[] | null = null; // the screen the box was drawn on
   let wait: FollowWait = 'ui-settle';      // settle the caller's click needs
+  let expectedButton: FollowButton = 'left'; // which mouse button advances this pointer
   let pointerFaded = false;                // is the box hidden because the live screen drifted?
   let watchToken = 0;                      // bumped to supersede/stop poll + idle loops
   let clickLatch = false;                  // synchronous re-entrancy guard against double-clicks
@@ -117,20 +137,30 @@ export function createPointerWatch(d: PointerWatchDeps): PointerWatch {
       .catch((e) => d.log('debug', 'idle fade error', { err: String(e) }));
   }
 
+  // Restart BOTH background loops for the still-pending pointer with a fresh token —
+  // used to reset the idle-fade countdown when the user is actively (if wrongly)
+  // clicking the target, so the hint doesn't fade out from under them.
+  function rearmTimers() {
+    const myToken = ++watchToken;
+    startArmedWatch(myToken);
+    scheduleIdleFade(myToken);
+  }
+
   return {
-    setPending(b, refHash, w) {
+    setPending(b, refHash, w, btn = 'left') {
       const myToken = ++watchToken; // supersede any prior watch → its loops exit
       box = b;
       referenceHash = refHash;
       wait = w;
+      expectedButton = btn;
       pending = true;
       pointerFaded = false;         // pointer is currently shown
-      d.log('debug', 'pointer pending', { wait: w });
+      d.log('debug', 'pointer pending', { wait: w, button: btn });
       startArmedWatch(myToken);
       scheduleIdleFade(myToken);
     },
 
-    onClick(coords) {
+    onClick(coords, button = 'left') {
       if (!pending || !box) return;
       // The click guard: the armed-watch poll has decided the drawn box is stale
       // (screen scrolled/navigated/switched tabs). Read synchronously — no post-click
@@ -143,6 +173,15 @@ export function createPointerWatch(d: PointerWatchDeps): PointerWatch {
       if (!clickInBox(coords, box, d.cfg.clickPadPt)) {
         d.log('debug', 'click outside box — ignored');
         return; // passive: do nothing, stay pending
+      }
+      // In-box on the right target — but the button must match. A correct click can
+      // NEVER reach the nudge below: it exits at this gate. Only an in-box click with
+      // the wrong button falls through to the nudge (stays pending, keeps the pointer).
+      if (!buttonMatches(expectedButton, button)) {
+        d.log('info', 'wrong button on target — nudging', { expected: expectedButton, got: button });
+        rearmTimers(); // the user is actively trying → keep the pointer alive
+        d.onWrongButton(expectedButton);
+        return;
       }
       if (clickLatch) {
         d.log('debug', 'click already being processed — ignored');
@@ -161,8 +200,8 @@ export function createPointerWatch(d: PointerWatchDeps): PointerWatch {
         pending = false;
         box = null;
         referenceHash = null;
-        d.log('info', 'valid click on pending pointer', { wait: w });
-        d.onValidClick(w, baseline);
+        d.log('info', 'valid click on pending pointer', { wait: w, button });
+        d.onValidClick(w, baseline, button);
       } finally {
         clickLatch = false;
       }

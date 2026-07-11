@@ -14,7 +14,16 @@ import { type NotchAnnotationTool } from './annotationActions';
 import { buildAudioDataUrl } from './audioPlayback';
 import { createBufferedClip, createStreamingClip, type SpeechClip } from './streamingTts';
 import { createPointerWatch, type PointerWatch } from './pointerWatch';
-import { screenReacted, stillMoving, waitFloorMs, type FollowWait, type ScreenRegion } from './followAlong';
+import {
+  asFollowButton,
+  screenReacted,
+  shouldNudge,
+  stillMoving,
+  waitFloorMs,
+  type FollowButton,
+  type FollowWait,
+  type ScreenRegion,
+} from './followAlong';
 import { shouldIdleClose } from './idleClose';
 import type { AskTutorResult } from './notchTutor';
 import { subscribeToNotchPayload } from './notchEvents';
@@ -55,6 +64,38 @@ const STEP_GAP_MS = 700;
 // Tight per-step TTS timeout: a stalled step synth fails fast → retried, instead of
 // freezing the walkthrough. The full direct answer uses the generous native default.
 const STEP_SYNTH_TIMEOUT_MS = 20_000;
+
+// Wrong-button nudges: spoken when the user clicks the right target with the WRONG
+// mouse button. Keyed by the button they SHOULD have used. Picked at random so the
+// hint never sounds canned. (Only reached by an in-box wrong-button click — see the
+// pointer-watch gauntlet; a correct click can never trigger these.)
+const WRONG_BUTTON_NUDGES: Record<FollowButton, string[]> = {
+  right: [
+    'Actually, give that a right-click.',
+    'Try right-clicking it instead.',
+    'That one needs a right-click.',
+    'Right-click it to open the menu.',
+    'Oops — right-click that one.',
+    "You'll want to right-click there.",
+    'Use a right-click on that.',
+    'Go ahead and right-click it.',
+  ],
+  left: [
+    'Just a normal click there.',
+    "That's a regular left-click.",
+    'Try a left-click instead.',
+    'A normal click will do it.',
+    'No need to right-click — just click it.',
+    'Left-click that one.',
+    'Regular click there.',
+    'Oops — just left-click that.',
+  ],
+};
+
+function pickNudge(expected: FollowButton): string {
+  const pool = WRONG_BUTTON_NUDGES[expected];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 // Rolling turn-triples (unified turn). Each turn (voice OR click) records one:
 // { user: <utterance> | "[clicked the highlighted target]", gateFiller: the spoken
@@ -264,7 +305,14 @@ export function NotchApp() {
   const followFirstPointerRef = useRef(true);
   // A valid click fires the pointer-watch's onValidClick synchronously; it routes
   // into runClickTurn via this ref so the watch can be built before runClickTurn.
-  const runClickTurnRef = useRef<(wait: FollowWait, baseline: number[]) => void>(() => {});
+  const runClickTurnRef = useRef<(wait: FollowWait, baseline: number[], button: FollowButton) => void>(
+    () => {}
+  );
+  // Wrong-button nudge routing (set once speakFollowClip exists, like runClickTurnRef).
+  const nudgeWrongButtonRef = useRef<(expected: FollowButton) => void>(() => {});
+  // Timestamp of the last spoken nudge, for the cooldown. Reset to -Infinity when a fresh
+  // pointer arms so the first wrong-button nudge on it always fires (clock-independent).
+  const lastNudgeAtRef = useRef(Number.NEGATIVE_INFINITY);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
   const env = loadBrowserEnv();
 
@@ -295,8 +343,11 @@ export function NotchApp() {
         void routeVisualTargets(nativeBridge, p.visualTargets, p.bounds, 'glide');
       },
       // A valid in-box click landed → run the next (click-triggered) turn, handing
-      // it the pre-click baseline so it can settle against "the screen at click time".
-      onValidClick: (wait, baseline) => runClickTurnRef.current(wait, baseline),
+      // it the pre-click baseline so it can settle against "the screen at click time",
+      // plus which button was used (right-clicks tell Fable a context menu is now open).
+      onValidClick: (wait, baseline, button) => runClickTurnRef.current(wait, baseline, button),
+      // Right target, wrong button → speak a nudge (cooldown-gated), stay pending.
+      onWrongButton: (expected) => nudgeWrongButtonRef.current(expected),
       // The pointer sat untouched for the idle window: it already faded + cleared
       // pending. Drop the native click watch and let the notch idle-close run.
       onIdleFade: () => {
@@ -933,7 +984,7 @@ export function NotchApp() {
   // arm. Does NOT idle-close — the watch owns the pointer + its 30s idle.
   const armPointerFromAwaitClick = useCallback(
     async (
-      awaitClick: { visualTargets: VisualTarget[]; wait: string },
+      awaitClick: { visualTargets: VisualTarget[]; wait: string; button: string },
       turnEpoch: number,
       boundsOverride?: NativeOverlayDisplayBounds | null
     ) => {
@@ -952,7 +1003,8 @@ export function NotchApp() {
       klog('follow', 'debug', 'arm pointer', {
         transition,
         targets: awaitClick.visualTargets.length,
-        wait: awaitClick.wait
+        wait: awaitClick.wait,
+        button: awaitClick.button
       });
       await routeVisualTargets(nativeBridge, awaitClick.visualTargets, bounds, transition);
       const boxTarget = awaitClick.visualTargets.find((t) => t.kind === 'highlight_box');
@@ -976,8 +1028,10 @@ export function NotchApp() {
       pointerWatchRef.current?.setPending(
         region as ScreenRegion,
         refHash,
-        asFollowWait(awaitClick.wait)
+        asFollowWait(awaitClick.wait),
+        asFollowButton(awaitClick.button)
       );
+      lastNudgeAtRef.current = Number.NEGATIVE_INFINITY; // fresh pointer → first nudge always fires
       void nativeBridge.armFollowClick();
     },
     [nativeBridge]
@@ -1351,14 +1405,19 @@ export function NotchApp() {
   // tutor turn with a synthetic "[clicked the highlighted target]" user side + rolling
   // history, then render via playResponseAndArm (which re-arms if it points again).
   const runClickTurn = useCallback(
-    async (wait: FollowWait, baseline: number[]) => {
+    async (wait: FollowWait, baseline: number[], button: FollowButton) => {
       // A click-turn is a new turn: bump the epoch so a voice hold during it supersedes.
       const turnEpoch = (turnEpochRef.current += 1);
-      klog('follow', 'info', 'click turn', { wait });
+      klog('follow', 'info', 'click turn', { wait, button });
       // Barge in: a click mid-narration cuts the current step's speech and advances
       // (playSteps loops on playbackEpoch, which stopAnswerPlayback bumps).
       stopAnswerPlayback();
-      const userSide = '[clicked the highlighted target]';
+      // Tell Fable which button was used — a right-click means a context menu is now
+      // open, so its next step should point at a menu item (a normal left-click).
+      const userSide =
+        button === 'right'
+          ? '[right-clicked the highlighted target]'
+          : '[clicked the highlighted target]';
 
       // 1. Fade the old pointer (the watch already cleared its pending state) + disarm
       //    the native click watch until the next pointer arms.
@@ -1441,8 +1500,22 @@ export function NotchApp() {
 
   // Route the pointer-watch's synchronous onValidClick into the latest runClickTurn
   // without making it a dependency of the once-built watch.
-  runClickTurnRef.current = (wait: FollowWait, baseline: number[]) => {
-    void runClickTurn(wait, baseline);
+  runClickTurnRef.current = (wait: FollowWait, baseline: number[], button: FollowButton) => {
+    void runClickTurn(wait, baseline, button);
+  };
+
+  // Speak a wrong-button nudge, cooldown-gated so a fumbling user isn't nagged on every
+  // click. Wired into the pointer-watch's onWrongButton via nudgeWrongButtonRef.
+  nudgeWrongButtonRef.current = (expected: FollowButton) => {
+    const now = performance.now();
+    if (!shouldNudge(now, lastNudgeAtRef.current, env.followNudgeCooldownMs)) {
+      klog('follow', 'debug', 'wrong button nudge suppressed (cooldown)', { expected });
+      return;
+    }
+    lastNudgeAtRef.current = now;
+    const line = pickNudge(expected);
+    klog('follow', 'info', 'wrong button nudge', { expected, line });
+    void speakFollowClip(line);
   };
 
   // Arm the context watcher for a FINALIZED user drawing, so tab/window switch,
@@ -1645,13 +1718,17 @@ export function NotchApp() {
     };
   }, [nativeBridge]);
 
-  // Native left-mouse-down coordinates (display points), emitted only while a guide
-  // pointer is armed. Handed to the pointer-watch, which guards internally (in-box +
-  // faded checks) and fires a click-turn on a valid click.
+  // Native mouse-down coordinates (display points) + which button, emitted only while a
+  // guide pointer is armed. Handed to the pointer-watch, which guards internally (in-box
+  // + faded + button-match checks) and fires a click-turn on a valid click.
   useEffect(() => {
-    const pending = listen<{ x: number; y: number }>('input:click', (event) => {
-      pointerWatchRef.current?.onClick(event.payload);
-    });
+    const pending = listen<{ x: number; y: number; button?: 'left' | 'right' }>(
+      'input:click',
+      (event) => {
+        const button: FollowButton = event.payload.button === 'right' ? 'right' : 'left';
+        pointerWatchRef.current?.onClick({ x: event.payload.x, y: event.payload.y }, button);
+      }
+    );
     return () => {
       void pending.then((unlisten) => unlisten());
     };
