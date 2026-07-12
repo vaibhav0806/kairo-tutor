@@ -10,18 +10,25 @@ pub(crate) fn skill_is_active(skill_slug: &str) -> bool {
 }
 
 /// Phase-1 gate ("do I need to look at the screen?"). Text-only, no screenshot.
-pub(crate) fn gate_system_prompt() -> String {
-    [
-        "You are Kairo, a voice tutor that points at things on the user's screen. You have NOT seen their screen yet. Decide whether you need to look, if the user seems to be talking like they're seeing their screen and mentioning something there, then needsScreen=true.",
-        "needsScreen=false — answer directly. Use this for greetings, small talk, opinions, and general knowledge. Put the full spoken answer in voiceText.",
-        "needsScreen=true — you must look. Use this when the answer is about their screen: where something is, how to do something in the app they're using, or finding/clicking/showing something. Put a SHORT spoken filler in voiceText that references what they asked — one brief phrase of about 3 to 6 words, not a full sentence: e.g. \"Sure, let me find that.\", \"On it, one sec.\", \"Let me take a look.\" Snappy but natural — it plays instantly while Kairo looks.",
-        "Greetings and chit-chat are NEVER needsScreen=true — only look when there is something on their screen to point at, or if the user seems to be talking about something on their screen.",
-        "The app and window title are context, not a reason to look.",
-        "recentHistory (when present) is the recent back-and-forth. Use it to resolve a follow-up that refers to \"that\", \"the one you showed\", or where you left off.",
-        "IMPORTANT: when \"A guide pointer is currently on screen\" is stated, Kairo is mid-guide and pointing at something for the user to click. A short continuation like \"what next\", \"ok done\", \"now what\", \"how do I…\", or a new step question almost always needs the screen — set needsScreen=true.",
-        "Return ONLY JSON: { \"needsScreen\": boolean, \"voiceText\": string }.",
-    ]
-    .join("\n")
+/// `skills_block` (may be empty) = the L1 list of available skill packs so the model
+/// can also route to a `skillSlug`.
+pub(crate) fn gate_system_prompt(skills_block: &str) -> String {
+    let mut lines: Vec<String> = vec![
+        "You are Kairo, a voice tutor that points at things on the user's screen. You have NOT seen their screen yet. Decide whether you need to look, if the user seems to be talking like they're seeing their screen and mentioning something there, then needsScreen=true.".to_string(),
+        "needsScreen=false — answer directly. Use this for greetings, small talk, opinions, and general knowledge. Put the full spoken answer in voiceText.".to_string(),
+        "needsScreen=true — you must look. Use this when the answer is about their screen: where something is, how to do something in the app they're using, or finding/clicking/showing something. Put a SHORT spoken filler in voiceText that references what they asked — one brief phrase of about 3 to 6 words, not a full sentence: e.g. \"Sure, let me find that.\", \"On it, one sec.\", \"Let me take a look.\" Snappy but natural — it plays instantly while Kairo looks.".to_string(),
+        "Greetings and chit-chat are NEVER needsScreen=true — only look when there is something on their screen to point at, or if the user seems to be talking about something on their screen.".to_string(),
+        "The app and window title are context, not a reason to look.".to_string(),
+        "recentHistory (when present) is the recent back-and-forth. Use it to resolve a follow-up that refers to \"that\", \"the one you showed\", or where you left off.".to_string(),
+        "IMPORTANT: when \"A guide pointer is currently on screen\" is stated, Kairo is mid-guide and pointing at something for the user to click. A short continuation like \"what next\", \"ok done\", \"now what\", \"how do I…\", or a new step question almost always needs the screen — set needsScreen=true.".to_string(),
+    ];
+    if !skills_block.trim().is_empty() {
+        lines.push(format!(
+            "Available skills (domain-knowledge packs):\n{skills_block}\nIf the user's question is about one of these AND the active app/window matches that skill, set skillSlug to its slug. Otherwise set skillSlug to \"\". Never guess a skill that does not fit the active app."
+        ));
+    }
+    lines.push("Return ONLY JSON: { \"needsScreen\": boolean, \"voiceText\": string, \"skillSlug\": string }.".to_string());
+    lines.join("\n")
 }
 
 /// Text-only ack spoken immediately after a valid click, while the vision model

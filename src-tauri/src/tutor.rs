@@ -526,12 +526,32 @@ async fn openrouter_text_chat(
     .map_err(|error| error.message)
 }
 
+/// Keep the gate's JSON but force `skillSlug` through the registry guardrail: an
+/// unknown slug or one that doesn't match the frontmost app becomes "". When the
+/// model returned no slug but the frontmost app matches a pack, the fallback fills it.
+fn repair_gate_skill(content: &str, app: &str, bundle: &str, title: &str) -> String {
+    let Ok(mut parsed) = serde_json::from_str::<Value>(content) else {
+        return content.to_string();
+    };
+    if !constants::SKILLS_ENABLED {
+        parsed["skillSlug"] = json!("");
+        return parsed.to_string();
+    }
+    let picked = parsed
+        .get("skillSlug")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let clean = crate::skills::resolve_slug(picked, app, bundle, title);
+    parsed["skillSlug"] = json!(clean);
+    parsed.to_string()
+}
+
 #[tauri::command]
 pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
     let _t = crate::klog::timer("gate", "gate_turn");
     // Safe default when no text provider is configured: always look (the full vision
     // turn then runs), so behaviour degrades to the pre-gate flow.
-    let look = || json!({ "needsScreen": true, "voiceText": "" }).to_string();
+    let look = || json!({ "needsScreen": true, "voiceText": "", "skillSlug": "" }).to_string();
 
     if provider_env("KAIRO_AI_PROVIDER", constants::AI_PROVIDER) != "openrouter" {
         return Ok(look());
@@ -546,7 +566,14 @@ pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
     let timeout = Duration::from_millis(constants::GATE_TIMEOUT_MS);
 
     let app = input.active_app.unwrap_or_else(|| "unknown".to_string());
+    let bundle = input.bundle_id.unwrap_or_default();
     let title = input.window_title.unwrap_or_default();
+    // L1: give the model the list of skill packs so it can also route a skillSlug.
+    let skills_block = if constants::SKILLS_ENABLED {
+        crate::skills::metadata_block()
+    } else {
+        String::new()
+    };
     // Unified turn (RU5): recent turn-triples (continuity) + a "pointer on screen"
     // hint (mid-guide → bias needsScreen). Both are optional context lines.
     let history_line = match input.history.as_deref().map(str::trim) {
@@ -573,15 +600,17 @@ pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
         "gate turn"
     );
 
-    match openrouter_text_chat(&gate_system_prompt(), &user_message, &model, timeout, true).await {
+    let system = gate_system_prompt(&skills_block);
+    match openrouter_text_chat(&system, &user_message, &model, timeout, true).await {
         Ok(content) => {
+            let repaired = repair_gate_skill(&content, &app, &bundle, &title);
             crate::klog!(
                 gate,
                 debug,
                 "gate result: {}",
-                content.chars().take(200).collect::<String>()
+                repaired.chars().take(200).collect::<String>()
             );
-            Ok(content)
+            Ok(repaired)
         }
         Err(error) => {
             crate::klog!(gate, warn, "turn failed; defaulting to look: {}", error);
@@ -606,4 +635,27 @@ pub(crate) async fn run_ack_turn(input: AckInput) -> Result<String, String> {
     let text = text.trim().to_string();
     crate::klog!(follow, info, len = text.len(), "ack ready");
     Ok(text)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn repair_gate_skill_drops_wrong_app_and_fills_match() {
+        // Model picked the Figma pack but frontmost app is Blender → dropped.
+        let out = super::repair_gate_skill(
+            "{\"needsScreen\":true,\"voiceText\":\"\",\"skillSlug\":\"figma-first-animation\"}",
+            "Blender",
+            "org.blender",
+            "Blender",
+        );
+        assert!(out.contains("\"skillSlug\":\"\""));
+        // Model returned no slug but app is Figma → fallback fills it.
+        let out2 = super::repair_gate_skill(
+            "{\"needsScreen\":true,\"voiceText\":\"\",\"skillSlug\":\"\"}",
+            "Figma",
+            "com.figma.Desktop",
+            "Untitled – Figma",
+        );
+        assert!(out2.contains("figma-first-animation"));
+    }
 }
