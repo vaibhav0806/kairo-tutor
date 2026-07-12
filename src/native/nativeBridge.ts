@@ -133,6 +133,7 @@ export type NativeContextBaseline = {
 export type NativeGateInput = {
   userQuery: string;
   activeApp?: string;
+  bundleId?: string;
   windowTitle?: string;
   // Unified turn (RU5): the last ~6 rolling turn-triples as text, for continuity.
   history?: string;

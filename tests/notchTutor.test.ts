@@ -64,7 +64,7 @@ describe('askTutorFromNotch', () => {
       query: 'What is on this screen?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
-      defaultSkill: 'blender'
+      skillSlug: 'blender'
     });
 
     expect(result.payload).toEqual({
@@ -95,7 +95,7 @@ describe('askTutorFromNotch', () => {
       query: 'What is this marked area?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
-      defaultSkill: 'blender',
+      skillSlug: 'blender',
       annotations: [annotation]
     });
 
@@ -141,7 +141,7 @@ describe('askTutorFromNotch', () => {
       query: 'Do you see my annotation?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
-      defaultSkill: 'blender',
+      skillSlug: 'blender',
       annotations: [annotation]
     });
     // Visuals are deferred until TTS start; reveal them, then assert routing.
@@ -187,7 +187,7 @@ describe('askTutorFromNotch', () => {
       query: 'Where is the GitHub homepage?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
-      defaultSkill: 'blender'
+      skillSlug: 'blender'
     });
     await result.revealVisuals();
 
@@ -229,7 +229,7 @@ describe('askTutorFromNotch', () => {
       query: 'What is this panel?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
-      defaultSkill: 'blender'
+      skillSlug: 'blender'
     });
     await result.revealVisuals();
 
@@ -260,7 +260,7 @@ describe('askTutorFromNotch', () => {
       query: 'What is on this screen?',
       nativeBridge: bridge,
       aiProvider: 'openrouter',
-      defaultSkill: 'blender'
+      skillSlug: 'blender'
     });
 
     expect(result.payload).toMatchObject({

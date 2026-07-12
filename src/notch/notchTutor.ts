@@ -18,7 +18,8 @@ export type AskTutorFromNotchOptions = {
   query: string;
   nativeBridge: NativeBridge;
   aiProvider: RuntimeTutorProvider;
-  defaultSkill: string;
+  // Slug of the skill pack for this task ("" = let Rust resolve via the app fallback).
+  skillSlug: string;
   annotations?: UserAnnotation[];
   // Screenshot captured at voice-start; reused here so the ask doesn't wait on a
   // fresh capture. Falls back to capturing now (e.g. typed input, no voice).
@@ -59,7 +60,7 @@ export async function askTutorFromNotch({
   query,
   nativeBridge,
   aiProvider,
-  defaultSkill,
+  skillSlug,
   annotations = [],
   screenCapture: providedCapture,
   recentContext,
@@ -97,7 +98,7 @@ export async function askTutorFromNotch({
         annotations
       },
       screenCapture,
-      skillSlug: defaultSkill,
+      skillSlug,
       recentContext,
       spokenIntro
     });
@@ -163,7 +164,7 @@ export async function askTutorFromNotch({
     };
   } catch (error) {
     const response = createTutorRuntimeErrorResponse({
-      skillSlug: defaultSkill,
+      skillSlug,
       error
     });
     const hideOnly = async () => {

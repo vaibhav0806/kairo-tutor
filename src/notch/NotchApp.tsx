@@ -251,6 +251,9 @@ export function NotchApp() {
   const settleFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Session memory: rolling turn-triples for continuity (last N → tutor/gate).
   const triplesRef = useRef<TurnTriple[]>([]);
+  // The skill pack chosen for the current task. Set by the gate (voice path); reused
+  // across follow-along turns; "" lets Rust resolve it via the app-match fallback.
+  const activeSkillRef = useRef<string>('');
   // Mirrors the prompt text so the idle check can tell "typing a follow-up" (block
   // close) from a merely focused-but-empty prompt (the autoFocus default).
   const queryRef = useRef('');
@@ -1150,8 +1153,8 @@ export function NotchApp() {
   // { needsScreen, voiceText }; defaults to looking on any failure. Sees the last 6
   // turn-triples + a `pointerPending` hint (mid-guide → bias needsScreen=true).
   const runGate = useCallback(
-    async (query: string): Promise<{ needsScreen: boolean; voiceText: string }> => {
-      const fallback = { needsScreen: true, voiceText: '' };
+    async (query: string): Promise<{ needsScreen: boolean; voiceText: string; skillSlug: string }> => {
+      const fallback = { needsScreen: true, voiceText: '', skillSlug: '' };
       // Consume-and-reset the pre-clear snapshot: resetPreviousTurn (PTT re-engage)
       // already cleared the live watch, so the snapshot is the source of truth for
       // "did this turn interrupt a guide pointer?". OR-in live pending for any path
@@ -1165,6 +1168,7 @@ export function NotchApp() {
         const raw = await nativeBridge.runGateTurn({
           userQuery: query,
           activeApp: active?.activeApp,
+          bundleId: active?.bundleId ?? undefined,
           windowTitle: active?.windowTitle ?? undefined,
           history: buildGateHistory(),
           pointerPending
@@ -1177,7 +1181,8 @@ export function NotchApp() {
         const parsed = JSON.parse(raw.slice(start, end + 1));
         return {
           needsScreen: Boolean(parsed.needsScreen),
-          voiceText: typeof parsed.voiceText === 'string' ? parsed.voiceText : ''
+          voiceText: typeof parsed.voiceText === 'string' ? parsed.voiceText : '',
+          skillSlug: typeof parsed.skillSlug === 'string' ? parsed.skillSlug : ''
         };
       } catch {
         return fallback;
@@ -1296,12 +1301,19 @@ export function NotchApp() {
         // turn. Typed asks are already explicit text, so route them screen-first;
         // the tutor/grounder then decides whether any visual target is useful.
         const gateRan = source === 'voice' && annotations.length === 0;
-        const gate = gateRan ? await runGate(trimmedQuery) : { needsScreen: true, voiceText: '' };
+        const gate = gateRan
+          ? await runGate(trimmedQuery)
+          : { needsScreen: true, voiceText: '', skillSlug: '' };
         // The typed/annotation path skips runGate (the only snapshot consumer), so
         // consume the pointer-pending snapshot here too — otherwise a typed turn that
         // interrupted a guide would leak "was pending" into a later voice gate.
         if (!gateRan) {
           pointerWasPendingRef.current = false;
+        }
+        // Route-once: cache the gate's skill pick for this task; follow-along turns
+        // reuse it. Non-gate paths keep the last cached slug (or "" → Rust fallback).
+        if (gateRan) {
+          activeSkillRef.current = gate.skillSlug;
         }
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
         if (turnEpochRef.current !== turnEpoch) return;
@@ -1359,7 +1371,7 @@ export function NotchApp() {
           query: trimmedQuery,
           nativeBridge,
           aiProvider: env.aiProvider,
-          defaultSkill: env.defaultSkill,
+          skillSlug: activeSkillRef.current,
           annotations,
           screenCapture: capturedScreenRef.current,
           recentContext,
@@ -1386,7 +1398,6 @@ export function NotchApp() {
       annotations,
       markAnswerSettled,
       env.aiProvider,
-      env.defaultSkill,
       nativeBridge,
       buildRecentContext,
       recordTriple,
@@ -1467,7 +1478,8 @@ export function NotchApp() {
           query: userSide,
           nativeBridge,
           aiProvider: env.aiProvider,
-          defaultSkill: env.defaultSkill,
+          // Reuse the skill cached when this guide's task began (route-once).
+          skillSlug: activeSkillRef.current,
           annotations: [],
           screenCapture: shot,
           recentContext,
@@ -1489,7 +1501,6 @@ export function NotchApp() {
     [
       nativeBridge,
       env.aiProvider,
-      env.defaultSkill,
       buildRecentContext,
       settleAfterClick,
       speakFollowClip,
