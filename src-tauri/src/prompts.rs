@@ -3,12 +3,6 @@
 
 use crate::TutorTurnInput;
 
-/// A skill is "active" when the slug names a real, loaded pack. Empty/unknown slugs
-/// mean "no skill" → the L2 body is omitted from the prompt entirely.
-pub(crate) fn skill_is_active(skill_slug: &str) -> bool {
-    !skill_slug.trim().is_empty() && crate::skills::get(skill_slug).is_some()
-}
-
 /// Phase-1 gate ("do I need to look at the screen?"). Text-only, no screenshot.
 /// `skills_block` (may be empty) = the L1 list of available skill packs so the model
 /// can also route to a `skillSlug`.
@@ -102,16 +96,4 @@ actual control in the screenshot.\n{}",
     }
     lines.push("Output ONLY the JSON object — no prose, no markdown, no code fences, nothing before { or after }.".to_string());
     lines.join("\n")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn active_pack_recognized_inactive_not() {
-        assert!(skill_is_active("figma-first-animation"));
-        assert!(!skill_is_active(""));
-        assert!(!skill_is_active("nope-not-a-pack"));
-    }
 }

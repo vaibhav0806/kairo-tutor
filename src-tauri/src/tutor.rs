@@ -267,8 +267,27 @@ async fn send_openrouter_chat_request(
 }
 
 #[tauri::command]
-pub(crate) async fn run_tutor_turn(input: TutorTurnInput) -> Result<String, String> {
+pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, String> {
     let _t = crate::klog::timer("tutor", "tutor_turn");
+    // Resolve/validate the incoming slug against the LIVE frontmost app (it may have
+    // changed since the gate ran; non-gate paths send ""). Keeps skill logic in Rust.
+    input.skill_slug = if constants::SKILLS_ENABLED {
+        crate::skills::resolve_slug(
+            &input.skill_slug,
+            &input.active_app.active_app,
+            input.active_app.bundle_id.as_deref().unwrap_or(""),
+            input.active_app.window_title.as_deref().unwrap_or(""),
+        )
+    } else {
+        String::new()
+    };
+    crate::klog!(
+        tutor,
+        info,
+        skill = %input.skill_slug,
+        app = %input.active_app.active_app,
+        "tutor turn skill resolved"
+    );
     let provider = provider_env("KAIRO_AI_PROVIDER", constants::AI_PROVIDER);
     if provider != "openrouter" {
         return Err(
