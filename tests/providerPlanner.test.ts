@@ -23,18 +23,7 @@ const tutorInput: TutorTurnInput = {
     byteLength: 6,
     displayBounds: { x: 0, y: 0, width: 900, height: 600, scaleFactor: 2 }
   },
-  skill: {
-    slug: 'blender',
-    displayName: 'Blender',
-    appIdentifiers: ['org.blenderfoundation.blender'],
-    landmarks: {
-      viewport: {
-        description: '3D viewport',
-        commonLocation: 'center',
-        visualClues: ['cube']
-      }
-    }
-  },
+  skillSlug: 'blender',
   constraints: ['Return one short tutor step.']
 };
 

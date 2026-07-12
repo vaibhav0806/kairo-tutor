@@ -87,16 +87,3 @@ export type TutorResponse = {
     warnings: string[];
   };
 };
-
-export type UiLandmark = {
-  description: string;
-  commonLocation: string;
-  visualClues: string[];
-};
-
-export type SkillPack = {
-  slug: string;
-  displayName: string;
-  appIdentifiers: string[];
-  landmarks: Record<string, UiLandmark>;
-};

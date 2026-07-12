@@ -10,7 +10,7 @@ const request = {
 };
 
 describe('tutor orchestrator', () => {
-  test('builds provider input from screen context, app metadata, annotations, and skill pack', () => {
+  test('builds provider input from screen context, app metadata, annotations, and skill slug', () => {
     const input = buildTutorTurnInput({
       request,
       screenCapture: {
@@ -20,7 +20,7 @@ describe('tutor orchestrator', () => {
         byteLength: 6,
         displayBounds: { x: 0, y: 0, width: 900, height: 600, scaleFactor: 2 }
       },
-      skillSlug: 'blender'
+      skillSlug: 'figma-first-animation'
     });
 
     expect(input.userQuery).toBe('Help me animate this');
@@ -30,17 +30,27 @@ describe('tutor orchestrator', () => {
       imageMimeType: 'image/png',
       byteLength: 6
     });
-    expect(input.skill.slug).toBe('blender');
+    expect(input.skillSlug).toBe('figma-first-animation');
     expect(input.constraints).toContain('Return one short tutor step.');
     expect(input.constraints).toContain(
       'Do not invent app state that is not visible in the provided context.'
     );
   });
 
+  test('carries the skill slug through verbatim (routing lives in Rust, not here)', () => {
+    const input = buildTutorTurnInput({ request, screenCapture: null, skillSlug: 'anything' });
+    expect(input.skillSlug).toBe('anything');
+  });
+
+  test('defaults an empty slug to "" so Rust resolves via the app fallback', () => {
+    const input = buildTutorTurnInput({ request, screenCapture: null, skillSlug: '' });
+    expect(input.skillSlug).toBe('');
+  });
+
   test('uses the configured planner adapter for a tutor turn', async () => {
     const response = {
       mode: 'guided_lesson' as const,
-      skillSlug: 'blender',
+      skillSlug: 'figma-first-animation',
       voiceText: 'Click the cube.',
       screenText: 'Select the cube.',
       visualTargets: [],
@@ -53,50 +63,15 @@ describe('tutor orchestrator', () => {
       orchestrator.runTextTurn({
         request,
         screenCapture: null,
-        skillSlug: 'blender'
+        skillSlug: 'figma-first-animation'
       })
     ).resolves.toBe(response);
 
-    expect(planner).toHaveBeenCalledWith(expect.objectContaining({
-      userQuery: 'Help me animate this',
-      skill: expect.objectContaining({ slug: 'blender' })
-    }));
-  });
-
-  test('loads a skill pack when the user mentions that app even if another app is active', () => {
-    const input = buildTutorTurnInput({
-      request: {
-        userQuery: 'How do I start with Blender?',
-        activeApp: 'Chrome',
-        bundleId: 'com.google.Chrome',
-        windowTitle: 'Search',
-        annotations: []
-      },
-      screenCapture: null,
-      skillSlug: 'blender'
-    });
-
-    expect(input.skill.slug).toBe('blender');
-  });
-
-  test('uses a general skill fallback instead of assuming the configured default applies', () => {
-    const input = buildTutorTurnInput({
-      request: {
-        userQuery: 'Where is the rectangle tool?',
-        activeApp: 'Chrome',
-        bundleId: 'com.google.Chrome',
-        windowTitle: 'tldraw',
-        annotations: []
-      },
-      screenCapture: null,
-      skillSlug: 'blender'
-    });
-
-    expect(input.skill.slug).toBe('general');
-    expect(input.skill.displayName).toBe('General screen');
-    // Constraints are generic now — no skill-pack / mode noise leaks into the prompt.
-    expect(input.constraints).not.toContain(
-      'Configured default skill is blender; do not assume it applies unless the app or question matches it.'
+    expect(planner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userQuery: 'Help me animate this',
+        skillSlug: 'figma-first-animation'
+      })
     );
   });
 });

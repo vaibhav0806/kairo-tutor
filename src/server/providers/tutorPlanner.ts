@@ -142,7 +142,7 @@ function fallbackResponse(input: TutorTurnInput, warning: string, rawContent?: s
 
   return {
     mode: 'single',
-    skillSlug: input.skill.slug,
+    skillSlug: input.skillSlug,
     voiceText: visibleText,
     screenText: visibleText,
     visualTargets: [],
@@ -215,7 +215,7 @@ export function parseTutorPlannerResponse(rawContent: string, input: TutorTurnIn
 
   return {
     ...parsed,
-    skillSlug: parsed.skillSlug.trim() || input.skill.slug,
+    skillSlug: parsed.skillSlug.trim() || input.skillSlug,
     voiceText,
     screenText,
     visualTargets: primaryTargets,

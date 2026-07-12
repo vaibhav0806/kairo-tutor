@@ -12,12 +12,7 @@ const input: TutorTurnInput = {
     imageBase64: 'abc123',
     byteLength: 6
   },
-  skill: {
-    slug: 'blender',
-    displayName: 'Blender',
-    appIdentifiers: ['org.blenderfoundation.blender'],
-    landmarks: {}
-  },
+  skillSlug: 'blender',
   constraints: ['Return one short tutor step.']
 };
 

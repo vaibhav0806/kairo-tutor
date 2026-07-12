@@ -62,7 +62,7 @@ export function createRuntimeTutorPlanner({
         return parseTutorPlannerResponse(rawProviderResponse, input);
       } catch (error) {
         return createTutorRuntimeErrorResponse({
-          skillSlug: input.skill.slug,
+          skillSlug: input.skillSlug,
           error
         });
       }

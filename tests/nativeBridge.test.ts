@@ -282,12 +282,7 @@ describe('createNativeBridge', () => {
       activeApp: { activeApp: 'Blender' },
       annotations: [],
       screen: { captured: false, reason: 'No capture' },
-      skill: {
-        slug: 'blender',
-        displayName: 'Blender',
-        appIdentifiers: ['org.blenderfoundation.blender'],
-        landmarks: {}
-      },
+      skillSlug: 'blender',
       constraints: ['Return one short tutor step.']
     };
     const invoke = vi.fn(async () => '{"voiceText":"Click the cube."}') as unknown as NativeInvoke;
@@ -378,12 +373,7 @@ describe('createNativeBridge', () => {
       activeApp: { activeApp: 'Blender' },
       annotations: [],
       screen: { captured: false, reason: 'No capture' },
-      skill: {
-        slug: 'blender',
-        displayName: 'Blender',
-        appIdentifiers: ['org.blenderfoundation.blender'],
-        landmarks: {}
-      },
+      skillSlug: 'blender',
       constraints: ['Return one short tutor step.']
     };
     const invoke = vi.fn(async () => {

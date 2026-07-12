@@ -1,11 +1,10 @@
-import { createSkillPackRegistry } from './skills';
 import type { TutorRequest, TutorResponse } from './types';
 
+// Browser-preview fallback planner. Not skill-aware (real routing lives in Rust);
+// it just echoes a fixed slug so the UI has something to render without a backend.
 export function createMockTutorPlanner() {
-  const registry = createSkillPackRegistry();
-
   return {
-    createIdleResponse(skillSlug = 'blender'): TutorResponse {
+    createIdleResponse(skillSlug = 'general'): TutorResponse {
       return {
         mode: 'idle',
         skillSlug,
@@ -17,14 +16,14 @@ export function createMockTutorPlanner() {
     },
 
     planNextStep(request: TutorRequest): TutorResponse {
-      const skill = registry.matchActiveApp(request) ?? registry.getBySlug('blender');
+      const skillSlug = 'general';
       const normalizedQuery = request.userQuery.toLowerCase();
       const firstAnnotation = request.annotations[0];
 
       if (firstAnnotation) {
         return {
           mode: 'stuck_help',
-          skillSlug: skill.slug,
+          skillSlug,
           voiceText:
             'I see your marked area. If that is the cube, click once near the center of that selection before we add the first keyframe.',
           screenText: 'Use your marked area to select the cube.',
@@ -41,12 +40,12 @@ export function createMockTutorPlanner() {
         };
       }
 
-      if (skill.slug === 'blender' && normalizedQuery.includes('animation')) {
+      if (normalizedQuery.includes('animation')) {
         return {
           mode: 'guided_lesson',
-          skillSlug: skill.slug,
+          skillSlug,
           voiceText:
-            'I can see Blender is open. We will animate the cube. First, click the cube in the center. I am highlighting it now.',
+            'I can see the app is open. We will animate the cube. First, click the cube in the center. I am highlighting it now.',
           screenText: 'Step 1: Select the cube in the viewport.',
           visualTargets: [
             {
@@ -80,7 +79,7 @@ export function createMockTutorPlanner() {
 
       return {
         mode: 'stuck_help',
-        skillSlug: skill.slug,
+        skillSlug,
         voiceText:
           'I can answer general questions too. Ask anything, or annotate the part of the screen you want me to inspect.',
         screenText: 'Ask anything, or annotate the problem area.',

@@ -1,5 +1,4 @@
-import { createSkillPackRegistry } from './skills';
-import type { ActiveAppContext, SkillPack, TutorRequest, TutorResponse, UserAnnotation } from './types';
+import type { ActiveAppContext, TutorRequest, TutorResponse, UserAnnotation } from './types';
 import type { NativeScreenCapture } from '../native/nativeBridge';
 
 export type TutorScreenInput = {
@@ -17,7 +16,7 @@ export type TutorTurnInput = {
   activeApp: ActiveAppContext;
   annotations: UserAnnotation[];
   screen: TutorScreenInput;
-  skill: SkillPack;
+  skillSlug: string;
   constraints: string[];
   // Preformatted recent conversation for continuity (last N turns). Optional.
   recentContext?: string;
@@ -40,12 +39,6 @@ export function buildTutorTurnInput({
   recentContext?: string;
   spokenIntro?: string;
 }): TutorTurnInput {
-  const registry = createSkillPackRegistry();
-  const skill =
-    registry.matchUserQuery(request.userQuery) ??
-    registry.matchActiveApp(request) ??
-    registry.getGeneral();
-
   return {
     userQuery: request.userQuery,
     activeApp: {
@@ -68,7 +61,7 @@ export function buildTutorTurnInput({
           captured: false,
           reason: 'No screen capture is available for this turn.'
         },
-    skill,
+    skillSlug: skillSlug ?? '',
     constraints: [
       'Return one short tutor step.',
       'Do not invent app state that is not visible in the provided context.'
