@@ -129,6 +129,10 @@ pub(crate) const MAX_TUTOR_STEPS: usize = 7;
 
 // ---------------------------------------------------------------- Toggles
 pub(crate) const SEPARATE_GROUNDING: bool = false; // true = legacy 2-call (OpenRouter answer + Opus/Fable box)
+// Master switch for skill packs (L1 routing in the gate + L2 body injection in the
+// tutor turn). Flip to `false` to run the A/B baseline: identical flow, no skill
+// knowledge injected and no skillSlug emitted.
+pub(crate) const SKILLS_ENABLED: bool = true;
 // Whether Kairo's OWN UI (notch, pet cursor, guidance box) shows up in screen
 // captures/recordings AND the tutor's own screenshot. Overridable at BUILD time via
 // KAIRO_SHOW_IN_CAPTURE (build.rs declares rerun-if-env-changed so a changed value

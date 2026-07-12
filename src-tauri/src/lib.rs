@@ -12,6 +12,8 @@ use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 mod prompts;
 
+mod skills;
+
 mod constants;
 
 #[macro_use]
