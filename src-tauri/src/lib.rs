@@ -692,8 +692,7 @@ mod tests {
     };
     use crate::types::{
         DetectedBox, OcrElement, OverlayDisplayBounds, ScreenRegion, SynthesizeSpeechInput,
-        TranscribeAudioInput, TutorActiveAppContext, TutorScreenInput, TutorSkillPack,
-        TutorTurnInput,
+        TranscribeAudioInput, TutorActiveAppContext, TutorScreenInput, TutorTurnInput,
     };
     use serde_json::json;
 
@@ -1040,12 +1039,7 @@ mod tests {
                 }),
                 image_geometry: None,
             },
-            skill: TutorSkillPack {
-                slug: "blender".to_string(),
-                display_name: "Blender".to_string(),
-                app_identifiers: vec!["org.blenderfoundation.blender".to_string()],
-                landmarks: json!({}),
-            },
+            skill_slug: "figma-first-animation".to_string(),
             constraints: vec!["Return one short tutor step.".to_string()],
             recent_context: None,
             spoken_intro: None,

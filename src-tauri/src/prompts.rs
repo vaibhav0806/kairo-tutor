@@ -1,14 +1,12 @@
 //! All model-facing system prompts in one place. Kept short and plain-spoken while
 //! preserving every load-bearing rule.
 
-use crate::types::TutorSkillPack;
 use crate::TutorTurnInput;
 
-/// A skill is "active" only when a real, app-specific pack is selected. The
-/// `general` pack (and any empty pack) means "no skill" → the skill line and
-/// landmarks are omitted from the prompt entirely.
-pub(crate) fn skill_is_active(skill: &TutorSkillPack) -> bool {
-    !skill.display_name.trim().is_empty() && skill.slug != "general"
+/// A skill is "active" when the slug names a real, loaded pack. Empty/unknown slugs
+/// mean "no skill" → the L2 body is omitted from the prompt entirely.
+pub(crate) fn skill_is_active(skill_slug: &str) -> bool {
+    !skill_slug.trim().is_empty() && crate::skills::get(skill_slug).is_some()
 }
 
 /// Phase-1 gate ("do I need to look at the screen?"). Text-only, no screenshot.
@@ -82,11 +80,14 @@ pub(crate) fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {
     {
         lines.push("You have ALREADY said `spokenIntro` aloud this turn (a quick greeting/acknowledgment). Continue naturally from it — do NOT greet again, repeat it, or re-answer small talk like \"how are you\". Go straight into the answer or first step.".to_string());
     }
-    // Skill line only when a real, app-specific skill is selected (none today).
-    if skill_is_active(&input.skill) {
+    // L2: inject the selected pack's full body. Authoritative app knowledge for this
+    // turn. Stateless calls → re-injected every turn (cheap; ~400-700 tokens).
+    if let Some(skill) = crate::skills::get(&input.skill_slug) {
         lines.push(format!(
-            "Selected skill, when relevant: {} ({}).",
-            input.skill.display_name, input.skill.slug
+            "ACTIVE SKILL — {}. This is authoritative domain knowledge for the app on \
+screen; follow it when relevant. It contains NO screen coordinates — always find the \
+actual control in the screenshot.\n{}",
+            skill.name, skill.body
         ));
     }
     if !input.constraints.is_empty() {
@@ -94,4 +95,16 @@ pub(crate) fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {
     }
     lines.push("Output ONLY the JSON object — no prose, no markdown, no code fences, nothing before { or after }.".to_string());
     lines.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_pack_recognized_inactive_not() {
+        assert!(skill_is_active("figma-first-animation"));
+        assert!(!skill_is_active(""));
+        assert!(!skill_is_active("nope-not-a-pack"));
+    }
 }

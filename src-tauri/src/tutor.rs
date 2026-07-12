@@ -9,9 +9,7 @@ use crate::grounding::{
 };
 use crate::constants;
 use crate::ocr::build_screen_elements_block;
-use crate::prompts::{
-    ack_system_prompt, build_tutor_system_prompt, gate_system_prompt, skill_is_active,
-};
+use crate::prompts::{ack_system_prompt, build_tutor_system_prompt, gate_system_prompt};
 use crate::types::{AckInput, GateInput, OcrElement, TutorTurnInput};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -39,13 +37,6 @@ fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
             "imageGeometry": input.screen.image_geometry,
         },
     });
-    // Only surface skill landmarks when a real, app-specific skill is selected
-    // (slug != "general"). No skills feature today → this stays absent.
-    if skill_is_active(&input.skill) {
-        if let Some(object) = context.as_object_mut() {
-            object.insert("skillLandmarks".to_string(), input.skill.landmarks.clone());
-        }
-    }
     // Recent conversation for continuity (a follow-up may refer to an earlier step or
     // an interrupted walkthrough). Absent on the first turn.
     if let Some(recent) = input.recent_context.as_ref().filter(|s| !s.trim().is_empty()) {

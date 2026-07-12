@@ -1,7 +1,6 @@
 //! Plain serde data structs and simple enums shared across the crate.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -191,21 +190,15 @@ pub(crate) struct TutorScreenInput {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TutorSkillPack {
-    pub(crate) slug: String,
-    pub(crate) display_name: String,
-    pub(crate) app_identifiers: Vec<String>,
-    pub(crate) landmarks: Value,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub(crate) struct TutorTurnInput {
     pub(crate) user_query: String,
     pub(crate) active_app: TutorActiveAppContext,
     pub(crate) annotations: Vec<TutorAnnotation>,
     pub(crate) screen: TutorScreenInput,
-    pub(crate) skill: TutorSkillPack,
+    /// Slug of the selected skill pack ("" = none). Resolved/validated in
+    /// `run_tutor_turn` against the frontmost app before injection.
+    #[serde(default)]
+    pub(crate) skill_slug: String,
     pub(crate) constraints: Vec<String>,
     // Preformatted recent conversation (last N turns, incl. any interrupted
     // walkthrough) for continuity. Built on the frontend; injected into the prompt.
@@ -294,6 +287,8 @@ pub(crate) struct GateInput {
     pub(crate) user_query: String,
     #[serde(default)]
     pub(crate) active_app: Option<String>,
+    #[serde(default)]
+    pub(crate) bundle_id: Option<String>,
     #[serde(default)]
     pub(crate) window_title: Option<String>,
     // Unified turn (RU5): the last ~6 rolling turn-triples as text, for continuity.
