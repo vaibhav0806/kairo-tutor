@@ -369,13 +369,37 @@ pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
     });
 }
 
-// Make the notch panel click-through everywhere EXCEPT the capsule. The notch
-// window covers a large frame (760x236) but the visible capsule is small, so
-// without this the transparent area around it swallows every click. The frontend
-// reports the capsule's rect (CSS px, viewport-relative) into NotchState.hit_rect;
-// here we poll the global cursor and flip ignore-cursor-events when it crosses the
-// capsule boundary. Fail-safe: when no rect is reported (or the notch is hidden)
-// the notch stays fully clickable rather than trapping the capsule.
+/// Should the notch trap the click at `cursor`? True ONLY when a capsule rect is
+/// reported AND the cursor is inside it (+ a small margin for unit rounding). No rect
+/// means the notch is showing nothing interactive (idle / the follow-along "waiting
+/// for your click" state), so it must be click-THROUGH — otherwise its big transparent
+/// frame swallows clicks meant for a highlighted target sitting under it.
+/// `window_pos` + `rect` are in physical pixels / CSS px respectively; `scale` maps
+/// the CSS-px rect into the physical-pixel cursor space.
+fn notch_hit_wants_clickable(
+    rect: Option<(f64, f64, f64, f64)>,
+    cursor: (f64, f64),
+    window_pos: (f64, f64),
+    scale: f64,
+) -> bool {
+    let Some((left, top, w, h)) = rect else {
+        return false;
+    };
+    let margin = 6.0 * scale;
+    let x0 = window_pos.0 + left * scale - margin;
+    let y0 = window_pos.1 + top * scale - margin;
+    let x1 = x0 + w * scale + 2.0 * margin;
+    let y1 = y0 + h * scale + 2.0 * margin;
+    cursor.0 >= x0 && cursor.0 <= x1 && cursor.1 >= y0 && cursor.1 <= y1
+}
+
+// Make the notch panel click-through everywhere EXCEPT the visible capsule. The notch
+// window covers a large frame (760x236) but the visible capsule is small (or absent),
+// so without this the transparent area around it swallows every click. The frontend
+// reports the capsule's rect (CSS px, viewport-relative) into NotchState.hit_rect, or
+// null when nothing interactive is shown; here we poll the global cursor and flip
+// ignore-cursor-events via `notch_hit_wants_clickable`. No rect → click-through so a
+// highlighted target under the notch still receives the click.
 pub(crate) fn spawn_notch_hit_tracker(app: &tauri::AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -401,25 +425,18 @@ pub(crate) fn spawn_notch_hit_tracker(app: &tauri::AppHandle) {
                 continue;
             }
             let rect = notch_state.hit_rect.lock().ok().and_then(|guard| *guard);
-            let want_clickable = match rect {
-                // Capsule rect known → clickable only when the cursor is over it (+ a
-                // small margin for unit rounding). Everywhere else → click-through.
-                Some((left, top, w, h)) => {
-                    let scale = window.scale_factor().unwrap_or(1.0);
-                    match window.outer_position() {
-                        Ok(pos) => {
-                            let margin = 6.0 * scale;
-                            let x0 = pos.x as f64 + left * scale - margin;
-                            let y0 = pos.y as f64 + top * scale - margin;
-                            let x1 = x0 + w * scale + 2.0 * margin;
-                            let y1 = y0 + h * scale + 2.0 * margin;
-                            cursor.x >= x0 && cursor.x <= x1 && cursor.y >= y0 && cursor.y <= y1
-                        }
-                        Err(_) => true,
-                    }
-                }
-                // No rect reported → fail safe to fully clickable (old behavior).
-                None => true,
+            let scale = window.scale_factor().unwrap_or(1.0);
+            // Trap the click ONLY over the visible capsule. No rect (idle / guidance
+            // wait) OR an unknown window position → click-through, so a highlighted
+            // target under the notch's big transparent frame still gets the click.
+            let want_clickable = match window.outer_position() {
+                Ok(pos) => notch_hit_wants_clickable(
+                    rect,
+                    (cursor.x, cursor.y),
+                    (pos.x as f64, pos.y as f64),
+                    scale,
+                ),
+                Err(_) => false,
             };
             if applied != Some(want_clickable) {
                 let _ = window.set_ignore_cursor_events(!want_clickable);
@@ -625,5 +642,32 @@ pub(crate) fn typing_notch_payload() -> NotchPayload {
         layout: Some("prompt".to_string()),
         title: "Ask Kairo".to_string(),
         detail: "Type a question, or hold ⌥⌃ to talk".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod notch_hit_tests {
+    use super::notch_hit_wants_clickable;
+
+    // Regression: the follow-along "waiting for your click" state reports NO capsule
+    // rect. The notch must be click-through then, or it swallows the click meant for a
+    // highlighted target under its frame (e.g. Figma's Design button at 1129,147).
+    #[test]
+    fn no_capsule_rect_is_click_through() {
+        assert!(!notch_hit_wants_clickable(None, (1129.0, 147.0), (475.0, 12.0), 1.0));
+    }
+
+    #[test]
+    fn cursor_inside_capsule_traps_the_click() {
+        // Capsule at window-local (330,10) size 100x40; window at (475,12); scale 1.
+        let rect = Some((330.0, 10.0, 100.0, 40.0));
+        assert!(notch_hit_wants_clickable(rect, (855.0, 30.0), (475.0, 12.0), 1.0));
+    }
+
+    #[test]
+    fn cursor_outside_capsule_is_click_through() {
+        let rect = Some((330.0, 10.0, 100.0, 40.0));
+        // The Design target at (1129,147) is far outside the small capsule → pass through.
+        assert!(!notch_hit_wants_clickable(rect, (1129.0, 147.0), (475.0, 12.0), 1.0));
     }
 }
