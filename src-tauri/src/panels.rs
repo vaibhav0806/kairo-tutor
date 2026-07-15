@@ -403,8 +403,11 @@ fn notch_hit_wants_clickable(
 pub(crate) fn spawn_notch_hit_tracker(app: &tauri::AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
-        // None = unknown (force the first toggle); Some(bool) = last applied state.
-        let mut applied: Option<bool> = None;
+        // Log only on a state flip (24ms polling would otherwise flood). We do NOT cache
+        // "already applied" to skip the set: `configure_notch_window` and others change
+        // ignore_cursor_events behind our back, so a cache would desync and leave the
+        // transparent frame swallowing clicks. Re-applying every tick is idempotent + cheap.
+        let mut last_logged: Option<bool> = None;
         loop {
             std::thread::sleep(Duration::from_millis(24));
             let Ok(cursor) = app.cursor_position() else {
@@ -417,12 +420,7 @@ pub(crate) fn spawn_notch_hit_tracker(app: &tauri::AppHandle) {
             };
             let Some(window) = window else { continue };
             if !window.is_visible().unwrap_or(false) {
-                // Hidden: nothing to click; leave it clickable so the next show is ready.
-                if applied != Some(true) {
-                    let _ = window.set_ignore_cursor_events(false);
-                    applied = Some(true);
-                }
-                continue;
+                continue; // hidden window receives no clicks — nothing to guard
             }
             let rect = notch_state.hit_rect.lock().ok().and_then(|guard| *guard);
             let scale = window.scale_factor().unwrap_or(1.0);
@@ -438,9 +436,11 @@ pub(crate) fn spawn_notch_hit_tracker(app: &tauri::AppHandle) {
                 ),
                 Err(_) => false,
             };
-            if applied != Some(want_clickable) {
-                let _ = window.set_ignore_cursor_events(!want_clickable);
-                applied = Some(want_clickable);
+            // ALWAYS re-apply — the only reliable defense against a desynced actual state.
+            let _ = window.set_ignore_cursor_events(!want_clickable);
+            if last_logged != Some(want_clickable) {
+                crate::klog!(notch, debug, clickable = want_clickable, "notch hit state");
+                last_logged = Some(want_clickable);
             }
         }
     });
@@ -508,9 +508,13 @@ pub(crate) fn configure_notch_window(
     window
         .set_skip_taskbar(true)
         .map_err(|error| format!("Failed to keep notch out of the taskbar: {error}"))?;
+    // Default to click-THROUGH: the notch is a big transparent frame, so it must not
+    // swallow clicks. The hit-tracker re-enables clicks precisely over the visible
+    // capsule each tick. (Was `false`/clickable here, which — combined with the
+    // tracker's old cache — left the whole frame catching clicks after every show.)
     window
-        .set_ignore_cursor_events(false)
-        .map_err(|error| format!("Failed to make notch clickable: {error}"))?;
+        .set_ignore_cursor_events(true)
+        .map_err(|error| format!("Failed to make notch click-through: {error}"))?;
     let _ = window.set_shadow(false);
     window
         .set_size(LogicalSize::new(width, height))
