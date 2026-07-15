@@ -1311,8 +1311,10 @@ export function NotchApp() {
           pointerWasPendingRef.current = false;
         }
         // Route-once: cache the gate's skill pick for this task; follow-along turns
-        // reuse it. Non-gate paths keep the last cached slug (or "" → Rust fallback).
-        if (gateRan) {
+        // reuse it. Only overwrite on a POSITIVE pick — an empty pick means "no opinion
+        // for this utterance" (e.g. a mid-task "is this right?"), NOT "drop the task's
+        // skill". The Rust guardrail still drops a stale slug if the frontmost app changes.
+        if (gateRan && gate.skillSlug) {
           activeSkillRef.current = gate.skillSlug;
         }
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
