@@ -150,9 +150,40 @@ pub(crate) fn fallback_for_app(
         .map(|s| s.slug.as_str())
 }
 
-/// Resolve the slug to inject. `incoming` = the gate's pick (may be "" or unknown).
-/// A gate pick is kept only if it exists AND matches the frontmost app; otherwise we
-/// fall back to the app match. Pure (no `SKILLS_ENABLED` gate — callers do that).
+// Known browsers: their bundle id is never the web app, so the app-identity guardrail
+// can't confirm a browser-hosted pack via bundle. We treat browsers as wildcard hosts.
+const BROWSER_BUNDLE_IDS: &[&str] = &[
+    "com.google.chrome",
+    "com.google.chrome.canary",
+    "com.brave.browser",
+    "com.brave.browser.beta",
+    "com.apple.safari",
+    "com.apple.safaritechnologypreview",
+    "company.thebrowser.browser", // Arc
+    "com.microsoft.edgemac",
+    "org.mozilla.firefox",
+    "com.vivaldi.vivaldi",
+    "com.operasoftware.opera",
+];
+
+/// Is the frontmost app a web browser? Checks the bundle id, then falls back to the
+/// app name (so it still works when System Events can't read the bundle).
+pub(crate) fn is_browser(bundle_id: &str, active_app: &str) -> bool {
+    let bundle = bundle_id.to_lowercase();
+    if BROWSER_BUNDLE_IDS.iter().any(|id| *id == bundle) {
+        return true;
+    }
+    let app = active_app.to_lowercase();
+    ["chrome", "brave", "safari", "firefox", "edge", "arc", "vivaldi", "opera", "browser"]
+        .iter()
+        .any(|term| app.contains(term))
+}
+
+/// Resolve the slug to inject. `incoming` = the gate's pick or the cached slug (may be
+/// "" or unknown). An explicit pick is kept when it fits the app OR the app is a browser
+/// (a browser can host any web app; we can't confirm via bundle, so we trust the pick).
+/// With no explicit pick we fall back to a deterministic app match only — we must NOT
+/// blindly fire a pack in a browser. Pure (no `SKILLS_ENABLED` gate — callers do that).
 pub(crate) fn resolve_slug(
     incoming: &str,
     active_app: &str,
@@ -160,10 +191,12 @@ pub(crate) fn resolve_slug(
     window_title: &str,
 ) -> String {
     if let Some(skill) = get(incoming) {
-        if matches_app(skill, active_app, bundle_id, window_title) {
+        if matches_app(skill, active_app, bundle_id, window_title)
+            || is_browser(bundle_id, active_app)
+        {
             return skill.slug.clone();
         }
-        return String::new(); // gate picked a pack that doesn't fit this app → drop
+        return String::new(); // picked a pack that clearly doesn't fit a native app → drop
     }
     fallback_for_app(active_app, bundle_id, window_title)
         .map(str::to_string)
@@ -224,7 +257,7 @@ mod tests {
             resolve_slug("figma-first-animation", "Figma", "com.figma.Desktop", "x – Figma"),
             "figma-first-animation"
         );
-        // Gate pick on a non-matching app → dropped.
+        // Gate pick on a non-matching NATIVE app → dropped.
         assert_eq!(
             resolve_slug("figma-first-animation", "Blender", "org.blender", "Blender"),
             ""
@@ -236,5 +269,22 @@ mod tests {
         );
         // Empty pick, no matching app → stays empty.
         assert_eq!(resolve_slug("", "Notes", "com.apple.Notes", "Notes"), "");
+    }
+
+    #[test]
+    fn resolve_slug_trusts_gate_pick_in_a_browser() {
+        // Figma in Brave: bundle can't confirm and the title lacks "figma", but the gate
+        // (or cached slug) picked it → trust it. This is the browser-hosted bug fix.
+        assert_eq!(
+            resolve_slug("figma-first-animation", "Brave Browser", "com.brave.Browser", "Recents"),
+            "figma-first-animation"
+        );
+        // No explicit pick in a browser → must NOT blindly fire without a title/URL signal.
+        assert_eq!(resolve_slug("", "Brave Browser", "com.brave.Browser", "YouTube"), "");
+        // No explicit pick but the browser title carries "Figma" → fallback fills it.
+        assert_eq!(
+            resolve_slug("", "Brave Browser", "com.brave.Browser", "Untitled – Figma"),
+            "figma-first-animation"
+        );
     }
 }

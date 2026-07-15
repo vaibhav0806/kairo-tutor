@@ -286,6 +286,7 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
         info,
         skill = %input.skill_slug,
         app = %input.active_app.active_app,
+        title = %input.active_app.window_title.as_deref().unwrap_or(""),
         "tutor turn skill resolved"
     );
     let provider = provider_env("KAIRO_AI_PROVIDER", constants::AI_PROVIDER);
@@ -615,6 +616,7 @@ pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
         info,
         model = %model,
         app = %app,
+        title = %title,
         question = %crate::klog::transcript_field(&input.user_query),
         "gate turn"
     );

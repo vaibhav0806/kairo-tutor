@@ -18,7 +18,7 @@ pub(crate) fn gate_system_prompt(skills_block: &str) -> String {
     ];
     if !skills_block.trim().is_empty() {
         lines.push(format!(
-            "Available skills (domain-knowledge packs):\n{skills_block}\nIf the user's question is about one of these AND the active app/window matches that skill, set skillSlug to its slug. Otherwise set skillSlug to \"\". Never guess a skill that does not fit the active app."
+            "Available skills (domain-knowledge packs):\n{skills_block}\nIf the user's question is about one of these skills, set skillSlug to its slug; otherwise set skillSlug to \"\". Trust what the user says they are working in. The active app may be a web browser (Chrome, Brave, Safari, Arc, Edge) hosting a web app — then judge from the window title and the user's words, not the browser's name."
         ));
     }
     lines.push("Return ONLY JSON: { \"needsScreen\": boolean, \"voiceText\": string, \"skillSlug\": string }.".to_string());
