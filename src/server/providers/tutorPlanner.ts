@@ -135,10 +135,13 @@ function fallbackResponse(input: TutorTurnInput, warning: string, rawContent?: s
   // Never surface raw JSON: a parse failure must not be read aloud or shown
   // verbatim. Only pass through genuine plain-text answers.
   const looksLikeJson = !!providerText && /^[`{[]/.test(providerText);
+  // The tutor turn reads the SCREEN, not the user's voice — a failure here is the AI
+  // provider erroring or returning unparseable output (e.g. quota/billing/network),
+  // never the user mis-speaking. Say so honestly instead of blaming their input.
   const visibleText =
     providerText && providerText.length > 0 && !looksLikeJson
       ? providerText
-      : "Sorry, I couldn't read that clearly — could you ask again?";
+      : "Kairo's AI is having trouble right now — please try again in a moment.";
 
   return {
     mode: 'single',
