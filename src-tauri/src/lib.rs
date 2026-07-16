@@ -394,7 +394,7 @@ fn disarm_context_watch(watch: State<'_, ContextWatch>) {
 }
 
 // Follow-along mode: while armed, the input tap emits `input:click { x, y }` for
-// every left mouse-down. Independent of the context watch above.
+// every left mouse-up. Independent of the context watch above.
 #[tauri::command]
 fn arm_follow_click(watch: State<'_, FollowClickWatch>) {
     watch.armed.store(true, Ordering::SeqCst);

@@ -180,7 +180,7 @@ export type NativeBridge = {
   // Cheap text-only ack after a completed step. Returns the ack sentence (may be
   // empty); mirrors runTutorTurn (errors propagate — the caller's ack is best-effort).
   runAckTurn(completedStep: string): Promise<string>;
-  // Arm/disarm the native mouse-down watch that emits `input:click { x, y }`
+  // Arm/disarm the native mouse-up watch that emits `input:click { x, y }`
   // (display points) while a follow-along click step is showing.
   armFollowClick(): Promise<void>;
   disarmFollowClick(): Promise<void>;

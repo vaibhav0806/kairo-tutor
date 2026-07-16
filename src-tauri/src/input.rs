@@ -55,7 +55,7 @@ fn fire_context_reset(app: &tauri::AppHandle, watch: &ContextWatch, reason: &str
     }
 }
 
-/// While armed, the mouse-down tap emits `input:click { x, y }` (display points).
+/// While armed, the mouse-up tap emits `input:click { x, y }` (display points).
 /// Independent of ContextWatch (which is a one-shot teardown signal). Clone with an
 /// internal `Arc` so the background tap thread and the Tauri commands share one flag,
 /// mirroring how ContextWatch is managed (a bare struct, not `Arc<…>`).
@@ -72,7 +72,7 @@ impl Default for FollowClickWatch {
     }
 }
 
-// Payload for the `input:click` event: a mouse-down location + which button was used
+// Payload for the `input:click` event: a mouse-up location + which button was used
 // ("left" | "right"). `CGEvent::location()` gives global display coordinates (points).
 #[derive(serde::Serialize, Clone)]
 struct ClickPoint {
@@ -142,9 +142,9 @@ pub(crate) fn spawn_context_input_tap(
             CGEventTapOptions::ListenOnly,
             vec![
                 CGEventType::ScrollWheel,
-                CGEventType::LeftMouseDown,
-                CGEventType::RightMouseDown,
-                CGEventType::OtherMouseDown,
+                CGEventType::LeftMouseUp,
+                CGEventType::RightMouseUp,
+                CGEventType::OtherMouseUp,
             ],
             move |_proxy, event_type, event| {
                 // Existing context-reset behavior (unchanged): any watched scroll/click
@@ -153,12 +153,14 @@ pub(crate) fn spawn_context_input_tap(
                     fire_context_reset(&app, &watch, "input");
                 }
                 // Follow-along: emit the click location + button on a left OR right
-                // mouse-down while armed. The frontend pointer-watch matches the button
-                // against the step's expected button. `event.location()` is a CGPoint in
-                // global display coordinates (points).
+                // mouse-UP while armed. Detecting on release (not press) matches macOS
+                // click-commit semantics: a drag-off-and-release cancels the click, and
+                // `event.location()` is then the release point so clickInBox rejects it.
+                // The frontend pointer-watch matches the button against the step's expected
+                // button. `event.location()` is a CGPoint in global display coords (points).
                 let follow_button = match event_type {
-                    CGEventType::LeftMouseDown => Some("left"),
-                    CGEventType::RightMouseDown => Some("right"),
+                    CGEventType::LeftMouseUp => Some("left"),
+                    CGEventType::RightMouseUp => Some("right"),
                     _ => None,
                 };
                 if let Some(button) = follow_button {
