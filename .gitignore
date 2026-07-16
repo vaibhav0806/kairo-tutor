@@ -12,3 +12,6 @@ src-tauri/target/
 
 # personal scratch notes (kept local)
 competitor_notes.txt
+
+# kairo UI folder
+kairo/
