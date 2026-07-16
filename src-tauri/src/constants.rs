@@ -181,14 +181,17 @@ pub(crate) const PTT_MAX_RECORD_MS: u64 = 30_000; // hard cap: auto-send a runaw
 pub(crate) const ACK_MODEL: &str = "google/gemini-2.5-flash-lite"; // text-only ack
 pub(crate) const ACK_TIMEOUT_MS: u64 = 6_000;
 
-// `wait` enum floors (ms) — the model emits the bucket, we map here. Mirrored in the
-// frontend (src/config/env.ts) — keep the two in sync.
+// `wait` enum → fixed post-click settle delay (ms). Fable emits the bucket, we sleep
+// that long before screenshotting the result — a plain per-bucket wait, no pixel
+// matching. Generous by design: better to over-wait than shoot a still-loading screen.
+// Within-bucket variance is accepted, not adapted to. Mirrored in the frontend
+// (src/config/env.ts) — keep the two in sync.
 // (Rust-unused; canonical source, consumed frontend-side via env.ts.)
 #[allow(dead_code)]
-pub(crate) const WAIT_INSTANT_MS: u64 = 75;
+pub(crate) const WAIT_INSTANT_MS: u64 = 400;
 #[allow(dead_code)]
-pub(crate) const WAIT_UI_SETTLE_MS: u64 = 400;
+pub(crate) const WAIT_UI_SETTLE_MS: u64 = 900;
 #[allow(dead_code)]
-pub(crate) const WAIT_PAGE_LOAD_MS: u64 = 2_500;
+pub(crate) const WAIT_PAGE_LOAD_MS: u64 = 3_000;
 #[allow(dead_code)]
-pub(crate) const WAIT_NETWORK_MS: u64 = 2_500;
+pub(crate) const WAIT_NETWORK_MS: u64 = 5_000;

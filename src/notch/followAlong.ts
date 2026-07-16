@@ -42,25 +42,10 @@ export function hammingDistance(a: number[], b: number[]): number {
   return d;
 }
 
-/** Screen is still animating/loading: distance exceeds the sensitive threshold. */
-export function stillMoving(a: number[], b: number[], movingBits: number): boolean {
-  return hammingDistance(a, b) > movingBits;
-}
-
-/** Same screen as the reference: distance within the tolerant threshold. */
+/** Same screen as the reference: distance within the tolerant threshold. Used by the
+ *  pointer-watch to fade/re-show a pending hint as the live screen drifts and returns. */
 export function sameScreen(a: number[], b: number[], samescreenBits: number): boolean {
   return hammingDistance(a, b) <= samescreenBits;
-}
-
-/**
- * Has the screen REACTED to the click yet? True once the live frame is a clearly
- * different screen than the pre-click baseline. This is the gate that distinguishes
- * a "still on the old screen" plateau (dialog not closed yet → don't screenshot)
- * from a real change. The tolerant `samescreenBits` threshold means antialiasing /
- * cursor-blink noise doesn't count as a reaction; only a structural change does.
- */
-export function screenReacted(baseline: number[], live: number[], samescreenBits: number): boolean {
-  return !sameScreen(baseline, live, samescreenBits);
 }
 
 /** Is a click (display points) inside the box, padded by padPt points? */

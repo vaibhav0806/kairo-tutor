@@ -39,11 +39,9 @@ export interface PointerWatchDeps {
   captureFrameHash: () => Promise<number[]>;
   fadePointer: () => void;              // hide the pending pointer visually
   reshowPointer: () => void;            // re-show the same pending pointer (glide back)
-  // A valid in-box click landed on the pending pointer. `baselineHash` is the
-  // pre-click screen (the reference the box was drawn on, kept valid by the click
-  // guard) — the caller uses it to tell "the screen reacted" from "still the old
-  // screen" while settling before its next screenshot.
-  onValidClick: (wait: FollowWait, baselineHash: number[], button: FollowButton) => void;
+  // A valid in-box click landed on the pending pointer. The caller runs the next turn:
+  // it waits out the `wait` bucket's settle delay, then screenshots the result.
+  onValidClick: (wait: FollowWait, button: FollowButton) => void;
   // A click landed IN the box, on the right target, but with the WRONG button (e.g. a
   // left-click where a right-click was expected). The pointer stays pending; the caller
   // nudges the user to use the other button. Never fires on a correct click or a miss.
@@ -190,9 +188,6 @@ export function createPointerWatch(d: PointerWatchDeps): PointerWatch {
       clickLatch = true;
       try {
         const w = wait;
-        // Grab the pre-click baseline BEFORE we null it below — the caller settles its
-        // next screenshot against this "screen at click time" frame.
-        const baseline = referenceHash ?? [];
         // VALID: supersede the poll + idle timer, clear pending, hand off. The caller
         // runs its turn and will setPending again for the next step. We do NOT fade here
         // — the caller decides (it typically fades the old pointer before its turn).
@@ -201,7 +196,7 @@ export function createPointerWatch(d: PointerWatchDeps): PointerWatch {
         box = null;
         referenceHash = null;
         d.log('info', 'valid click on pending pointer', { wait: w, button });
-        d.onValidClick(w, baseline, button);
+        d.onValidClick(w, button);
       } finally {
         clickLatch = false;
       }

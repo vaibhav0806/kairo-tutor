@@ -30,26 +30,23 @@ const rawEnvSchema = z.object({
   ELEVENLABS_VOICE_ID: z.string().default('EXAVITQu4vr4xnSDxMaL'),
   // Follow-along (mirror of src-tauri/src/constants.rs). Non-secret tuning knobs;
   // no .env entry needed — a fresh clone gets the defaults below.
-  FOLLOW_SETTLE_POLL_MS: z.coerce.number().default(300),
-  FOLLOW_SETTLE_MAX_ITERATIONS: z.coerce.number().default(10),
-  FOLLOW_SETTLE_MOVING_BITS: z.coerce.number().default(6), // >this of 256 = still moving
-  FOLLOW_SAMESCREEN_BITS: z.coerce.number().default(28), // >this of 256 = different screen
+  FOLLOW_SAMESCREEN_BITS: z.coerce.number().default(28), // >this of 256 = different screen (pointer fade-on-scroll)
   FOLLOW_CLICK_PAD_PT: z.coerce.number().default(24), // click tolerance in display points
   FOLLOW_POINTER_IDLE_FADE_MS: z.coerce.number().default(30_000),
   FOLLOW_ARMED_POLL_MS: z.coerce.number().default(800), // armed-watch re-check interval while a pointer waits
-  // Dead-zone floor: min time to wait for a click's on-screen reaction to START
-  // before giving up and capturing anyway. Lifts a mislabeled-too-fast `wait` bucket
-  // so a slow reaction (e.g. a dialog that takes a beat to close) isn't screenshotted
-  // while the OLD screen is still up. The reaction, once started, is ridden out by the
-  // settle-diff loop; a click that genuinely changes nothing falls through after this.
-  FOLLOW_CHANGE_WAIT_MIN_MS: z.coerce.number().default(1_500),
   // Wrong-button nudge cooldown: min gap between spoken "use the other button" hints
   // on one pending pointer, so a fumbling user isn't nagged on every click.
   FOLLOW_NUDGE_COOLDOWN_MS: z.coerce.number().default(3_500),
-  WAIT_INSTANT_MS: z.coerce.number().default(75),
-  WAIT_UI_SETTLE_MS: z.coerce.number().default(400),
-  WAIT_PAGE_LOAD_MS: z.coerce.number().default(2_500),
-  WAIT_NETWORK_MS: z.coerce.number().default(2_500)
+  // `wait` bucket → fixed post-click settle delay (ms) before Kairo screenshots the
+  // result for the next Fable turn. A plain per-bucket sleep: Fable picks the bucket,
+  // we wait exactly that long — no pixel matching. Generous by design: better to
+  // over-wait than screenshot a still-loading screen (Fable would then wrongly report
+  // "still loading"). Mirror of src-tauri/src/constants.rs. Within-bucket variance
+  // (e.g. a fast vs slow "network" click) is accepted, not adapted to.
+  WAIT_INSTANT_MS: z.coerce.number().default(400),
+  WAIT_UI_SETTLE_MS: z.coerce.number().default(900),
+  WAIT_PAGE_LOAD_MS: z.coerce.number().default(3_000),
+  WAIT_NETWORK_MS: z.coerce.number().default(5_000)
 });
 
 export type KairoEnv = {
@@ -74,14 +71,10 @@ export type KairoEnv = {
   elevenLabsSttModel: string;
   elevenLabsTtsModel: string;
   elevenLabsVoiceId: string;
-  followSettlePollMs: number;
-  followSettleMaxIterations: number;
-  followSettleMovingBits: number;
   followSamescreenBits: number;
   followClickPadPt: number;
   followPointerIdleFadeMs: number;
   followArmedPollMs: number;
-  followChangeWaitMinMs: number;
   followNudgeCooldownMs: number;
   waitInstantMs: number;
   waitUiSettleMs: number;
@@ -142,14 +135,10 @@ export function loadKairoEnv(
     elevenLabsSttModel: parsed.ELEVENLABS_STT_MODEL,
     elevenLabsTtsModel: parsed.ELEVENLABS_TTS_MODEL,
     elevenLabsVoiceId: parsed.ELEVENLABS_VOICE_ID,
-    followSettlePollMs: parsed.FOLLOW_SETTLE_POLL_MS,
-    followSettleMaxIterations: parsed.FOLLOW_SETTLE_MAX_ITERATIONS,
-    followSettleMovingBits: parsed.FOLLOW_SETTLE_MOVING_BITS,
     followSamescreenBits: parsed.FOLLOW_SAMESCREEN_BITS,
     followClickPadPt: parsed.FOLLOW_CLICK_PAD_PT,
     followPointerIdleFadeMs: parsed.FOLLOW_POINTER_IDLE_FADE_MS,
     followArmedPollMs: parsed.FOLLOW_ARMED_POLL_MS,
-    followChangeWaitMinMs: parsed.FOLLOW_CHANGE_WAIT_MIN_MS,
     followNudgeCooldownMs: parsed.FOLLOW_NUDGE_COOLDOWN_MS,
     waitInstantMs: parsed.WAIT_INSTANT_MS,
     waitUiSettleMs: parsed.WAIT_UI_SETTLE_MS,

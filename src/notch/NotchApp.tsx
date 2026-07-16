@@ -16,9 +16,7 @@ import { createBufferedClip, createStreamingClip, type SpeechClip } from './stre
 import { createPointerWatch, type PointerWatch } from './pointerWatch';
 import {
   asFollowButton,
-  screenReacted,
   shouldNudge,
-  stillMoving,
   waitFloorMs,
   type FollowButton,
   type FollowWait,
@@ -308,7 +306,7 @@ export function NotchApp() {
   const followFirstPointerRef = useRef(true);
   // A valid click fires the pointer-watch's onValidClick synchronously; it routes
   // into runClickTurn via this ref so the watch can be built before runClickTurn.
-  const runClickTurnRef = useRef<(wait: FollowWait, baseline: number[], button: FollowButton) => void>(
+  const runClickTurnRef = useRef<(wait: FollowWait, button: FollowButton) => void>(
     () => {}
   );
   // Wrong-button nudge routing (set once speakFollowClip exists, like runClickTurnRef).
@@ -345,10 +343,10 @@ export function NotchApp() {
         }
         void routeVisualTargets(nativeBridge, p.visualTargets, p.bounds, 'glide');
       },
-      // A valid in-box click landed → run the next (click-triggered) turn, handing
-      // it the pre-click baseline so it can settle against "the screen at click time",
-      // plus which button was used (right-clicks tell Fable a context menu is now open).
-      onValidClick: (wait, baseline, button) => runClickTurnRef.current(wait, baseline, button),
+      // A valid in-box click landed → run the next (click-triggered) turn, handing it
+      // the `wait` bucket (the post-click settle delay) plus which button was used
+      // (right-clicks tell Fable a context menu is now open).
+      onValidClick: (wait, button) => runClickTurnRef.current(wait, button),
       // Right target, wrong button → speak a nudge (cooldown-gated), stay pending.
       onWrongButton: (expected) => nudgeWrongButtonRef.current(expected),
       // The pointer sat untouched for the idle window: it already faded + cleared
@@ -895,89 +893,28 @@ export function NotchApp() {
     [nativeBridge]
   );
 
-  // Settle after a click, in two phases, so we never screenshot the OLD screen nor a
-  // mid-animation frame. `baseline` is the pre-click frame hash (the screen at click
-  // time, from the pointer-watch).
-  //
-  //   Phase 1 — wait for the reaction to START: poll until the live screen differs
-  //   from `baseline` (screenReacted). This kills the "plateau" bug — a screen that
-  //   hasn't reacted yet (dialog still open) reads as "not moving" AND "unchanged", so
-  //   we keep waiting instead of screenshotting the old screen. Budget = the `wait`
-  //   bucket floor, lifted to followChangeWaitMinMs so a mislabeled-too-fast bucket
-  //   can't bail during a slow reaction's dead zone. A click that genuinely changes
-  //   nothing visible falls through after the budget (capture + let the vision turn
-  //   judge). Skipped only if we have no baseline (defensive) — then a plain floor sleep.
-  //
-  //   Phase 2 — wait for it to STOP: the settle-diff loop (capture every settlePollMs,
-  //   break when the frame stops moving, capped), unchanged.
-  //
-  // Bails if a newer turn supersedes this one.
+  // Settle after a click: a plain per-bucket sleep, no pixel matching. Fable emits the
+  // `wait` bucket (its guess of how long the screen takes to settle after the click);
+  // we sleep exactly that long, then the caller screenshots the result for the next
+  // Fable turn. The floors (constants.rs / env.ts) are generous by design so we don't
+  // shoot a still-loading screen — better to over-wait than have Fable wrongly report
+  // "still loading". The clock starts at the click (mouse-up), so any dead-zone before
+  // the app reacts is eaten out of the floor. Within-bucket variance (a fast vs slow
+  // "network" click) is accepted, not adapted to. Bails if a newer turn supersedes this.
   const settleAfterClick = useCallback(
-    async (wait: FollowWait, baseline: number[], turnEpoch: number) => {
+    async (wait: FollowWait, turnEpoch: number) => {
       const floors = {
         instant: env.waitInstantMs,
         uiSettle: env.waitUiSettleMs,
         pageLoad: env.waitPageLoadMs,
         network: env.waitNetworkMs
       };
-      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-      const superseded = () => turnEpochRef.current !== turnEpoch;
-
-      // Phase 1: wait for the click's on-screen reaction to start.
-      if (baseline.length > 0) {
-        const changeBudget = Math.max(env.followChangeWaitMinMs, waitFloorMs(wait, floors));
-        const startedAt = performance.now();
-        let reacted = false;
-        while (performance.now() - startedAt < changeBudget) {
-          await sleep(env.followSettlePollMs);
-          if (superseded()) return;
-          const live = await nativeBridge.captureFrameHash();
-          if (superseded()) return;
-          if (screenReacted(baseline, live, env.followSamescreenBits)) {
-            reacted = true;
-            break;
-          }
-        }
-        if (!reacted) {
-          klog('follow', 'info', 'no screen reaction within change budget — capturing anyway', {
-            wait,
-            budget_ms: Math.round(changeBudget)
-          });
-          return;
-        }
-      } else {
-        // No baseline to compare against → fall back to the old fixed floor sleep.
-        await sleep(waitFloorMs(wait, floors));
-        if (superseded()) return;
-      }
-
-      // Phase 2: the reaction has begun — wait for it to stop moving.
-      let prev = await nativeBridge.captureFrameHash();
-      for (let i = 0; i < env.followSettleMaxIterations; i += 1) {
-        await sleep(env.followSettlePollMs);
-        if (superseded()) return;
-        const cur = await nativeBridge.captureFrameHash();
-        if (!stillMoving(prev, cur, env.followSettleMovingBits)) {
-          break;
-        }
-        prev = cur;
-        if (i === env.followSettleMaxIterations - 1) {
-          klog('follow', 'warn', 'settle cap hit — sending slightly-moving frame');
-        }
-      }
+      const ms = waitFloorMs(wait, floors);
+      klog('follow', 'info', 'settle after click', { wait, ms });
+      await new Promise<void>((resolve) => setTimeout(resolve, ms));
+      if (turnEpochRef.current !== turnEpoch) return;
     },
-    [
-      nativeBridge,
-      env.waitInstantMs,
-      env.waitUiSettleMs,
-      env.waitPageLoadMs,
-      env.waitNetworkMs,
-      env.followChangeWaitMinMs,
-      env.followSamescreenBits,
-      env.followSettleMaxIterations,
-      env.followSettlePollMs,
-      env.followSettleMovingBits
-    ]
+    [env.waitInstantMs, env.waitUiSettleMs, env.waitPageLoadMs, env.waitNetworkMs]
   );
 
   // Draw a Fable response's await_click pointer + arm the pointer-watch on it. Routes
@@ -1418,7 +1355,7 @@ export function NotchApp() {
   // tutor turn with a synthetic "[clicked the highlighted target]" user side + rolling
   // history, then render via playResponseAndArm (which re-arms if it points again).
   const runClickTurn = useCallback(
-    async (wait: FollowWait, baseline: number[], button: FollowButton) => {
+    async (wait: FollowWait, button: FollowButton) => {
       // A click-turn is a new turn: bump the epoch so a voice hold during it supersedes.
       const turnEpoch = (turnEpochRef.current += 1);
       klog('follow', 'info', 'click turn', { wait, button });
@@ -1468,8 +1405,8 @@ export function NotchApp() {
       });
 
       try {
-        // 3. Settle the UI after the click.
-        await settleAfterClick(wait, baseline, turnEpoch);
+        // 3. Settle the UI after the click (fixed per-bucket wait).
+        await settleAfterClick(wait, turnEpoch);
         if (turnEpochRef.current !== turnEpoch) return;
         // 4. Capture the settled screen + run the same tutor turn.
         const shot = await nativeBridge.captureScreen();
@@ -1513,8 +1450,8 @@ export function NotchApp() {
 
   // Route the pointer-watch's synchronous onValidClick into the latest runClickTurn
   // without making it a dependency of the once-built watch.
-  runClickTurnRef.current = (wait: FollowWait, baseline: number[], button: FollowButton) => {
-    void runClickTurn(wait, baseline, button);
+  runClickTurnRef.current = (wait: FollowWait, button: FollowButton) => {
+    void runClickTurn(wait, button);
   };
 
   // Speak a wrong-button nudge, cooldown-gated so a fumbling user isn't nagged on every
