@@ -14,10 +14,12 @@
 
 import { getAudioContext } from '../notch/streamingTts';
 import { klog } from './logger';
-import echoPop from '../assets/sounds/echo-pop.mp3';
-import toingLoud from '../assets/sounds/toing-loud.mp3';
-import bubblePop from '../assets/sounds/bubble-pop.mp3';
-import errorBlip from '../assets/sounds/error-blip.mp3';
+// WAV, not mp3: WebKit's decodeAudioData yields a near-silent buffer for ID3-tagged
+// short mp3s (it "succeeds" but the sound is gone). WAV is raw PCM — decodes reliably.
+import echoPop from '../assets/sounds/echo-pop.wav';
+import toingLoud from '../assets/sounds/toing-loud.wav';
+import bubblePop from '../assets/sounds/bubble-pop.wav';
+import errorBlip from '../assets/sounds/error-blip.wav';
 
 export type SoundName = 'stt-start' | 'stt-end' | 'arrive' | 'error';
 
@@ -71,6 +73,11 @@ async function decode(name: SoundName): Promise<void> {
     const bytes = await res.arrayBuffer();
     const buffer = await ctx.decodeAudioData(bytes);
     buffers.set(name, buffer);
+    klog('notch', 'debug', 'sound decoded', {
+      name,
+      dur: Number(buffer.duration.toFixed(3)),
+      rate: buffer.sampleRate
+    });
   } catch (err) {
     klog('notch', 'warn', 'sound decode failed', { name, err: String(err) });
   }
