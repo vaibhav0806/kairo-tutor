@@ -27,7 +27,7 @@ const URLS: Record<SoundName, string> = {
 const VOLUME: Record<SoundName, number> = {
   'stt-start': 0.2,
   'stt-end': 0.28,
-  arrive: 0.3,
+  arrive: 0.12, // fires on every cursor arrival — keep it low + non-intrusive
   error: 0.35,
 };
 
