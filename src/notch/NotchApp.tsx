@@ -1813,6 +1813,15 @@ export function NotchApp() {
     };
   }, []);
 
+  // Authoritatively drive the companion cursor's "don't auto-hide" flag from the notch's
+  // own turn state: the pet stays visible for the WHOLE processing pass (thinking → gate
+  // → vision, where isSubmitting is true) and resumes normal idle-hide the moment the
+  // turn ends. This is a single source of truth — far more robust than inferring "active"
+  // from scattered cursor:* events, several of which fire mid-turn.
+  useEffect(() => {
+    void nativeBridge.cursorActive(isSubmitting);
+  }, [isSubmitting, nativeBridge]);
+
   // Live mic level (global event) → the capsule's listening waveform.
   useEffect(() => {
     const pending = listen<{ level: number }>('cursor:level', (event) => {

@@ -435,7 +435,6 @@ export function CursorApp() {
         modeRef.current = 'pointing';
         // A fresh fly-to-target → arm the arrival pop (played once when it settles).
         pointArrivalPendingRef.current = true;
-        turnActiveRef.current = true; // keep the pet visible through the whole guide
         klog('cursor', 'debug', 'point received → flying to target');
         // Keep the speaking pulse while pointing (it's shown at the target).
         if (fxModeRef.current !== 'speaking') {
@@ -450,10 +449,8 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
-        // A box-draw reveal IS a fly-to-target — arm the arrival pop (fired when the draw
-        // lands) + keep the pet visible for the whole guide.
+        // A box-draw reveal IS a fly-to-target — arm the arrival pop (fired when the draw lands).
         pointArrivalPendingRef.current = true;
-        turnActiveRef.current = true;
         klog('cursor', 'debug', 'drag (box-draw) received → drawing to target');
         const payload = event.payload;
         const from = pointingTip(payload.fromRegion, payload.displayBounds);
@@ -511,7 +508,6 @@ export function CursorApp() {
           return;
         }
         pointArrivalPendingRef.current = false; // turn ended → no stale arrival pop
-        turnActiveRef.current = false; // turn over → the pet may auto-hide again
         dragRef.current = null;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
@@ -532,7 +528,6 @@ export function CursorApp() {
           return;
         }
         pointArrivalPendingRef.current = false; // re-engaging supersedes any pending arrival
-        turnActiveRef.current = true; // a turn just engaged → keep the pet visible
         dragRef.current = null;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = RECORDING_FILL;
@@ -555,7 +550,6 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
-        turnActiveRef.current = true;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
         }
@@ -566,7 +560,6 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
-        turnActiveRef.current = true;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
         }
@@ -589,6 +582,19 @@ export function CursorApp() {
           return;
         }
         sysVisibleRef.current = event.payload.visible !== false;
+        applyVisibility();
+      }),
+      // Notch-authoritative "turn in progress" flag: while true, never auto-hide, so the
+      // pet stays visible through the whole thinking/gate/vision pass. The notch drives
+      // this off its own isSubmitting state — the single source of truth for a live turn.
+      listen<boolean>('cursor:active', (event) => {
+        if (!isMounted) {
+          return;
+        }
+        turnActiveRef.current = event.payload !== false;
+        if (turnActiveRef.current) {
+          lastActivityRef.current = globalThis.performance?.now?.() ?? 0; // reset idle clock
+        }
         applyVisibility();
       })
     ])

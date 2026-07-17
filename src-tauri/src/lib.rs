@@ -376,6 +376,15 @@ fn cursor_arrived(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Failed to emit cursor arrived: {error}"))
 }
 
+// Notch-authoritative "a turn is in progress" flag → the companion cursor never
+// auto-hides while true, so the pet stays visible through the entire thinking/gate/vision
+// pass, then resumes normal idle-hide when it goes false. Broadcast via app.emit.
+#[tauri::command]
+fn cursor_active(app: tauri::AppHandle, active: bool) -> Result<(), String> {
+    app.emit("cursor:active", active)
+        .map_err(|error| format!("Failed to emit cursor active: {error}"))
+}
+
 // Arm the context watcher when a teaching target is revealed. `baseline` is the
 // app the guidance points at; a later frontmost/scroll/click change clears the box.
 #[tauri::command]
@@ -673,6 +682,7 @@ pub fn run() {
             cursor_point,
             cursor_release,
             cursor_arrived,
+            cursor_active,
             arm_context_watch,
             disarm_context_watch,
             arm_follow_click,
