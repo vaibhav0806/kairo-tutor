@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { ScreenRegion } from '../core/types';
 import type { DisplayBounds } from '../overlay/coordinates';
 import { createNativeBridge } from '../native/nativeBridge';
+import { playSound } from '../core/sound';
 import {
   POINTING_SPRING,
   SHADOW_SPRING,
@@ -97,6 +98,9 @@ export function CursorApp() {
   // Display origin/scale for converting global mouse points to window-local px.
   const boundsRef = useRef<DisplayBounds>({ x: 0, y: 0, width: 0, height: 0, scaleFactor: 1 });
   const modeRef = useRef<CursorMode>('shadow');
+  // Set true when a fresh cursor:point fly-to-target begins; the animation loop plays the
+  // arrival "pop" once when the spring settles, then clears it. Suppressed for drag/shadow.
+  const pointArrivalPendingRef = useRef(false);
   // Latest real mouse, in global top-left points (kept fresh even while pointing,
   // so releasing glides back to wherever the mouse is now).
   const mouseRef = useRef<MousePayload>({ x: 0, y: 0 });
@@ -291,6 +295,12 @@ export function CursorApp() {
       if (springAtRest(springX.current, target.x) && springAtRest(springY.current, target.y)) {
         springX.current.velocity = 0;
         springY.current.velocity = 0;
+        // Arrival "pop": fires once when a cursor:point fly-to-target settles (tutor +
+        // show flows). Gated to pointing mode so idle shadow-settles stay silent.
+        if (pointArrivalPendingRef.current && modeRef.current === 'pointing') {
+          pointArrivalPendingRef.current = false;
+          playSound('arrive');
+        }
         rafRef.current = null;
         lastTimeRef.current = null;
         return;
@@ -407,6 +417,8 @@ export function CursorApp() {
             : DEFAULT_TRAIL;
         }
         modeRef.current = 'pointing';
+        // A fresh fly-to-target → arm the arrival pop (played once when it settles).
+        pointArrivalPendingRef.current = true;
         // Keep the speaking pulse while pointing (it's shown at the target).
         if (fxModeRef.current !== 'speaking') {
           setFx('none');
@@ -419,6 +431,7 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
+        pointArrivalPendingRef.current = false; // no arrival pop for a drag gesture
         const payload = event.payload;
         const from = pointingTip(payload.fromRegion, payload.displayBounds);
         const to = pointingTip(payload.toRegion, payload.displayBounds);
@@ -474,6 +487,7 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
+        pointArrivalPendingRef.current = false; // turn ended → no stale arrival pop
         dragRef.current = null;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
@@ -493,6 +507,7 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
+        pointArrivalPendingRef.current = false; // re-engaging supersedes any pending arrival
         dragRef.current = null;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = RECORDING_FILL;

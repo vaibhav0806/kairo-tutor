@@ -3,6 +3,7 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { activationStateToNotchPayload } from '../activation/activationState';
 import { loadBrowserEnv } from '../config/env';
 import { klog, type LogFields, type LogLevel } from '../core/logger';
+import { playSound } from '../core/sound';
 import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
 import {
   createNativeBridge,
@@ -1710,8 +1711,11 @@ export function NotchApp() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen<{ active?: boolean }>('ptt:recording', (event) => {
-      pttRecordingRef.current = Boolean(event.payload?.active);
-      klog('notch', 'debug', 'ptt recording', { active: pttRecordingRef.current });
+      const active = Boolean(event.payload?.active);
+      pttRecordingRef.current = active;
+      klog('notch', 'debug', 'ptt recording', { active });
+      // Feeble STT cues: a "boop" as recording starts, a "toing" on release.
+      playSound(active ? 'stt-start' : 'stt-end');
     })
       .then((next) => {
         unlisten = next;
@@ -1844,6 +1848,8 @@ export function NotchApp() {
       updateVoiceCaptureState('error');
       setPayload(nextPayload);
       void emit('cursor:idle', {});
+      // Soft "nope" cue so the user knows nothing was heard.
+      playSound('error');
       voiceErrorTimeoutRef.current = window.setTimeout(() => {
         voiceErrorTimeoutRef.current = null;
         // Only self-close if still showing THIS error — a new turn (user re-pressed
