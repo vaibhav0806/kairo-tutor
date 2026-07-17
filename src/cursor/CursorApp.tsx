@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { listen, emit } from '@tauri-apps/api/event';
+import { listen } from '@tauri-apps/api/event';
 import type { ScreenRegion } from '../core/types';
 import type { DisplayBounds } from '../overlay/coordinates';
 import { createNativeBridge } from '../native/nativeBridge';
@@ -295,12 +295,13 @@ export function CursorApp() {
         springX.current.velocity = 0;
         springY.current.velocity = 0;
         // Arrival "pop": fires once when a cursor:point fly-to-target settles (tutor +
-        // show flows). Gated to pointing mode so idle shadow-settles stay silent. The
-        // cursor WebView is click-through (no user gesture → its audio is blocked), so we
-        // EMIT and let the notch — which has unlocked audio — actually play the cue.
+        // show flows). Gated to pointing mode so idle shadow-settles stay silent. Route
+        // through native (app.emit) — the notch owns the unlocked audio context, and the
+        // native path is how all cross-WebView cursor events reliably reach it.
         if (pointArrivalPendingRef.current && modeRef.current === 'pointing') {
           pointArrivalPendingRef.current = false;
-          void emit('cursor:arrived', {});
+          klog('cursor', 'debug', 'arrived at target → notify notch');
+          void nativeBridge.cursorArrived();
         }
         rafRef.current = null;
         lastTimeRef.current = null;

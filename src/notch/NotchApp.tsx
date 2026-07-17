@@ -1805,6 +1805,7 @@ export function NotchApp() {
   // cursor WebView is click-through, so its own audio is blocked; the notch's isn't).
   useEffect(() => {
     const pending = listen('cursor:arrived', () => {
+      klog('notch', 'debug', 'cursor:arrived received → pop');
       playSound('arrive');
     });
     return () => {

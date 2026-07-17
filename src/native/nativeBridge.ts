@@ -161,6 +161,7 @@ export type NativeBridge = {
   cursorPoint(input: NativeCursorPointInput): Promise<void>;
   cursorDrag(input: NativeCursorDragInput): Promise<void>;
   cursorRelease(): Promise<void>;
+  cursorArrived(): Promise<void>;
   armContextWatch(baseline: NativeContextBaseline): Promise<void>;
   disarmContextWatch(): Promise<void>;
   showNotch(payload?: NotchPayload): Promise<void>;
@@ -457,6 +458,14 @@ export function createNativeBridge(
         await invoke<void>('cursor_release');
       } catch {
         // Browser previews do not have a native cursor window.
+      }
+    },
+
+    async cursorArrived() {
+      try {
+        await invoke<void>('cursor_arrived');
+      } catch {
+        // Browser previews have no native event bus.
       }
     },
 

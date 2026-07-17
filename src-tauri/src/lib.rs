@@ -365,6 +365,17 @@ fn cursor_release(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Failed to release cursor: {error}"))
 }
 
+// The companion cursor finished flying to a target → tell the notch (which owns the
+// unlocked audio context) to play the arrival cue. Broadcast via app.emit so it reaches
+// the notch reliably — the rest of this app routes cross-WebView cursor events the same
+// way (a direct WebView→WebView emit is not relied on here).
+#[tauri::command]
+fn cursor_arrived(app: tauri::AppHandle) -> Result<(), String> {
+    klog!(cursor, debug, "cursor arrived → notch");
+    app.emit("cursor:arrived", ())
+        .map_err(|error| format!("Failed to emit cursor arrived: {error}"))
+}
+
 // Arm the context watcher when a teaching target is revealed. `baseline` is the
 // app the guidance points at; a later frontmost/scroll/click change clears the box.
 #[tauri::command]
@@ -661,6 +672,7 @@ pub fn run() {
             hide_overlay,
             cursor_point,
             cursor_release,
+            cursor_arrived,
             arm_context_watch,
             disarm_context_watch,
             arm_follow_click,
