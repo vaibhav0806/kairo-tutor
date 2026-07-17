@@ -58,14 +58,12 @@ export function setSoundsEnabled(on: boolean): void {
   }
 }
 
-// Decoded once, up front, so a play() is instant.
+// Decoded on first real play (into the already-healthy shared context), then cached.
+// NEVER decoded at import — that would call getAudioContext() at page load, creating a
+// dead context that also muted TTS (the shared singleton). See playSound.
 const buffers = new Map<SoundName, AudioBuffer>();
-async function decode(name: SoundName): Promise<void> {
+async function decodeInto(ctx: AudioContext, name: SoundName): Promise<void> {
   if (buffers.has(name)) {
-    return;
-  }
-  const ctx = getAudioContext();
-  if (!ctx) {
     return;
   }
   try {
@@ -73,8 +71,7 @@ async function decode(name: SoundName): Promise<void> {
     const bytes = await res.arrayBuffer();
     const buffer = await ctx.decodeAudioData(bytes);
     // Bake per-cue volume straight into the samples, so playback can connect the source
-    // DIRECTLY to ctx.destination — exactly the (proven-audible) path TTS uses. A GainNode
-    // in the chain was the difference vs TTS; removing it removes the only unknown.
+    // DIRECTLY to ctx.destination — exactly the (proven-audible) path TTS uses.
     const vol = VOLUME[name];
     if (vol !== 1) {
       for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
@@ -96,43 +93,52 @@ async function decode(name: SoundName): Promise<void> {
   }
 }
 
-// Kick off decoding of every cue at import time (best-effort, non-blocking).
-void Promise.all((Object.keys(URLS) as SoundName[]).map((name) => decode(name)));
-
 // Hold playing sources so a short one-shot can't be GC'd mid-play (mirrors TTS keeping
 // its sources array); dropped on 'ended'.
 const live = new Set<AudioBufferSourceNode>();
+function playBuffer(ctx: AudioContext, name: SoundName): void {
+  const buffer = buffers.get(name);
+  if (!buffer) {
+    return;
+  }
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination); // direct, like TTS — volume is baked into the buffer
+  live.add(source);
+  source.onended = () => live.delete(source);
+  source.start(ctx.currentTime + 0.02); // tiny lookahead, exactly like TTS's scheduler
+  klog('notch', 'debug', 'sound played', { name, ctx: ctx.state });
+}
+
+let warmed = false;
 
 /** Play a UI cue. No-op when sounds are off or audio is unavailable. Never throws. */
 export function playSound(name: SoundName): void {
   if (!soundsEnabled()) {
     return;
   }
+  // Obtain the SHARED context ONLY here — created lazily on first real playback (active
+  // use), NEVER at import/page-load. A page-load context is dead AND muted TTS (which
+  // reuses this same singleton). This mirrors TTS's own lazy creation, which always works.
   const ctx = getAudioContext();
   if (!ctx) {
-    return;
-  }
-  const buffer = buffers.get(name);
-  if (!buffer) {
-    // Not decoded yet (first play raced the preload) → decode then play, once ready.
-    void decode(name).then(() => {
-      if (buffers.has(name)) {
-        playSound(name);
-      }
-    });
     return;
   }
   try {
     if (ctx.state === 'suspended') {
       void ctx.resume();
     }
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination); // direct, like TTS — volume is baked into the buffer
-    live.add(source);
-    source.onended = () => live.delete(source);
-    source.start(ctx.currentTime + 0.02); // tiny lookahead, exactly like TTS's scheduler
-    klog('notch', 'debug', 'sound played', { name, ctx: ctx.state });
+    // First real play → warm every cue into this now-healthy context (cheap, background).
+    if (!warmed) {
+      warmed = true;
+      void Promise.all((Object.keys(URLS) as SoundName[]).map((n) => decodeInto(ctx, n)));
+    }
+    if (buffers.has(name)) {
+      playBuffer(ctx, name);
+    } else {
+      // Not decoded yet (first-ever play of this cue) → decode then play.
+      void decodeInto(ctx, name).then(() => playBuffer(ctx, name));
+    }
   } catch (err) {
     klog('notch', 'warn', 'sound play failed', { name, err: String(err) });
   }
