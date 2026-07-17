@@ -100,6 +100,10 @@ export function CursorApp() {
   // Set true when a fresh cursor:point fly-to-target begins; the animation loop plays the
   // arrival "pop" once when the spring settles, then clears it. Suppressed for drag/shadow.
   const pointArrivalPendingRef = useRef(false);
+  // True from the moment a turn engages (listening/thinking/point/speaking) until it ends
+  // (cursor:release). While true, the pet never auto-hides — so the fly-to-target
+  // animation is always visible and the pet doesn't vanish mid-guide.
+  const turnActiveRef = useRef(false);
   // Latest real mouse, in global top-left points (kept fresh even while pointing,
   // so releasing glides back to wherever the mouse is now).
   const mouseRef = useRef<MousePayload>({ x: 0, y: 0 });
@@ -334,7 +338,10 @@ export function CursorApp() {
       }
       const now = globalThis.performance?.now?.() ?? 0;
       const idle = now - lastActivityRef.current >= IDLE_HIDE_MS;
-      const eligible = modeRef.current === 'shadow' && fxModeRef.current === 'none';
+      // Never auto-hide while a turn is active — the pet must stay visible for the whole
+      // guide (incl. the fly-to-target animation), not vanish on idle mid-turn.
+      const eligible =
+        !turnActiveRef.current && modeRef.current === 'shadow' && fxModeRef.current === 'none';
       const hidden = eligible && (!sysVisibleRef.current || idle);
       if (hidden === hiddenAppliedRef.current) {
         return;
@@ -421,10 +428,13 @@ export function CursorApp() {
         modeRef.current = 'pointing';
         // A fresh fly-to-target → arm the arrival pop (played once when it settles).
         pointArrivalPendingRef.current = true;
+        turnActiveRef.current = true; // keep the pet visible through the whole guide
+        klog('cursor', 'debug', 'point received → flying to target');
         // Keep the speaking pulse while pointing (it's shown at the target).
         if (fxModeRef.current !== 'speaking') {
           setFx('none');
         }
+        applyVisibility(); // un-hide immediately if the pet was idle-hidden
         wake();
       }),
       // Pen-drag reveal: fly to the box's top-left corner, then drag to the
@@ -490,6 +500,7 @@ export function CursorApp() {
           return;
         }
         pointArrivalPendingRef.current = false; // turn ended → no stale arrival pop
+        turnActiveRef.current = false; // turn over → the pet may auto-hide again
         dragRef.current = null;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
@@ -510,6 +521,7 @@ export function CursorApp() {
           return;
         }
         pointArrivalPendingRef.current = false; // re-engaging supersedes any pending arrival
+        turnActiveRef.current = true; // a turn just engaged → keep the pet visible
         dragRef.current = null;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = RECORDING_FILL;
@@ -532,6 +544,7 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
+        turnActiveRef.current = true;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
         }
@@ -542,6 +555,7 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
+        turnActiveRef.current = true;
         if (arrowPathRef.current) {
           arrowPathRef.current.style.fill = DEFAULT_ARROW_FILL;
         }
