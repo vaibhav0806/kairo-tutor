@@ -224,6 +224,11 @@ export function NotchApp() {
   // Resolves when the current filler finishes (or is cancelled); the answer awaits it.
   const fillerDoneRef = useRef<Promise<void> | null>(null);
   const fillerResolveRef = useRef<(() => void) | null>(null);
+  // Resolves when the CURRENTLY-playing narration (playSteps / playAnswerAudio) finishes,
+  // whether it ends naturally or is cut. A click-turn captures this so its next-step audio
+  // can queue BEHIND the current line instead of cutting it (no-cut UX). Starts resolved.
+  const narrationDoneRef = useRef<Promise<void>>(Promise.resolve());
+  const narrationDoneResolveRef = useRef<() => void>(() => {});
   // Bumped on every stopAnswerPlayback so a queued answer can detect it was
   // superseded by a newer turn while waiting for the filler, and not play stale.
   const playbackEpochRef = useRef(0);
@@ -441,6 +446,21 @@ export function NotchApp() {
     answerAudioRef.current = null;
   }, []);
 
+  // Narration lifecycle: playSteps/playAnswerAudio call beginNarration when they start
+  // speaking and endNarration when they finish (naturally or cut). narrationDoneRef then
+  // always reflects the currently-playing line — a click-turn awaits it to queue behind.
+  const beginNarration = useCallback(() => {
+    let resolve: () => void = () => {};
+    narrationDoneRef.current = new Promise<void>((r) => {
+      resolve = r;
+    });
+    narrationDoneResolveRef.current = resolve;
+  }, []);
+  const endNarration = useCallback(() => {
+    narrationDoneResolveRef.current();
+    narrationDoneResolveRef.current = () => {};
+  }, []);
+
   const noteNotchActivity = useCallback(() => {
     lastNotchActivityAt.current = performance.now();
   }, []);
@@ -636,12 +656,14 @@ export function NotchApp() {
     // visuals then); `onSettled` fires when playback ends, or immediately when
     // there is nothing to play, so the notch auto-close countdown can begin.
     async (text: string, onSpeechStart?: () => void, onSettled?: () => void) => {
+      beginNarration();
       const trimmedText = text.trim();
       if (!trimmedText) {
         stopAnswerPlayback();
         // Nothing to speak: reveal immediately so the answer isn't left hidden.
         onSpeechStart?.();
         onSettled?.();
+        endNarration();
         return;
       }
 
@@ -664,6 +686,7 @@ export function NotchApp() {
       // A newer turn superseded this one while we waited → don't play a stale answer.
       if (playbackEpochRef.current !== epoch) {
         clip.pause();
+        endNarration();
         return;
       }
 
@@ -692,6 +715,12 @@ export function NotchApp() {
           settleFallbackRef.current = null;
         }
         onSettled?.();
+        endNarration();
+      };
+      // Cut mid-play (barge-in via stopAnswerPlayback) → unblock any click-turn waiting.
+      audio.onpause = () => {
+        setIsSpeaking(false);
+        endNarration();
       };
       try {
         await audio.play();
@@ -699,9 +728,10 @@ export function NotchApp() {
         // Playback is best-effort; reveal + settle so nothing is left hidden.
         onSpeechStart?.();
         onSettled?.();
+        endNarration();
       }
     },
-    [nativeBridge, stopAnswerPlayback]
+    [nativeBridge, stopAnswerPlayback, beginNarration, endNarration]
   );
 
   // Play a multi-step answer: speak each step's `say` in order while revealing that
@@ -717,9 +747,11 @@ export function NotchApp() {
       onSettled?: () => void,
       onStepStart?: (index: number, step: TutorStep) => void
     ) => {
+      beginNarration();
       if (steps.length === 0) {
         onFirstSpeechStart?.();
         onSettled?.();
+        endNarration();
         return;
       }
 
@@ -728,6 +760,8 @@ export function NotchApp() {
       // own buffered fallback covers a failed stream, so no step is left silent.
       // null = empty text (nothing to speak).
       const clips: Array<SpeechClip | null | undefined> = new Array(steps.length);
+      // Called only at superseded/cut exits (always followed by return) — so it also
+      // ends the narration, unblocking a click-turn queued behind this line.
       const stopClips = () => {
         for (const clip of clips) {
           if (clip) {
@@ -738,6 +772,7 @@ export function NotchApp() {
             }
           }
         }
+        endNarration();
       };
 
       // Prefetch window: keep at most 2 synths in flight. Sarvam's bulbul:v3 stalls
@@ -848,8 +883,9 @@ export function NotchApp() {
       setIsSpeaking(false);
       void emit('cursor:idle', {});
       onSettled?.();
+      endNarration();
     },
-    [nativeBridge, stopAnswerPlayback]
+    [nativeBridge, stopAnswerPlayback, beginNarration, endNarration]
   );
 
   // Speak the mid-guide ack ("nice, one sec") on the DEDICATED follow clip slot so it
@@ -889,6 +925,49 @@ export function NotchApp() {
           followClipRef.current = null;
         }
       }
+    },
+    [nativeBridge]
+  );
+
+  // Like speakFollowClip, but resolves only when the ack clip FINISHES (ends, is cut, or
+  // errors) — used by the click-turn so the next answer can queue BEHIND the ack. Plays
+  // on the same follow-clip slot, so a voice barge-in (stopAnswerPlayback) cuts it.
+  const speakFollowClipDone = useCallback(
+    async (text: string, turnEpoch: number) => {
+      const trimmed = text.trim();
+      if (!trimmed || turnEpochRef.current !== turnEpoch) {
+        return;
+      }
+      if (followClipRef.current) {
+        try {
+          followClipRef.current.pause();
+        } catch {
+          // ignore
+        }
+        followClipRef.current = null;
+      }
+      const clip = createStreamingClip(nativeBridge, trimmed, STEP_SYNTH_TIMEOUT_MS);
+      followClipRef.current = clip;
+      await new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          setIsSpeaking(false);
+          if (followClipRef.current === clip) {
+            followClipRef.current = null;
+          }
+          resolve();
+        };
+        clip.onplay = () => {
+          setIsSpeaking(true);
+          void emit('cursor:speaking', {});
+        };
+        clip.onended = finish;
+        clip.onpause = finish; // a barge-in cut resolves it too
+        clip.onerror = finish;
+        void clip.play().catch(finish);
+      });
     },
     [nativeBridge]
   );
@@ -1360,9 +1439,11 @@ export function NotchApp() {
       // A click-turn is a new turn: bump the epoch so a voice hold during it supersedes.
       const turnEpoch = (turnEpochRef.current += 1);
       klog('follow', 'info', 'click turn', { wait, button });
-      // Barge in: a click mid-narration cuts the current step's speech and advances
-      // (playSteps loops on playbackEpoch, which stopAnswerPlayback bumps).
-      stopAnswerPlayback();
+      // NO-CUT UX: do NOT stop the current step's speech. Let the line the user clicked
+      // through finish naturally; the next turn's audio queues BEHIND it. Capture the
+      // current narration's done-signal so the answer can wait for it.
+      const currentSpeechDone = narrationDoneRef.current;
+      let speechEnded = false;
       // Tell Fable which button was used — a right-click means a context menu is now
       // open, so its next step should point at a menu item (a normal left-click).
       const userSide =
@@ -1386,24 +1467,49 @@ export function NotchApp() {
       setPayload(thinkingPayload);
       setDetailHidden(false);
       void nativeBridge.showNotch(thinkingPayload);
-      void emit('cursor:thinking', {});
+      // Show the thinking cursor once the current line finishes — don't stomp its
+      // cursor:speaking while it's still talking (fires immediately if nothing's playing).
+      void currentSpeechDone.then(() => {
+        speechEnded = true;
+        if (turnEpochRef.current === turnEpoch) void emit('cursor:thinking', {});
+      });
 
       const recentContext = buildRecentContext();
 
-      // 2. Ack filler (non-blocking): fetch the cheap ack text, then speak it on the
-      //    follow clip slot while the settle + vision turn run. The text is also the
-      //    triple's gateFiller (resolved well before the slower vision turn).
+      // 2. Ack filler + the no-cut queue. The answer (playResponseAndArm) waits on
+      //    fillerDoneRef; we resolve it only once the current line — and the ack, IF we
+      //    play it — has finished, so the answer never cuts the current line. Ack rule
+      //    (user's): if the ack is ready BEFORE the current line ends, skip it (things
+      //    are already moving); if it's ready only AFTER, play it so the wait isn't silent.
+      fillerCancelRef.current = false;
+      let resolveGate: () => void = () => {};
+      fillerDoneRef.current = new Promise<void>((r) => {
+        resolveGate = r;
+      });
+      fillerResolveRef.current = resolveGate; // a voice barge-in (stopAnswerPlayback) unblocks it too
+      const gateCap = (p: Promise<void>) =>
+        Promise.race([p, new Promise<void>((r) => setTimeout(r, 12000))]);
+
       let ackText = '';
       const ackTextPromise = nativeBridge
         .runAckTurn(userSide)
         .then((t) => (t ?? '').trim())
         .catch(() => '');
-      void ackTextPromise.then((t) => {
-        ackText = t;
-        if (t && turnEpochRef.current === turnEpoch) {
-          void speakFollowClip(t);
+      void (async () => {
+        const ack = await ackTextPromise;
+        if (turnEpochRef.current !== turnEpoch) {
+          resolveGate();
+          return;
         }
-      });
+        if (ack && speechEnded) {
+          // Ready only AFTER the line ended → play it as the bridge; answer queues behind.
+          await speakFollowClipDone(ack, turnEpoch);
+        } else {
+          // Ready before the line ended (skip it), or no ack → answer waits for the line.
+          await gateCap(currentSpeechDone);
+        }
+        if (turnEpochRef.current === turnEpoch) resolveGate();
+      })();
 
       try {
         // 3. Settle the UI after the click (fixed per-bucket wait).
@@ -1443,7 +1549,7 @@ export function NotchApp() {
       env.aiProvider,
       buildRecentContext,
       settleAfterClick,
-      speakFollowClip,
+      speakFollowClipDone,
       playResponseAndArm,
       markAnswerSettled
     ]
