@@ -72,11 +72,24 @@ async function decode(name: SoundName): Promise<void> {
     const res = await fetch(URLS[name]);
     const bytes = await res.arrayBuffer();
     const buffer = await ctx.decodeAudioData(bytes);
+    // Bake per-cue volume straight into the samples, so playback can connect the source
+    // DIRECTLY to ctx.destination — exactly the (proven-audible) path TTS uses. A GainNode
+    // in the chain was the difference vs TTS; removing it removes the only unknown.
+    const vol = VOLUME[name];
+    if (vol !== 1) {
+      for (let ch = 0; ch < buffer.numberOfChannels; ch += 1) {
+        const data = buffer.getChannelData(ch);
+        for (let i = 0; i < data.length; i += 1) {
+          data[i] *= vol;
+        }
+      }
+    }
     buffers.set(name, buffer);
     klog('notch', 'debug', 'sound decoded', {
       name,
       dur: Number(buffer.duration.toFixed(3)),
-      rate: buffer.sampleRate
+      rate: buffer.sampleRate,
+      ch: buffer.numberOfChannels
     });
   } catch (err) {
     klog('notch', 'warn', 'sound decode failed', { name, err: String(err) });
@@ -85,6 +98,10 @@ async function decode(name: SoundName): Promise<void> {
 
 // Kick off decoding of every cue at import time (best-effort, non-blocking).
 void Promise.all((Object.keys(URLS) as SoundName[]).map((name) => decode(name)));
+
+// Hold playing sources so a short one-shot can't be GC'd mid-play (mirrors TTS keeping
+// its sources array); dropped on 'ended'.
+const live = new Set<AudioBufferSourceNode>();
 
 /** Play a UI cue. No-op when sounds are off or audio is unavailable. Never throws. */
 export function playSound(name: SoundName): void {
@@ -111,10 +128,10 @@ export function playSound(name: SoundName): void {
     }
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    const gain = ctx.createGain();
-    gain.gain.value = VOLUME[name];
-    source.connect(gain).connect(ctx.destination);
-    source.start();
+    source.connect(ctx.destination); // direct, like TTS — volume is baked into the buffer
+    live.add(source);
+    source.onended = () => live.delete(source);
+    source.start(ctx.currentTime + 0.02); // tiny lookahead, exactly like TTS's scheduler
     klog('notch', 'debug', 'sound played', { name, ctx: ctx.state });
   } catch (err) {
     klog('notch', 'warn', 'sound play failed', { name, err: String(err) });
