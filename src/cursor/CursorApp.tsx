@@ -280,6 +280,13 @@ export function CursorApp() {
           };
           modeRef.current = 'pointing';
           dragRef.current = null;
+          // The pen-draw just LANDED on the target — this is the arrival for a box-draw
+          // reveal (tutor flows use this path, NOT cursor:point). Fire the pop here, once.
+          if (pointArrivalPendingRef.current) {
+            pointArrivalPendingRef.current = false;
+            klog('cursor', 'debug', 'box-draw arrived at target → notify notch');
+            void nativeBridge.cursorArrived();
+          }
         }
         rafRef.current = requestAnimationFrame(frame);
         return;
@@ -443,7 +450,11 @@ export function CursorApp() {
         if (!isMounted) {
           return;
         }
-        pointArrivalPendingRef.current = false; // no arrival pop for a drag gesture
+        // A box-draw reveal IS a fly-to-target — arm the arrival pop (fired when the draw
+        // lands) + keep the pet visible for the whole guide.
+        pointArrivalPendingRef.current = true;
+        turnActiveRef.current = true;
+        klog('cursor', 'debug', 'drag (box-draw) received → drawing to target');
         const payload = event.payload;
         const from = pointingTip(payload.fromRegion, payload.displayBounds);
         const to = pointingTip(payload.toRegion, payload.displayBounds);
