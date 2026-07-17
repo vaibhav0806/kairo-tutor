@@ -185,8 +185,9 @@ pub(crate) const ACK_TIMEOUT_MS: u64 = 6_000;
 // `wait` enum → fixed post-click settle delay (ms). Fable emits the bucket, we sleep
 // that long before screenshotting the result — a plain per-bucket wait, no pixel
 // matching. Generous by design: better to over-wait than shoot a still-loading screen.
-// Within-bucket variance is accepted, not adapted to. Mirrored in the frontend
-// (src/config/env.ts) — keep the two in sync.
+// Within-bucket variance is accepted, not adapted to. Slow/variable actions no longer
+// use await_click — Fable routes them to manual "tell me when you're done" mode, so
+// there is no `network` bucket. Mirrored in the frontend (src/config/env.ts) — sync.
 // (Rust-unused; canonical source, consumed frontend-side via env.ts.)
 #[allow(dead_code)]
 pub(crate) const WAIT_INSTANT_MS: u64 = 400;
@@ -194,5 +195,3 @@ pub(crate) const WAIT_INSTANT_MS: u64 = 400;
 pub(crate) const WAIT_UI_SETTLE_MS: u64 = 900;
 #[allow(dead_code)]
 pub(crate) const WAIT_PAGE_LOAD_MS: u64 = 3_000;
-#[allow(dead_code)]
-pub(crate) const WAIT_NETWORK_MS: u64 = 5_000;

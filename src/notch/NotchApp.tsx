@@ -319,7 +319,7 @@ export function NotchApp() {
 
   // Coerce a raw wait string (from await_click) to a known FollowWait bucket.
   const asFollowWait = (w: string): FollowWait =>
-    (['instant', 'ui-settle', 'page-load', 'network'] as const).includes(w as FollowWait)
+    (['instant', 'ui-settle', 'page-load'] as const).includes(w as FollowWait)
       ? (w as FollowWait)
       : 'ui-settle';
 
@@ -900,21 +900,22 @@ export function NotchApp() {
   // shoot a still-loading screen — better to over-wait than have Fable wrongly report
   // "still loading". The clock starts at the click (mouse-up), so any dead-zone before
   // the app reacts is eaten out of the floor. Within-bucket variance (a fast vs slow
-  // "network" click) is accepted, not adapted to. Bails if a newer turn supersedes this.
+  // click) is accepted, not adapted to. Genuinely slow/variable actions no longer come
+  // here at all — Fable routes those to manual "tell me when you're done" mode instead
+  // of await_click. Bails if a newer turn supersedes this.
   const settleAfterClick = useCallback(
     async (wait: FollowWait, turnEpoch: number) => {
       const floors = {
         instant: env.waitInstantMs,
         uiSettle: env.waitUiSettleMs,
-        pageLoad: env.waitPageLoadMs,
-        network: env.waitNetworkMs
+        pageLoad: env.waitPageLoadMs
       };
       const ms = waitFloorMs(wait, floors);
       klog('follow', 'info', 'settle after click', { wait, ms });
       await new Promise<void>((resolve) => setTimeout(resolve, ms));
       if (turnEpochRef.current !== turnEpoch) return;
     },
-    [env.waitInstantMs, env.waitUiSettleMs, env.waitPageLoadMs, env.waitNetworkMs]
+    [env.waitInstantMs, env.waitUiSettleMs, env.waitPageLoadMs]
   );
 
   // Draw a Fable response's await_click pointer + arm the pointer-watch on it. Routes

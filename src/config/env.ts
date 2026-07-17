@@ -41,12 +41,12 @@ const rawEnvSchema = z.object({
   // result for the next Fable turn. A plain per-bucket sleep: Fable picks the bucket,
   // we wait exactly that long — no pixel matching. Generous by design: better to
   // over-wait than screenshot a still-loading screen (Fable would then wrongly report
-  // "still loading"). Mirror of src-tauri/src/constants.rs. Within-bucket variance
-  // (e.g. a fast vs slow "network" click) is accepted, not adapted to.
+  // "still loading"). Mirror of src-tauri/src/constants.rs. Within-bucket variance is
+  // accepted, not adapted to. Slow/variable actions no longer use await_click at all —
+  // Fable routes them to manual "tell me when you're done" mode (so no `network` bucket).
   WAIT_INSTANT_MS: z.coerce.number().default(400),
   WAIT_UI_SETTLE_MS: z.coerce.number().default(900),
-  WAIT_PAGE_LOAD_MS: z.coerce.number().default(3_000),
-  WAIT_NETWORK_MS: z.coerce.number().default(5_000)
+  WAIT_PAGE_LOAD_MS: z.coerce.number().default(3_000)
 });
 
 export type KairoEnv = {
@@ -79,7 +79,6 @@ export type KairoEnv = {
   waitInstantMs: number;
   waitUiSettleMs: number;
   waitPageLoadMs: number;
-  waitNetworkMs: number;
 };
 
 type LoadKairoEnvOptions = {
@@ -142,8 +141,7 @@ export function loadKairoEnv(
     followNudgeCooldownMs: parsed.FOLLOW_NUDGE_COOLDOWN_MS,
     waitInstantMs: parsed.WAIT_INSTANT_MS,
     waitUiSettleMs: parsed.WAIT_UI_SETTLE_MS,
-    waitPageLoadMs: parsed.WAIT_PAGE_LOAD_MS,
-    waitNetworkMs: parsed.WAIT_NETWORK_MS
+    waitPageLoadMs: parsed.WAIT_PAGE_LOAD_MS
   };
 }
 

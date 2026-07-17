@@ -1,7 +1,7 @@
 // Pure helpers + types for the follow-along guide loop. No React, no side effects.
 
 export type FollowExpect = 'click' | 'observe';
-export type FollowWait = 'instant' | 'ui-settle' | 'page-load' | 'network';
+export type FollowWait = 'instant' | 'ui-settle' | 'page-load';
 export type FollowStatus = 'guiding' | 'done';
 /** Which mouse button a click-step expects. Defaults to 'left' everywhere. */
 export type FollowButton = 'left' | 'right';
@@ -26,7 +26,7 @@ export interface FollowAlongState {
   referenceHash: number[] | null;
 }
 
-export interface WaitFloors { instant: number; uiSettle: number; pageLoad: number; network: number }
+export interface WaitFloors { instant: number; uiSettle: number; pageLoad: number }
 
 /** Differing-bit count between two 8x u32 dHashes (0..256). */
 export function hammingDistance(a: number[], b: number[]): number {
@@ -86,7 +86,6 @@ export function waitFloorMs(wait: FollowWait, floors: WaitFloors): number {
     case 'instant': return floors.instant;
     case 'ui-settle': return floors.uiSettle;
     case 'page-load': return floors.pageLoad;
-    case 'network': return floors.network;
     default: return floors.uiSettle;
   }
 }
@@ -101,7 +100,7 @@ export function parseFollowStep(raw: any): FollowStep {
     : null;
   const expect: FollowExpect = raw?.expect === 'click' ? 'click' : 'observe';
   const status: FollowStatus = raw?.status === 'done' ? 'done' : 'guiding';
-  const wait: FollowWait = (['instant', 'ui-settle', 'page-load', 'network'] as const)
+  const wait: FollowWait = (['instant', 'ui-settle', 'page-load'] as const)
     .includes(raw?.wait) ? raw.wait : 'ui-settle';
   return { say: String(raw?.say ?? ''), box, visualTargets: targets, expect, wait, status };
 }

@@ -72,10 +72,10 @@ describe('clickInBox', () => {
 });
 
 describe('waitFloorMs', () => {
-  const cfg = { instant: 75, uiSettle: 400, pageLoad: 1500, network: 2500 };
+  const cfg = { instant: 75, uiSettle: 400, pageLoad: 1500 };
   it('maps each bucket', () => {
     expect(waitFloorMs('instant', cfg)).toBe(75);
-    expect(waitFloorMs('network', cfg)).toBe(2500);
+    expect(waitFloorMs('page-load', cfg)).toBe(1500);
   });
   it('defaults unknown to uiSettle', () => {
     expect(waitFloorMs('weird' as any, cfg)).toBe(400);

@@ -76,7 +76,7 @@ export type TutorResponse = {
   // Unified turn (RU1/RU5): the SINGLE thing the user should click, kept up after
   // narration so the notch arms the pointer-watch instead of idle-closing. null (or
   // absent) ⇒ exactly today's single/steps behavior. `wait` is how long the screen
-  // takes to settle AFTER the click ('instant'|'ui-settle'|'page-load'|'network');
+  // takes to settle AFTER the click ('instant'|'ui-settle'|'page-load');
   // `button` is which mouse button to use ('left' default | 'right' for context menus).
   awaitClick?: { visualTargets: VisualTarget[]; wait: string; button: 'left' | 'right' } | null;
   // The user's goal is achieved — celebrate + no pending pointer. Defaults false.
