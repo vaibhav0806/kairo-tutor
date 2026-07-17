@@ -1,14 +1,19 @@
 // Tiny UI sound-cue player. Uses the Web Audio API (decoded AudioBuffer + a fresh
 // BufferSourceNode per play) so cues fire with ~zero latency, fully async on the audio
 // thread — they never block or interfere with the main thread, TTS, or anything else.
-// (HTMLAudioElement was laggy: it routes through the media element pipeline and decodes
-// lazily on first play. Web Audio decodes once, up front, then playback is instant.)
+//
+// CRITICAL: it shares the SAME AudioContext as TTS (streamingTts.getAudioContext). A
+// second AudioContext hits WebKit's context limit and silently produces NO sound — that
+// bug is exactly why cues went dead. TTS's context is already unlocked (PTT/TTS gesture),
+// so cues inherit a live, running context.
 //
 // Everything is best-effort: a suspended context, a blocked resume, or a missing buffer
 // is silently swallowed — a cue is never allowed to throw into a caller's hot path.
 // Cues are intentionally FEEBLE; tune per-cue loudness in VOLUME (0..1). Gated by one
 // localStorage flag (default ON), shared across WebViews (same origin).
 
+import { getAudioContext } from '../notch/streamingTts';
+import { klog } from './logger';
 import echoPop from '../assets/sounds/echo-pop.mp3';
 import toingLoud from '../assets/sounds/toing-loud.mp3';
 import bubblePop from '../assets/sounds/bubble-pop.mp3';
@@ -51,44 +56,23 @@ export function setSoundsEnabled(on: boolean): void {
   }
 }
 
-let ctx: AudioContext | null = null;
-function context(): AudioContext | null {
-  try {
-    if (!ctx) {
-      const Ctor: typeof AudioContext | undefined =
-        globalThis.AudioContext ??
-        (globalThis as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctor) {
-        return null;
-      }
-      ctx = new Ctor();
-    }
-    if (ctx.state === 'suspended') {
-      void ctx.resume();
-    }
-    return ctx;
-  } catch {
-    return null;
-  }
-}
-
 // Decoded once, up front, so a play() is instant.
 const buffers = new Map<SoundName, AudioBuffer>();
 async function decode(name: SoundName): Promise<void> {
   if (buffers.has(name)) {
     return;
   }
-  const c = context();
-  if (!c) {
+  const ctx = getAudioContext();
+  if (!ctx) {
     return;
   }
   try {
     const res = await fetch(URLS[name]);
     const bytes = await res.arrayBuffer();
-    const buffer = await c.decodeAudioData(bytes);
+    const buffer = await ctx.decodeAudioData(bytes);
     buffers.set(name, buffer);
-  } catch {
-    // leave undecoded; playSound will retry a decode on demand
+  } catch (err) {
+    klog('notch', 'warn', 'sound decode failed', { name, err: String(err) });
   }
 }
 
@@ -100,8 +84,8 @@ export function playSound(name: SoundName): void {
   if (!soundsEnabled()) {
     return;
   }
-  const c = context();
-  if (!c) {
+  const ctx = getAudioContext();
+  if (!ctx) {
     return;
   }
   const buffer = buffers.get(name);
@@ -115,13 +99,17 @@ export function playSound(name: SoundName): void {
     return;
   }
   try {
-    const source = c.createBufferSource();
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
-    const gain = c.createGain();
+    const gain = ctx.createGain();
     gain.gain.value = VOLUME[name];
-    source.connect(gain).connect(c.destination);
+    source.connect(gain).connect(ctx.destination);
     source.start();
-  } catch {
-    // ignore — a cue is never worth surfacing
+    klog('notch', 'debug', 'sound played', { name, ctx: ctx.state });
+  } catch (err) {
+    klog('notch', 'warn', 'sound play failed', { name, err: String(err) });
   }
 }

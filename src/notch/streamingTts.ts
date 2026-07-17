@@ -29,9 +29,11 @@ export interface SpeechClip {
 }
 
 // One AudioContext for the whole notch — creating one per clip is wasteful and can
-// hit the browser's context limit. Resumed lazily (PTT is the user gesture).
+// hit the browser's context limit. Resumed lazily (PTT is the user gesture). Exported
+// so UI sound cues (core/sound.ts) share this SAME unlocked context — a second
+// AudioContext hits WebKit's limit and silently produces no sound.
 let sharedCtx: AudioContext | null = null;
-function getAudioContext(): AudioContext | null {
+export function getAudioContext(): AudioContext | null {
   try {
     if (!sharedCtx) {
       const Ctor: typeof AudioContext | undefined =
