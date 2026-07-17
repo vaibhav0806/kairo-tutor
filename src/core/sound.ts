@@ -1,11 +1,13 @@
-// Tiny UI sound-cue player, shared by every WebView (notch plays STT/error cues, the
-// cursor plays the arrival pop). Files are bundled via Vite (import → hashed URL) and
-// played on a cached, reusable <audio> element per cue so playback is instant and never
-// stacks. Everything is best-effort: a blocked autoplay or a missing element is silently
-// swallowed — a cue is never allowed to throw into a caller's hot path.
+// Tiny UI sound-cue player. Uses the Web Audio API (decoded AudioBuffer + a fresh
+// BufferSourceNode per play) so cues fire with ~zero latency, fully async on the audio
+// thread — they never block or interfere with the main thread, TTS, or anything else.
+// (HTMLAudioElement was laggy: it routes through the media element pipeline and decodes
+// lazily on first play. Web Audio decodes once, up front, then playback is instant.)
 //
-// Cues are intentionally FEEBLE. Tune per-cue loudness in VOLUME below (0..1). Gated by a
-// single localStorage flag (default ON) shared across WebViews (same origin).
+// Everything is best-effort: a suspended context, a blocked resume, or a missing buffer
+// is silently swallowed — a cue is never allowed to throw into a caller's hot path.
+// Cues are intentionally FEEBLE; tune per-cue loudness in VOLUME (0..1). Gated by one
+// localStorage flag (default ON), shared across WebViews (same origin).
 
 import echoPop from '../assets/sounds/echo-pop.mp3';
 import toingLoud from '../assets/sounds/toing-loud.mp3';
@@ -49,38 +51,77 @@ export function setSoundsEnabled(on: boolean): void {
   }
 }
 
-// One reusable element per cue: preloaded, rewound on each play so rapid re-fires work.
-const cache = new Map<SoundName, HTMLAudioElement>();
-function element(name: SoundName): HTMLAudioElement | null {
+let ctx: AudioContext | null = null;
+function context(): AudioContext | null {
   try {
-    let audio = cache.get(name);
-    if (!audio) {
-      audio = new Audio(URLS[name]);
-      audio.preload = 'auto';
-      audio.volume = VOLUME[name];
-      cache.set(name, audio);
+    if (!ctx) {
+      const Ctor: typeof AudioContext | undefined =
+        globalThis.AudioContext ??
+        (globalThis as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) {
+        return null;
+      }
+      ctx = new Ctor();
     }
-    return audio;
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
+    return ctx;
   } catch {
     return null;
   }
 }
+
+// Decoded once, up front, so a play() is instant.
+const buffers = new Map<SoundName, AudioBuffer>();
+async function decode(name: SoundName): Promise<void> {
+  if (buffers.has(name)) {
+    return;
+  }
+  const c = context();
+  if (!c) {
+    return;
+  }
+  try {
+    const res = await fetch(URLS[name]);
+    const bytes = await res.arrayBuffer();
+    const buffer = await c.decodeAudioData(bytes);
+    buffers.set(name, buffer);
+  } catch {
+    // leave undecoded; playSound will retry a decode on demand
+  }
+}
+
+// Kick off decoding of every cue at import time (best-effort, non-blocking).
+void Promise.all((Object.keys(URLS) as SoundName[]).map((name) => decode(name)));
 
 /** Play a UI cue. No-op when sounds are off or audio is unavailable. Never throws. */
 export function playSound(name: SoundName): void {
   if (!soundsEnabled()) {
     return;
   }
-  const audio = element(name);
-  if (!audio) {
+  const c = context();
+  if (!c) {
+    return;
+  }
+  const buffer = buffers.get(name);
+  if (!buffer) {
+    // Not decoded yet (first play raced the preload) → decode then play, once ready.
+    void decode(name).then(() => {
+      if (buffers.has(name)) {
+        playSound(name);
+      }
+    });
     return;
   }
   try {
-    audio.currentTime = 0;
-    audio.volume = VOLUME[name];
-    // Autoplay may be blocked before the first user gesture — best-effort, swallow.
-    void audio.play().catch(() => {});
+    const source = c.createBufferSource();
+    source.buffer = buffer;
+    const gain = c.createGain();
+    gain.gain.value = VOLUME[name];
+    source.connect(gain).connect(c.destination);
+    source.start();
   } catch {
-    // ignore
+    // ignore — a cue is never worth surfacing
   }
 }

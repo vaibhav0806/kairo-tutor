@@ -1128,6 +1128,10 @@ export function NotchApp() {
             void emit('cursor:idle', {});
           },
           () => {
+            // Superseded turn (e.g. a no-cut click bumped the epoch while THIS narration
+            // was still finishing) → do NOT arm or settle. Its stale markAnswerSettled
+            // would arm an idle-close that tears down the incoming turn mid-flight.
+            if (turnEpochRef.current !== turnEpoch) return;
             // After narration: fallback-arm the pointer if a step-start didn't; otherwise
             // arm the context watch + idle-close exactly as today.
             if (hasAwaitClick) {
@@ -1157,6 +1161,8 @@ export function NotchApp() {
             });
           },
           () => {
+            // Superseded turn → don't arm/settle (see the steps path above).
+            if (turnEpochRef.current !== turnEpoch) return;
             // No narration steps → arm here (nothing to interrupt/reveal-early anyway).
             armAwaitClick();
             markAnswerSettled();
@@ -1790,6 +1796,17 @@ export function NotchApp() {
         pointerWatchRef.current?.onClick({ x: event.payload.x, y: event.payload.y }, button);
       }
     );
+    return () => {
+      void pending.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  // The cursor finished flying to a pointed-at target → play the arrival "pop" here (the
+  // cursor WebView is click-through, so its own audio is blocked; the notch's isn't).
+  useEffect(() => {
+    const pending = listen('cursor:arrived', () => {
+      playSound('arrive');
+    });
     return () => {
       void pending.then((unlisten) => unlisten());
     };
