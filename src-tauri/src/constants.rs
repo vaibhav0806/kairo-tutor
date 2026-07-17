@@ -54,9 +54,10 @@ pub(crate) const TUTOR_VISION_MODEL: &str = "claude-fable-5"; // single-call ans
 // room after thinking (still bounded by GROUNDING_TIMEOUT_MS).
 pub(crate) const ANTHROPIC_VISION_MAX_TOKENS: u32 = 3000;
 // Throttles Fable's thinking depth (low | medium | high | xhigh | max). GA, no beta
-// header. `medium` keeps box coordinates accurate while cutting the thinking that
-// drove the 21s latency; drop to `low` for more speed, raise for more accuracy.
-pub(crate) const ANTHROPIC_VISION_EFFORT: &str = "medium";
+// header. `low` for max speed (under test — watch box/pointer accuracy); `medium`
+// keeps coordinates accurate while cutting the thinking that drove the 21s latency;
+// raise for more accuracy.
+pub(crate) const ANTHROPIC_VISION_EFFORT: &str = "low";
 
 // ------------------------------------------- Alt grounding (when selected)
 pub(crate) const OPENROUTER_GROUNDING_MODEL: &str = "qwen/qwen3.7-plus";
