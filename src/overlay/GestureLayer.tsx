@@ -1,37 +1,71 @@
 // src/overlay/GestureLayer.tsx
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { createAnnotationFromPoints } from '../annotations/annotationTools';
 import { segmentGesturePath, type TimedPoint } from '../notch/gestureSegmenter';
 import { gestureConfig } from '../config/gesture';
-import type { UserAnnotation } from '../core/types';
 import type { OverlayDisplayBounds } from './OverlayApp';
 
-// Renders fading translucent strokes from the live cursor:mouse stream. Purely
-// cosmetic — the notch owns the truth buffer that fable actually sees.
+// Renders the user's fading cursor-gesture strokes on a <canvas>, drawn imperatively
+// in one rAF loop — NO per-frame React re-render or SVG DOM churn, so it's smooth +
+// high-performance and paints deterministically. Purely cosmetic: the notch owns the
+// separate truth buffer that fable actually sees.
 export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayBounds }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const bufferRef = useRef<TimedPoint[]>([]);
-  const recordingRef = useRef(true);
-  const [, force] = useState(0);
+  const recordingRef = useRef(true); // overlay mounts during an active hold
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const cfg = gestureConfig;
+    // cursor:mouse is physical px; devicePixelRatio is the display's true backing
+    // scale (the CGDisplay scaleFactor is unreliable in scaled-HiDPI modes).
+    const dpr = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+    const cssW = displayBounds.width;
+    const cssH = displayBounds.height;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr); // draw in CSS px, crisp on retina
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
     let raf = 0;
     const unlisteners: Array<() => void> = [];
 
-    const tick = () => {
+    const draw = () => {
       const now = performance.now();
-      // Prune points older than the longest a stroke can still be visible.
-      const maxAge =
-        gestureConfig.holdMs + gestureConfig.fadeMs + gestureConfig.windowMs + 200;
+      const maxAge = cfg.holdMs + cfg.fadeMs + cfg.windowMs + 200;
       bufferRef.current = bufferRef.current.filter((p) => now - p.t <= maxAge);
-      force((n) => n + 1);
+      ctx.clearRect(0, 0, cssW, cssH);
+      ctx.strokeStyle = cfg.strokeColor;
+      ctx.lineWidth = cfg.strokeWidthCssPx;
+      const strokes = segmentGesturePath(bufferRef.current, cfg);
+      for (const stroke of strokes) {
+        const age = now - stroke.points[stroke.points.length - 1].t;
+        // Full baseOpacity for holdMs, then a smoothstep ease-out to 0 over fadeMs.
+        const t = Math.min(1, Math.max(0, (age - cfg.holdMs) / cfg.fadeMs));
+        const opacity = cfg.baseOpacity * (1 - t * t * (3 - 2 * t));
+        if (opacity <= 0.01) continue;
+        ctx.globalAlpha = opacity;
+        ctx.beginPath();
+        const pts = stroke.points;
+        for (let i = 0; i < pts.length; i++) {
+          const x = pts[i].x / dpr - displayBounds.x;
+          const y = pts[i].y / dpr - displayBounds.y;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
       // Keep animating only while there's something to draw or we're recording;
-      // otherwise stop the loop entirely (0 CPU) until the next point or hold.
-      raf = bufferRef.current.length > 0 || recordingRef.current ? requestAnimationFrame(tick) : 0;
+      // otherwise stop the loop (0 CPU) until the next point or hold.
+      raf = bufferRef.current.length > 0 || recordingRef.current ? requestAnimationFrame(draw) : 0;
     };
-    // Start the loop on demand so an idle overlay costs nothing.
     const kick = () => {
-      if (raf === 0) raf = requestAnimationFrame(tick);
+      if (raf === 0) raf = requestAnimationFrame(draw);
     };
 
     void listen<{ x: number; y: number }>('cursor:mouse', (e) => {
@@ -46,86 +80,26 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
       kick();
     }).then((u) => unlisteners.push(u));
 
-    kick(); // component mounts during an active hold
+    kick();
 
     return () => {
       if (raf !== 0) cancelAnimationFrame(raf);
       unlisteners.forEach((u) => u());
     };
-  }, []);
-
-  const now = performance.now();
-  const strokes = segmentGesturePath(bufferRef.current, gestureConfig);
+  }, [displayBounds]);
 
   return (
-    <>
-      {strokes.map((stroke, i) => {
-        // Translucent baseOpacity while drawn + for holdMs after the last point,
-        // then a smoothstep ease-out to 0 over fadeMs (a real fade, not a cut).
-        const age = now - stroke.points[stroke.points.length - 1].t;
-        const t = Math.min(1, Math.max(0, (age - gestureConfig.holdMs) / gestureConfig.fadeMs));
-        const opacity = gestureConfig.baseOpacity * (1 - t * t * (3 - 2 * t));
-        if (opacity <= 0.01) return null;
-        const annotation = createAnnotationFromPoints({
-          id: `gesture-${i}`,
-          points: stroke.points.map((p) => ({ x: p.x, y: p.y }))
-        });
-        return (
-          <GestureStrokeShape
-            key={i}
-            annotation={annotation}
-            displayBounds={displayBounds}
-            opacity={opacity}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-// Clone of OverlayApp's pen-branch geometry (OverlayApp.tsx:57-77) with a
-// per-stroke opacity. Points are already in global-screen physical px.
-function GestureStrokeShape({
-  annotation,
-  displayBounds,
-  opacity
-}: {
-  annotation: UserAnnotation;
-  displayBounds: OverlayDisplayBounds;
-  opacity: number;
-}) {
-  if (!annotation.points) return null;
-  // cursor:mouse points are true physical px, so convert to CSS px with the
-  // webview's devicePixelRatio — NOT displayBounds.scaleFactor, which the
-  // CGDisplay path reports as 1 in scaled-HiDPI modes (see spawn_mouse_tracker).
-  // The cursor pet uses devicePixelRatio for the same reason.
-  const scaleFactor = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
-  const left = annotation.screenRegion.x / scaleFactor - displayBounds.x;
-  const top = annotation.screenRegion.y / scaleFactor - displayBounds.y;
-  const width = Math.max(annotation.screenRegion.width / scaleFactor, 1);
-  const height = Math.max(annotation.screenRegion.height / scaleFactor, 1);
-  const points = annotation.points
-    .map((p) => `${p.x / scaleFactor - displayBounds.x - left},${p.y / scaleFactor - displayBounds.y - top}`)
-    .join(' ');
-  return (
-    <svg
-      aria-label="gesture mark"
-      className="annotation-shape pen gesture"
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
       style={{
-        left: `${left}px`,
-        top: `${top}px`,
-        width: `${width}px`,
-        height: `${height}px`,
-        opacity,
-        // Soft edge only (NOT a laser glow); overrides the base drop-shadow.
-        filter: 'blur(0.5px)'
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: `${displayBounds.width}px`,
+        height: `${displayBounds.height}px`,
+        pointerEvents: 'none'
       }}
-      viewBox={`0 0 ${width} ${height}`}
-    >
-      <polyline
-        points={points}
-        style={{ stroke: gestureConfig.strokeColor, strokeWidth: gestureConfig.strokeWidthCssPx }}
-      />
-    </svg>
+    />
   );
 }
