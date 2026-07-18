@@ -45,6 +45,12 @@ describe('segmentGesturePath', () => {
     expect(segmentGesturePath(pts, cfg)).toHaveLength(1);
   });
 
+  it('keeps a SLOW big circle (speed-invariant)', () => {
+    // r=300 over ~2s (0.94 px/ms) and r=150 over ~2.5s
+    expect(segmentGesturePath(circle(700, 500, 300, 125), gestureConfig)).toHaveLength(1); // 125 pts * 16ms = 2000ms
+    expect(segmentGesturePath(circle(400, 400, 150, 156), gestureConfig)).toHaveLength(1); // ~2500ms
+  });
+
   it('keeps a back-and-forth underline', () => {
     const fwd = line(200, 600, 500, 600, 20);
     const back = line(500, 600, 200, 600, 20, 20 * 16);

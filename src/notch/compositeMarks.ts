@@ -6,17 +6,19 @@ import { gestureConfig } from '../config/gesture';
 type Xy = { x: number; y: number };
 type GeomCapture = {
   displayBounds: { x: number; y: number; scaleFactor: number };
-  imageGeometry: { rawWidth: number; encodedWidth: number };
+  imageGeometry: { rawWidth: number; rawHeight: number; encodedWidth: number; encodedHeight: number };
 };
 
 // Physical global px (cursor:mouse space) → encoded image px (the base64 image).
 // raw* is the display's physical size; encoded* is the downscaled image size.
+// Scale X and Y independently so a non-uniform downscale can't skew the marks.
 export function physicalToEncoded(p: Xy, capture: GeomCapture): Xy {
   const sf = capture.displayBounds.scaleFactor > 0 ? capture.displayBounds.scaleFactor : 1;
-  const scale = capture.imageGeometry.encodedWidth / capture.imageGeometry.rawWidth;
+  const scaleX = capture.imageGeometry.encodedWidth / capture.imageGeometry.rawWidth;
+  const scaleY = capture.imageGeometry.encodedHeight / capture.imageGeometry.rawHeight;
   const originX = capture.displayBounds.x * sf;
   const originY = capture.displayBounds.y * sf;
-  return { x: (p.x - originX) * scale, y: (p.y - originY) * scale };
+  return { x: (p.x - originX) * scaleX, y: (p.y - originY) * scaleY };
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -73,7 +75,13 @@ export async function compositeMarks(
   });
 
   const dataUrl = canvas.toDataURL('image/jpeg', gestureConfig.jpegQuality);
-  return { ...capture, imageBase64: dataUrl.split(',')[1], imageMimeType: 'image/jpeg' };
+  const newBase64 = dataUrl.split(',')[1];
+  return {
+    ...capture,
+    imageBase64: newBase64,
+    imageMimeType: 'image/jpeg',
+    byteLength: Math.floor((newBase64.length * 3) / 4)
+  };
 }
 
 function withAlpha(hex: string, alpha: number): string {

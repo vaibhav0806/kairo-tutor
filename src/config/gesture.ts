@@ -6,10 +6,10 @@
 
 export const gestureConfig = {
   // Detection ------------------------------------------------------------
-  windowMs: 200, // sliding window for per-point classification
+  windowMs: 350, // sliding window for per-point classification (long enough that a slow circle still curves within one window)
   minPathPx: 45, // below this total movement in the window = rest (ignored)
   directnessMax: 0.5, // net/path below this = localized gesture
-  turningMin: 1.0, // radians of accumulated turning in the window = curved gesture (catches big circles)
+  turningMin: 0.8, // radians of accumulated turning in the window = curved gesture (catches big + slow circles)
   minStrokePts: 4, // discard strokes shorter than this on close
   minStrokePathPx: 60, // discard strokes whose total path is below this
   confidentDwellMs: 180, // a stroke lasting at least this long renders/composites as "confident"
