@@ -560,6 +560,7 @@ fn save_gesture_debug_image(app: tauri::AppHandle, base64: String) -> Result<Str
     klog!(gesture, info, path = %path.display(), "saved gesture debug image");
     // Open the folder once per session so the user can watch images land.
     static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    #[cfg(target_os = "macos")]
     if !OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         let _ = std::process::Command::new("open").arg(&dir).spawn();
     }
