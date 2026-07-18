@@ -91,13 +91,14 @@ function withAlpha(hex: string, alpha: number): string {
 }
 
 function drawNumber(ctx: CanvasRenderingContext2D, at: { x: number; y: number }, label: number): void {
+  const r = gestureConfig.labelRadiusPx;
   ctx.save();
-  ctx.fillStyle = 'rgba(167,139,250,0.95)';
+  ctx.fillStyle = withAlpha(gestureConfig.strokeColor, gestureConfig.labelAlpha);
   ctx.beginPath();
-  ctx.arc(at.x, at.y, 12, 0, Math.PI * 2);
+  ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 15px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.font = `bold ${Math.round(r * 1.4)}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(String(label), at.x, at.y);

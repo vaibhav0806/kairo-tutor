@@ -111,7 +111,15 @@ function GestureStrokeShape({
     <svg
       aria-label="gesture mark"
       className="annotation-shape pen gesture"
-      style={{ left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`, opacity }}
+      style={{
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${width}px`,
+        height: `${height}px`,
+        opacity,
+        // Laser glow: a tight + a wide red halo around the crisp core.
+        filter: `drop-shadow(0 0 ${gestureConfig.glowPx * 0.45}px ${gestureConfig.strokeColor}) drop-shadow(0 0 ${gestureConfig.glowPx}px ${gestureConfig.strokeColor})`
+      }}
       viewBox={`0 0 ${width} ${height}`}
     >
       <polyline

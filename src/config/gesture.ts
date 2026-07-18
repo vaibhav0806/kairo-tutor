@@ -14,17 +14,20 @@ export const gestureConfig = {
   minStrokePathPx: 60, // discard strokes whose total path is below this
   confidentDwellMs: 180, // a stroke lasting at least this long renders/composites as "confident"
 
-  // Cosmetic render ------------------------------------------------------
-  baseOpacity: 0.55, // translucent even while being drawn (never fully opaque)
-  holdMs: 200, // stroke holds at baseOpacity this long after its last point, then fades
-  fadeMs: 50, // fade-out duration after holdMs (gone by holdMs+fadeMs ≈ 0.25s), eased
-  strokeColor: '#f87171', // light red
-  strokeWidthCssPx: 7, // on-screen stroke width (CSS px) — matches the pet's 8px comet trail
+  // Cosmetic render — a glowing "laser" (tldraw-style) -------------------
+  baseOpacity: 0.9, // bright core while drawn (the glow does the softening, not transparency)
+  holdMs: 600, // laser holds this long after its last point, then fades
+  fadeMs: 600, // fade-out duration after holdMs (gone by ≈1.2s), eased
+  strokeColor: '#f87171', // laser red
+  strokeWidthCssPx: 4, // crisp core width (CSS px); the glow gives it trail-like body
+  glowPx: 9, // laser glow radius (CSS px) — drop-shadow halo around the core
 
   // Composite (image sent to fable) --------------------------------------
-  compositeWidthPx: 14, // stroke width in physical px (~2x css for retina), scaled to encoded
+  compositeWidthPx: 8, // stroke width in physical px (~2x css for retina), scaled to encoded
   alphaConfident: 0.45, // translucent so fable sees THROUGH the marks (not opaque)
   alphaBorderline: 0.3,
+  labelRadiusPx: 7, // multi-mark number badge radius in encoded px — small but readable by fable
+  labelAlpha: 0.7, // badge fill translucency
   jpegQuality: 0.9,
 
   // Debug ----------------------------------------------------------------
