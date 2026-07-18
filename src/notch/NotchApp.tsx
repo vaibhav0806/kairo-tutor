@@ -1590,63 +1590,6 @@ export function NotchApp() {
     void speakFollowClip(line);
   };
 
-  // Arm the context watcher for a FINALIZED user drawing, so tab/window switch,
-  // scroll, or click clears it (same reset as Kairo's own box). Only called once the
-  // pen is off — never mid-stroke, or the drawing gestures would clear themselves.
-  const armAnnotationWatch = useCallback(async () => {
-    if (annotationsRef.current.length === 0) {
-      return;
-    }
-    const active =
-      capturedScreenRef.current?.activeApp ??
-      (await nativeBridge.getActiveApp().catch(() => null));
-    await nativeBridge.armContextWatch({
-      bundleId: active?.bundleId,
-      windowTitle: active?.windowTitle ?? undefined
-    });
-  }, [nativeBridge]);
-
-  const startAnnotation = useCallback(
-    async (tool: NotchAnnotationTool) => {
-      // Tapping the already-active tool toggles it off: stop drawing and let the
-      // overlay become click-through preview (drawn marks stay visible).
-      if (activeAnnotationTool === tool) {
-        setActiveAnnotationTool(null);
-        void emit('annotation:finish', {});
-        void armAnnotationWatch();
-        return;
-      }
-      setActiveAnnotationTool(tool);
-      // Show the drawing overlay from the notch (the main window's webview is
-      // hidden/suspended, so its listener can't be relied on). Reuse the
-      // voice-start screenshot's bounds, else fetch the display bounds natively.
-      const bounds =
-        capturedScreenRef.current?.displayBounds ?? (await nativeBridge.getDisplayBounds());
-      // Cache the bounds so re-engage can re-assert the marks as a preview (see
-      // resetPreviousTurn) without a fresh native round-trip.
-      displayBoundsRef.current = bounds;
-      klog('notch', 'info', 'pen annotation started', { tool });
-      await nativeBridge.showAnnotationOverlay(bounds, tool);
-    },
-    [activeAnnotationTool, armAnnotationWatch, nativeBridge]
-  );
-
-  const finishAnnotation = useCallback(() => {
-    setActiveAnnotationTool(null);
-    void emit('annotation:finish', {});
-    void armAnnotationWatch();
-  }, [armAnnotationWatch]);
-
-  const undoAnnotation = useCallback(() => {
-    void emit('annotation:undo', {});
-  }, []);
-
-  const clearAnnotations = useCallback(() => {
-    setAnnotations([]);
-    setActiveAnnotationTool(null);
-    void emit('annotation:clear', {});
-  }, []);
-
   const hideNotch = useCallback(() => {
     stopAnswerPlayback();
     // Explicit dismiss also tears down a pending guide pointer (stops the watch's poll
@@ -2373,20 +2316,16 @@ export function NotchApp() {
 
   // Native push-to-talk delivers the recorded WAV here on key-release; we transcribe
   // + run the turn. (Capture itself is native — instant, mic on only while held.)
-  // Plus the pen shortcut (⌥⇧P).
   useEffect(() => {
     const pending = Promise.all([
       listen<{ audioBase64: string; mimeType: string }>('ptt:audio', (event) => {
         void processCapturedAudio(event.payload.audioBase64, event.payload.mimeType);
-      }),
-      listen('pen:toggle', () => {
-        void startAnnotation('pen');
       })
     ]);
     return () => {
       void pending.then((unlisteners) => unlisteners.forEach((unlisten) => unlisten()));
     };
-  }, [processCapturedAudio, startAnnotation]);
+  }, [processCapturedAudio]);
 
   // Single minimal status capsule (top-center). Live waveform while listening, a
   // pulse while thinking, animated bars while speaking, and it expands into the
@@ -2483,16 +2422,6 @@ export function NotchApp() {
                 placeholder="Ask about this screen — or hold ⌥⌃ to talk"
                 value={query}
               />
-              <button
-                aria-label="Toggle pen"
-                className="kairo-capsule-icon"
-                data-active={activeAnnotationTool === 'pen' ? 'true' : 'false'}
-                title="Pen (⌥⇧P)"
-                type="button"
-                onClick={() => startAnnotation('pen')}
-              >
-                <PenIcon />
-              </button>
               <button
                 className="kairo-capsule-ask"
                 disabled={query.trim().length === 0}
