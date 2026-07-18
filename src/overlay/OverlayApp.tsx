@@ -21,7 +21,7 @@ type OverlayDisplayBounds = ScreenDimensions & {
 };
 
 export type OverlayPayload = {
-  mode?: 'visual' | 'annotate' | 'annotation_preview';
+  mode?: 'visual' | 'annotate' | 'annotation_preview' | 'gesture';
   displayBounds: OverlayDisplayBounds;
   targets: VisualTarget[];
   annotations?: UserAnnotation[];

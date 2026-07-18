@@ -478,6 +478,10 @@ pub(crate) fn configure_overlay_window(
     // drawing (annotate / preview) so the marks land in the tutor's screenshot, but
     // EXCLUDE it while it shows Kairo's own box (visual) so guidance stays out of
     // captures. With SHOW_IN_CAPTURE=true, always include (demo mode).
+    // "gesture" (hold-to-point cosmetic layer) intentionally falls here: it is
+    // click-through (is_annotation_mode == false) AND excluded from capture, so
+    // the fading marks never leak into the base screenshot — the notch composites
+    // the truth marks in code instead.
     let shows_user_marks = matches!(
         payload.mode.as_deref(),
         Some("annotate") | Some("annotation_preview")

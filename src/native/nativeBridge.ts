@@ -97,7 +97,7 @@ export type NativeTtsStreamMsg =
   | { type: 'error'; message: string };
 
 export type NativeOverlayPayload = {
-  mode?: 'visual' | 'annotate' | 'annotation_preview';
+  mode?: 'visual' | 'annotate' | 'annotation_preview' | 'gesture';
   displayBounds: NativeOverlayDisplayBounds;
   targets: VisualTarget[];
   annotations?: UserAnnotation[];
@@ -155,6 +155,9 @@ export type NativeBridge = {
     displayBounds: NativeOverlayDisplayBounds,
     initialTool?: NotchAnnotationTool
   ): Promise<void>;
+  // Show the cosmetic hold-to-point gesture overlay (click-through, excluded from
+  // capture). The notch owns the truth marks; this layer only renders fading strokes.
+  showGestureOverlay(displayBounds: NativeOverlayDisplayBounds): Promise<void>;
   updateOverlay(payload: NativeOverlayPayload): Promise<void>;
   getCurrentOverlayPayload(): Promise<NativeOverlayPayload | null>;
   hideOverlay(): Promise<void>;
@@ -408,6 +411,17 @@ export function createNativeBridge(
         });
       } catch {
         // Browser previews do not have a native overlay window.
+      }
+    },
+
+    async showGestureOverlay(displayBounds) {
+      try {
+        const overlayDisplayBounds = createAnnotationOverlayBounds(displayBounds);
+        await invoke<void>('show_overlay', {
+          payload: { mode: 'gesture', displayBounds: overlayDisplayBounds, targets: [] }
+        });
+      } catch {
+        // Browser previews have no native overlay window.
       }
     },
 
