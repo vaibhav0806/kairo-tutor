@@ -15,11 +15,11 @@ export const gestureConfig = {
   confidentDwellMs: 180, // a stroke lasting at least this long renders/composites as "confident"
 
   // Cosmetic render — soft translucent marker, canvas-drawn ------------
-  baseOpacity: 0.35, // almost transparent while drawn, see-through
+  baseOpacity: 0.28, // almost transparent while drawn, see-through
   holdMs: 250, // holds this long after its last point, then fades
   fadeMs: 350, // fade-out duration after holdMs (gone by ≈0.6s), eased
   strokeColor: '#8b5cf6', // same blue/violet as fable's target boxes (--box-rgb 139 92 246)
-  strokeWidthCssPx: 6, // on-screen stroke width (CSS px)
+  strokeWidthCssPx: 9, // on-screen stroke width (CSS px)
 
   // Composite (image sent to fable) --------------------------------------
   compositeWidthPx: 8, // stroke width in physical px (~2x css for retina), scaled to encoded

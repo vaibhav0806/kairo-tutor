@@ -548,12 +548,19 @@ export function NotchApp() {
         targets: [],
         annotations: marks
       });
-    } else if (gestureBufferRef.current.length > 0) {
-      // A hold-to-point gesture is fading on the shared overlay — leave it up so the
-      // fade plays out; the release hide-timer owns teardown. This branch runs ~0ms
-      // after release (processCapturedAudio → resetPreviousTurn), and hiding here is
-      // exactly what made the marks vanish instantly + flash back on the answer box.
-      klog('notch', 'debug', 'reengage: keep gesture fade', { pts: gestureBufferRef.current.length });
+    } else if (gestureBufferRef.current.length > 0 || gestureRecordingRef.current) {
+      // Don't hide the shared overlay while a gesture is active or fading. Two cases:
+      // (1) release path (buffer full) — let the fade play out, the hide-timer owns
+      //     teardown; hiding here made marks vanish instantly + flash on the box.
+      // (2) hold-START path (recording true) — this runs right after showGestureOverlay,
+      //     and on turn 2+ (bounds cached, no await) show_overlay is posted BEFORE this,
+      //     so hiding here would hide the just-shown overlay (the turn-2 no-paint bug).
+      // gestureRecordingRef is set true synchronously in the ptt:recording handler,
+      // which runs before this, so the guard is race-independent.
+      klog('notch', 'debug', 'reengage: keep gesture overlay', {
+        pts: gestureBufferRef.current.length,
+        recording: gestureRecordingRef.current
+      });
     } else {
       klog('notch', 'debug', 'reengage: clear overlay', { marks: marks.length });
       void nativeBridge.hideOverlay();

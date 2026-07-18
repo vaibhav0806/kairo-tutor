@@ -32,7 +32,14 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
     ctx.lineJoin = 'round';
 
     let raf = 0;
+    let cancelled = false;
     const unlisteners: Array<() => void> = [];
+    // listen() resolves async; if we unmount before it does, dispose immediately so
+    // we never leak the cursor:mouse / ptt:recording listeners across many turns.
+    const addUnlisten = (u: () => void) => {
+      if (cancelled) u();
+      else unlisteners.push(u);
+    };
 
     const draw = () => {
       const now = performance.now();
@@ -72,17 +79,18 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
       if (!recordingRef.current) return;
       bufferRef.current.push({ x: e.payload.x, y: e.payload.y, t: performance.now() });
       kick();
-    }).then((u) => unlisteners.push(u));
+    }).then(addUnlisten);
 
     // Freeze the buffer on release; existing strokes keep fading, no new points.
     void listen<{ active?: boolean }>('ptt:recording', (e) => {
       recordingRef.current = Boolean(e.payload?.active);
       kick();
-    }).then((u) => unlisteners.push(u));
+    }).then(addUnlisten);
 
     kick();
 
     return () => {
+      cancelled = true;
       if (raf !== 0) cancelAnimationFrame(raf);
       unlisteners.forEach((u) => u());
     };
