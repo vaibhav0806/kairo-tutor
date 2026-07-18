@@ -14,13 +14,12 @@ export const gestureConfig = {
   minStrokePathPx: 60, // discard strokes whose total path is below this
   confidentDwellMs: 180, // a stroke lasting at least this long renders/composites as "confident"
 
-  // Cosmetic render — a glowing "laser" (tldraw-style) -------------------
-  baseOpacity: 0.9, // bright core while drawn (the glow does the softening, not transparency)
-  holdMs: 600, // laser holds this long after its last point, then fades
-  fadeMs: 600, // fade-out duration after holdMs (gone by ≈1.2s), eased
-  strokeColor: '#f87171', // laser red
-  strokeWidthCssPx: 4, // crisp core width (CSS px); the glow gives it trail-like body
-  glowPx: 9, // laser glow radius (CSS px) — drop-shadow halo around the core
+  // Cosmetic render — soft translucent red marker (NOT a laser) ----------
+  baseOpacity: 0.7, // translucent red while drawn, see-through
+  holdMs: 250, // holds this long after its last point, then fades
+  fadeMs: 350, // fade-out duration after holdMs (gone by ≈0.6s), eased
+  strokeColor: '#f87171', // soft red
+  strokeWidthCssPx: 6, // on-screen stroke width (CSS px)
 
   // Composite (image sent to fable) --------------------------------------
   compositeWidthPx: 8, // stroke width in physical px (~2x css for retina), scaled to encoded

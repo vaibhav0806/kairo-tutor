@@ -117,8 +117,8 @@ function GestureStrokeShape({
         width: `${width}px`,
         height: `${height}px`,
         opacity,
-        // Laser glow: a tight + a wide red halo around the crisp core.
-        filter: `drop-shadow(0 0 ${gestureConfig.glowPx * 0.45}px ${gestureConfig.strokeColor}) drop-shadow(0 0 ${gestureConfig.glowPx}px ${gestureConfig.strokeColor})`
+        // Soft edge only (NOT a laser glow); overrides the base drop-shadow.
+        filter: 'blur(0.5px)'
       }}
       viewBox={`0 0 ${width} ${height}`}
     >

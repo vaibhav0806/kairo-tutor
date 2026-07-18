@@ -548,6 +548,12 @@ export function NotchApp() {
         targets: [],
         annotations: marks
       });
+    } else if (gestureBufferRef.current.length > 0) {
+      // A hold-to-point gesture is fading on the shared overlay — leave it up so the
+      // fade plays out; the release hide-timer owns teardown. This branch runs ~0ms
+      // after release (processCapturedAudio → resetPreviousTurn), and hiding here is
+      // exactly what made the marks vanish instantly + flash back on the answer box.
+      klog('notch', 'debug', 'reengage: keep gesture fade', { pts: gestureBufferRef.current.length });
     } else {
       klog('notch', 'debug', 'reengage: clear overlay', { marks: marks.length });
       void nativeBridge.hideOverlay();
@@ -1321,8 +1327,9 @@ export function NotchApp() {
       // new answer is computed; it flies again only if the answer has a target.
       void nativeBridge.cursorRelease();
       // Also drop the previous turn's box (covers the typed path; belt-and-suspenders
-      // for voice, where resetPreviousTurn already hid it on re-engage).
-      void nativeBridge.hideOverlay();
+      // for voice, where resetPreviousTurn already hid it on re-engage). Skip while a
+      // gesture fade is playing on the shared overlay — hiding cuts the fade short.
+      if (!hasGestureMarks) void nativeBridge.hideOverlay();
       isSubmittingRef.current = true;
       setIsSubmitting(true);
       updateVoiceCaptureState('idle');
@@ -1816,8 +1823,7 @@ export function NotchApp() {
   // cursor WebView is click-through, so its own audio is blocked; the notch's isn't).
   useEffect(() => {
     const pending = listen('cursor:arrived', () => {
-      klog('notch', 'debug', 'cursor:arrived received → pop');
-      playSound('arrive');
+      klog('notch', 'debug', 'cursor:arrived received');
     });
     return () => {
       void pending.then((unlisten) => unlisten());
