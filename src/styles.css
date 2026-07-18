@@ -281,6 +281,18 @@ input {
   vector-effect: non-scaling-stroke;
 }
 
+/* Hold-to-point cosmetic strokes: same geometry as the pen, softer + fading
+   (opacity is set inline per-stroke by GestureLayer). */
+.annotation-shape.pen.gesture {
+  filter: none;
+}
+
+.annotation-shape.pen.gesture polyline {
+  stroke: #a78bfa;
+  stroke-width: 5px;
+  stroke-opacity: 0.9;
+}
+
 .visual-overlay {
   inset: 0;
   pointer-events: none;
