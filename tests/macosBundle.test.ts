@@ -83,7 +83,7 @@ describe('macOS bundle permissions', () => {
     expect(capability.windows).toEqual(expect.arrayContaining(['main', 'overlay', 'notch']));
   });
 
-  test('registers only the pen global shortcut; ⌘⇧Space removed in favor of the ⌥⌃ tap', () => {
+  test('registers no Tauri global shortcuts; ⌘⇧Space and ⌥⇧P both removed', () => {
     const nativeSource = readFileSync('src-tauri/src/lib.rs', 'utf8');
 
     // ⌘⇧Space (the old activation shortcut) was removed: typing is now a quick ⌥⌃
@@ -91,9 +91,10 @@ describe('macOS bundle permissions', () => {
     expect(nativeSource).not.toContain('KAIRO_ACTIVATION_SHORTCUT');
     expect(nativeSource).not.toContain('activation:shortcut');
 
-    // The pen shortcut (⌥⇧P) is the only remaining Tauri global shortcut.
-    expect(nativeSource).toContain('const KAIRO_PEN_SHORTCUT');
-    expect(nativeSource).toContain('.with_shortcuts([pen_shortcut');
-    expect(nativeSource).toContain('app.emit("pen:toggle", ())');
+    // ⌥⇧P (the pen toggle) was removed too — pointing is now hold-to-point gestures
+    // captured during the ⌥⌃ talk-hold, so no Tauri global shortcut remains.
+    expect(nativeSource).not.toContain('KAIRO_PEN_SHORTCUT');
+    expect(nativeSource).not.toContain('pen:toggle');
+    expect(nativeSource).not.toContain('tauri_plugin_global_shortcut');
   });
 });
