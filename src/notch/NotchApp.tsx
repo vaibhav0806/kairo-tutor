@@ -1680,6 +1680,9 @@ export function NotchApp() {
           clearTimeout(gestureHideTimerRef.current);
           gestureHideTimerRef.current = null;
         }
+        // Assumes serialized holds: a re-hold during the previous hold's in-flight
+        // STT resets its buffer, but that turn is normally superseded by the epoch
+        // bump on the next release, so the reset does not corrupt a live turn.
         gestureBufferRef.current = [];
         void (async () => {
           const bounds =
@@ -1708,7 +1711,14 @@ export function NotchApp() {
       .catch(() => {
         /* browser preview / tests have no event bus */
       });
-    return () => unlisten?.();
+    return () => {
+      unlisten?.();
+      // Also clear the post-release hide timer so it can't fire after unmount.
+      if (gestureHideTimerRef.current != null) {
+        clearTimeout(gestureHideTimerRef.current);
+        gestureHideTimerRef.current = null;
+      }
+    };
   }, []);
 
   // Buffer the native cursor:mouse stream (physical px, ~60 Hz) but only while a hold
