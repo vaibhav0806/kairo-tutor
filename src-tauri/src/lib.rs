@@ -536,6 +536,37 @@ fn log_window_startup(window: &tauri::WebviewWindow) {
     klog!(app, info, visible = visible, position = %position, size = %size, "startup: main window found");
 }
 
+/// Save a base64 JPEG (the exact image sent to fable) to a debug folder and,
+/// on the first call of the session, open the folder in Finder. Debug-only —
+/// gated by the frontend gestureConfig.debugImages flag.
+#[tauri::command]
+fn save_gesture_debug_image(app: tauri::AppHandle, base64: String) -> Result<String, String> {
+    use base64::Engine as _;
+    use std::io::Write as _;
+    // `dirs` isn't a dependency here, so resolve the home dir from $HOME directly.
+    let home = std::env::var("HOME").map_err(|_| "no home dir".to_string())?;
+    let dir = std::path::Path::new(&home).join("Library/Logs/Kairo/gesture-debug");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("gesture-{stamp}.jpg"));
+    let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    f.write_all(&bytes).map_err(|e| e.to_string())?;
+    klog!(gesture, info, path = %path.display(), "saved gesture debug image");
+    // Open the folder once per session so the user can watch images land.
+    static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let _ = std::process::Command::new("open").arg(&dir).spawn();
+    }
+    let _ = app; // reserved for future per-window routing
+    Ok(path.display().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // First thing: stand up the universal logger so every subsystem below logs
@@ -696,7 +727,8 @@ pub fn run() {
             run_ack_turn,
             transcribe_audio,
             synthesize_speech,
-            synthesize_speech_stream
+            synthesize_speech_stream,
+            save_gesture_debug_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kairo Tutor");
