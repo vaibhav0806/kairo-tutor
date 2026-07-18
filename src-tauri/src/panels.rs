@@ -338,7 +338,10 @@ pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
                 if moved || idle_ticks >= 18 {
                     last = Some((x, y));
                     idle_ticks = 0;
-                    let _ = window.emit("cursor:mouse", MousePoint { x, y });
+                    // Broadcast app-wide so the cursor pet, the overlay (cosmetic gesture
+                    // render) and the notch (truth buffer) all receive it. Payload is
+                    // physical px, global top-left; each webview scales as needed.
+                    let _ = app.emit("cursor:mouse", MousePoint { x, y });
                 } else {
                     idle_ticks += 1;
                 }
@@ -475,11 +478,17 @@ pub(crate) fn configure_overlay_window(
     // drawing (annotate / preview) so the marks land in the tutor's screenshot, but
     // EXCLUDE it while it shows Kairo's own box (visual) so guidance stays out of
     // captures. With SHOW_IN_CAPTURE=true, always include (demo mode).
+    let is_gesture = payload.mode.as_deref() == Some("gesture");
     let shows_user_marks = matches!(
         payload.mode.as_deref(),
         Some("annotate") | Some("annotation_preview")
     );
-    if shows_user_marks || constants::SHOW_IN_CAPTURE {
+    if is_gesture {
+        // The cosmetic gesture layer is on-screen only — the notch composites the
+        // truth marks in code. Never let it enter the tutor capture, regardless of
+        // the SHOW_IN_CAPTURE dev toggle.
+        exclude_window_from_screen_capture(window);
+    } else if shows_user_marks || constants::SHOW_IN_CAPTURE {
         include_window_in_screen_capture(window);
     } else {
         exclude_window_from_screen_capture(window);

@@ -8,7 +8,6 @@ use std::{
 };
 use tauri::{Emitter, LogicalSize, Manager, State};
 use tauri_nspanel::{tauri_panel, PanelHandle};
-use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 mod prompts;
 
@@ -67,10 +66,6 @@ use panels::{
 
 mod input;
 use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, FollowClickWatch};
-
-// Toggle the pen directly without opening the notch first. Avoids ⌥⌃ (the
-// push-to-talk chord) so holding it never starts a recording.
-const KAIRO_PEN_SHORTCUT: &str = "Alt+Shift+P";
 
 // Non-activating NSPanel for the notch. A non-activating panel can receive
 // input without activating the app, so showing it does not pull the user out
@@ -536,29 +531,43 @@ fn log_window_startup(window: &tauri::WebviewWindow) {
     klog!(app, info, visible = visible, position = %position, size = %size, "startup: main window found");
 }
 
+/// Save a base64 JPEG (the exact image sent to fable) to a debug folder and,
+/// on the first call of the session, open the folder in Finder. Debug-only —
+/// gated by the frontend gestureConfig.debugImages flag.
+#[tauri::command]
+fn save_gesture_debug_image(app: tauri::AppHandle, base64: String) -> Result<String, String> {
+    use base64::Engine as _;
+    use std::io::Write as _;
+    // `dirs` isn't a dependency here, so resolve the home dir from $HOME directly.
+    let home = std::env::var("HOME").map_err(|_| "no home dir".to_string())?;
+    let dir = std::path::Path::new(&home).join("Library/Logs/Kairo/gesture-debug");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("gesture-{stamp}.jpg"));
+    let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    f.write_all(&bytes).map_err(|e| e.to_string())?;
+    klog!(gesture, info, path = %path.display(), "saved gesture debug image");
+    // Open the folder once per session so the user can watch images land.
+    static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    #[cfg(target_os = "macos")]
+    if !OPENED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let _ = std::process::Command::new("open").arg(&dir).spawn();
+    }
+    let _ = app; // reserved for future per-window routing
+    Ok(path.display().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // First thing: stand up the universal logger so every subsystem below logs
     // into ~/Library/Logs/Kairo/. Never panics.
     klog::init();
-
-    let pen_shortcut: Shortcut = KAIRO_PEN_SHORTCUT
-        .parse()
-        .expect("failed to parse Kairo pen shortcut");
-    let global_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts([pen_shortcut.clone()])
-        .expect("failed to register Kairo shortcuts")
-        .with_handler(move |app, shortcut, event| {
-            if event.state != ShortcutState::Pressed {
-                return;
-            }
-            // ⌥⇧P toggles the pen. (Voice + typing now both live on ⌥⌃: hold to
-            // talk, tap to type — handled by the PTT event tap, not this plugin.)
-            if shortcut == &pen_shortcut {
-                let _ = app.emit("pen:toggle", ());
-            }
-        })
-        .build();
 
     tauri::Builder::default()
         .manage(OverlayState::default())
@@ -567,7 +576,6 @@ pub fn run() {
         .manage(ContextWatch::default())
         .manage(FollowClickWatch::default())
         .manage(AudioCapture::default())
-        .plugin(global_shortcut_plugin)
         .plugin(tauri_nspanel::init())
         .setup(|app| {
             let show_setup = should_show_setup_window(&get_permission_status());
@@ -696,7 +704,8 @@ pub fn run() {
             run_ack_turn,
             transcribe_audio,
             synthesize_speech,
-            synthesize_speech_stream
+            synthesize_speech_stream,
+            save_gesture_debug_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kairo Tutor");

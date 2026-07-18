@@ -97,7 +97,7 @@ export type NativeTtsStreamMsg =
   | { type: 'error'; message: string };
 
 export type NativeOverlayPayload = {
-  mode?: 'visual' | 'annotate' | 'annotation_preview';
+  mode?: 'visual' | 'annotate' | 'annotation_preview' | 'gesture';
   displayBounds: NativeOverlayDisplayBounds;
   targets: VisualTarget[];
   annotations?: UserAnnotation[];
@@ -155,6 +155,9 @@ export type NativeBridge = {
     displayBounds: NativeOverlayDisplayBounds,
     initialTool?: NotchAnnotationTool
   ): Promise<void>;
+  // Show the cosmetic hold-to-point gesture overlay (click-through, excluded from
+  // capture). The notch owns the truth marks; this layer only renders fading strokes.
+  showGestureOverlay(displayBounds: NativeOverlayDisplayBounds): Promise<void>;
   updateOverlay(payload: NativeOverlayPayload): Promise<void>;
   getCurrentOverlayPayload(): Promise<NativeOverlayPayload | null>;
   hideOverlay(): Promise<void>;
@@ -196,6 +199,9 @@ export type NativeBridge = {
     onChunk: Channel<NativeTtsStreamMsg>
   ): Promise<void>;
   registerActivationShortcut(onActivated: () => void | Promise<void>): Promise<NativeShortcutRegistration>;
+  // Debug-only: persist the exact composited JPEG (base64, no data: prefix) sent to
+  // fable and return its path. Gated by gestureConfig.debugImages; null on failure.
+  saveGestureDebugImage(base64: string): Promise<string | null>;
 };
 
 export type NativeShortcutRegistration = {
@@ -411,6 +417,17 @@ export function createNativeBridge(
       }
     },
 
+    async showGestureOverlay(displayBounds) {
+      try {
+        const overlayDisplayBounds = createAnnotationOverlayBounds(displayBounds);
+        await invoke<void>('show_overlay', {
+          payload: { mode: 'gesture', displayBounds: overlayDisplayBounds, targets: [] }
+        });
+      } catch {
+        // Browser previews have no native overlay window.
+      }
+    },
+
     async updateOverlay(payload) {
       try {
         await invoke<void>('update_overlay', { payload });
@@ -600,6 +617,14 @@ export function createNativeBridge(
         return fallbackShortcutRegistration(
           error instanceof Error ? error.message : 'Global shortcut registration failed.'
         );
+      }
+    },
+
+    async saveGestureDebugImage(base64) {
+      try {
+        return await invoke<string>('save_gesture_debug_image', { base64 });
+      } catch {
+        return null;
       }
     }
   };

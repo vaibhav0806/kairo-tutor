@@ -281,6 +281,15 @@ input {
   vector-effect: non-scaling-stroke;
 }
 
+/* Hold-to-point cosmetic strokes: same geometry as the pen, softer + fading
+   (opacity is set inline per-stroke by GestureLayer). */
+/* The gesture "laser" sets its own glow filter + stroke color/width inline (from
+   gestureConfig) so gesture.ts is the single tuning knob; only the constant,
+   non-scaling stroke-opacity stays in CSS. */
+.annotation-shape.pen.gesture polyline {
+  stroke-opacity: 1;
+}
+
 .visual-overlay {
   inset: 0;
   pointer-events: none;

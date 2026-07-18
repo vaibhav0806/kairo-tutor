@@ -46,6 +46,9 @@ import {
   voiceStatusCopy,
   type VoiceCaptureState
 } from './voiceRecorder';
+import { segmentGesturePath, type TimedPoint } from './gestureSegmenter';
+import { compositeMarks } from './compositeMarks';
+import { gestureConfig } from '../config/gesture';
 
 const defaultPayload: NotchPayload = {
   state: 'idle',
@@ -287,6 +290,11 @@ export function NotchApp() {
   // Display bounds last used to show the pen overlay — reused to re-assert the marks
   // as a click-through preview through the turn (so PTT doesn't wipe them).
   const displayBoundsRef = useRef<NativeOverlayDisplayBounds | null>(null);
+  // Hold-to-point: raw cursor:mouse points during the current hold (physical px),
+  // whether we're inside a confirmed hold, and the post-release overlay-hide timer.
+  const gestureBufferRef = useRef<TimedPoint[]>([]);
+  const gestureRecordingRef = useRef(false);
+  const gestureHideTimerRef = useRef<number | null>(null);
   // ---- Unified turn: pointer-watch (guide, emergent) --------------------------
   // No state machine / no `active` flag. After a Fable answer whose await_click is
   // present, we DRAW that one target and hand it to a thin pointer-watch that owns
@@ -539,6 +547,19 @@ export function NotchApp() {
         displayBounds: bounds,
         targets: [],
         annotations: marks
+      });
+    } else if (gestureBufferRef.current.length > 0 || gestureRecordingRef.current) {
+      // Don't hide the shared overlay while a gesture is active or fading. Two cases:
+      // (1) release path (buffer full) — let the fade play out, the hide-timer owns
+      //     teardown; hiding here made marks vanish instantly + flash on the box.
+      // (2) hold-START path (recording true) — this runs right after showGestureOverlay,
+      //     and on turn 2+ (bounds cached, no await) show_overlay is posted BEFORE this,
+      //     so hiding here would hide the just-shown overlay (the turn-2 no-paint bug).
+      // gestureRecordingRef is set true synchronously in the ptt:recording handler,
+      // which runs before this, so the guard is race-independent.
+      klog('notch', 'debug', 'reengage: keep gesture overlay', {
+        pts: gestureBufferRef.current.length,
+        recording: gestureRecordingRef.current
       });
     } else {
       klog('notch', 'debug', 'reengage: clear overlay', { marks: marks.length });
@@ -1274,7 +1295,12 @@ export function NotchApp() {
   );
 
   const submitQuery = useCallback(
-    async (nextQuery: string, source: QuerySource = 'typed', epoch?: number) => {
+    async (
+      nextQuery: string,
+      source: QuerySource = 'typed',
+      epoch?: number,
+      hasGestureMarks = false
+    ) => {
       const trimmedQuery = nextQuery.trim();
       if (!trimmedQuery) {
         return;
@@ -1308,8 +1334,9 @@ export function NotchApp() {
       // new answer is computed; it flies again only if the answer has a target.
       void nativeBridge.cursorRelease();
       // Also drop the previous turn's box (covers the typed path; belt-and-suspenders
-      // for voice, where resetPreviousTurn already hid it on re-engage).
-      void nativeBridge.hideOverlay();
+      // for voice, where resetPreviousTurn already hid it on re-engage). Skip while a
+      // gesture fade is playing on the shared overlay — hiding cuts the fade short.
+      if (!hasGestureMarks) void nativeBridge.hideOverlay();
       isSubmittingRef.current = true;
       setIsSubmitting(true);
       updateVoiceCaptureState('idle');
@@ -1324,7 +1351,9 @@ export function NotchApp() {
         // Phase 1 gate: keep it for voice, where direct answers can avoid a screen
         // turn. Typed asks are already explicit text, so route them screen-first;
         // the tutor/grounder then decides whether any visual target is useful.
-        const gateRan = source === 'voice' && annotations.length === 0;
+        // Gesture marks mean the user pointed at the screen → skip the gate (like
+        // the old pen did) so the turn always uses the screenshot with the marks.
+        const gateRan = source === 'voice' && annotations.length === 0 && !hasGestureMarks;
         const gate = gateRan
           ? await runGate(trimmedQuery)
           : { needsScreen: true, voiceText: '', skillSlug: '' };
@@ -1344,7 +1373,7 @@ export function NotchApp() {
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
         if (turnEpochRef.current !== turnEpoch) return;
         const needsScreen =
-          source === 'typed' || annotations.length > 0 || gate.needsScreen;
+          source === 'typed' || annotations.length > 0 || hasGestureMarks || gate.needsScreen;
 
         // Diagnostic: which route this turn took and whether the gate actually ran,
         // so an "unrelated answer" can be traced to the gate vs the vision turn.
@@ -1398,7 +1427,7 @@ export function NotchApp() {
           nativeBridge,
           aiProvider: env.aiProvider,
           skillSlug: activeSkillRef.current,
-          annotations,
+          annotations: [],
           screenCapture: capturedScreenRef.current,
           recentContext,
           // What the gate just spoke aloud, so the tutor continues instead of re-greeting.
@@ -1582,63 +1611,6 @@ export function NotchApp() {
     void speakFollowClip(line);
   };
 
-  // Arm the context watcher for a FINALIZED user drawing, so tab/window switch,
-  // scroll, or click clears it (same reset as Kairo's own box). Only called once the
-  // pen is off — never mid-stroke, or the drawing gestures would clear themselves.
-  const armAnnotationWatch = useCallback(async () => {
-    if (annotationsRef.current.length === 0) {
-      return;
-    }
-    const active =
-      capturedScreenRef.current?.activeApp ??
-      (await nativeBridge.getActiveApp().catch(() => null));
-    await nativeBridge.armContextWatch({
-      bundleId: active?.bundleId,
-      windowTitle: active?.windowTitle ?? undefined
-    });
-  }, [nativeBridge]);
-
-  const startAnnotation = useCallback(
-    async (tool: NotchAnnotationTool) => {
-      // Tapping the already-active tool toggles it off: stop drawing and let the
-      // overlay become click-through preview (drawn marks stay visible).
-      if (activeAnnotationTool === tool) {
-        setActiveAnnotationTool(null);
-        void emit('annotation:finish', {});
-        void armAnnotationWatch();
-        return;
-      }
-      setActiveAnnotationTool(tool);
-      // Show the drawing overlay from the notch (the main window's webview is
-      // hidden/suspended, so its listener can't be relied on). Reuse the
-      // voice-start screenshot's bounds, else fetch the display bounds natively.
-      const bounds =
-        capturedScreenRef.current?.displayBounds ?? (await nativeBridge.getDisplayBounds());
-      // Cache the bounds so re-engage can re-assert the marks as a preview (see
-      // resetPreviousTurn) without a fresh native round-trip.
-      displayBoundsRef.current = bounds;
-      klog('notch', 'info', 'pen annotation started', { tool });
-      await nativeBridge.showAnnotationOverlay(bounds, tool);
-    },
-    [activeAnnotationTool, armAnnotationWatch, nativeBridge]
-  );
-
-  const finishAnnotation = useCallback(() => {
-    setActiveAnnotationTool(null);
-    void emit('annotation:finish', {});
-    void armAnnotationWatch();
-  }, [armAnnotationWatch]);
-
-  const undoAnnotation = useCallback(() => {
-    void emit('annotation:undo', {});
-  }, []);
-
-  const clearAnnotations = useCallback(() => {
-    setAnnotations([]);
-    setActiveAnnotationTool(null);
-    void emit('annotation:clear', {});
-  }, []);
-
   const hideNotch = useCallback(() => {
     stopAnswerPlayback();
     // Explicit dismiss also tears down a pending guide pointer (stops the watch's poll
@@ -1719,9 +1691,42 @@ export function NotchApp() {
     listen<{ active?: boolean }>('ptt:recording', (event) => {
       const active = Boolean(event.payload?.active);
       pttRecordingRef.current = active;
+      gestureRecordingRef.current = active;
       klog('notch', 'debug', 'ptt recording', { active });
       // Feeble STT cues: a "boop" as recording starts, a "toing" on release.
       playSound(active ? 'stt-start' : 'stt-end');
+      if (active) {
+        // New hold → cancel any pending hide, fresh buffer, show the gesture overlay.
+        if (gestureHideTimerRef.current != null) {
+          clearTimeout(gestureHideTimerRef.current);
+          gestureHideTimerRef.current = null;
+        }
+        // Assumes serialized holds: a re-hold during the previous hold's in-flight
+        // STT resets its buffer, but that turn is normally superseded by the epoch
+        // bump on the next release, so the reset does not corrupt a live turn.
+        gestureBufferRef.current = [];
+        void (async () => {
+          const bounds =
+            capturedScreenRef.current?.displayBounds ??
+            displayBoundsRef.current ??
+            (await nativeBridge.getDisplayBounds().catch(() => null));
+          if (!bounds) return;
+          displayBoundsRef.current = bounds;
+          await nativeBridge.showGestureOverlay(bounds);
+        })();
+      } else {
+        // Release: DO NOT clear the buffer — processCapturedAudio composites it.
+        // Let the on-screen strokes finish fading, then hide the (empty) overlay so
+        // its render loop stops. Guarded so a new hold cancels the hide. This fires
+        // during the STT/vision "thinking" phase, before any answer box is shown.
+        if (gestureHideTimerRef.current != null) clearTimeout(gestureHideTimerRef.current);
+        gestureHideTimerRef.current = window.setTimeout(() => {
+          gestureHideTimerRef.current = null;
+          if (!gestureRecordingRef.current) void nativeBridge.hideOverlay();
+          // Wait out the full hold + fade (+margin) so the overlay isn't hidden
+          // mid-fade, which would cut the animation short.
+        }, gestureConfig.holdMs + gestureConfig.fadeMs + 300);
+      }
     })
       .then((next) => {
         unlisten = next;
@@ -1729,6 +1734,26 @@ export function NotchApp() {
       .catch(() => {
         /* browser preview / tests have no event bus */
       });
+    return () => {
+      unlisten?.();
+      // Also clear the post-release hide timer so it can't fire after unmount.
+      if (gestureHideTimerRef.current != null) {
+        clearTimeout(gestureHideTimerRef.current);
+        gestureHideTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Buffer the native cursor:mouse stream (physical px, ~60 Hz) but only while a hold
+  // is confirmed — processCapturedAudio segments this at release into truth strokes.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<{ x: number; y: number }>('cursor:mouse', (event) => {
+      if (!gestureRecordingRef.current) return;
+      gestureBufferRef.current.push({ x: event.payload.x, y: event.payload.y, t: performance.now() });
+    }).then((u) => {
+      unlisten = u;
+    });
     return () => unlisten?.();
   }, []);
 
@@ -1805,8 +1830,7 @@ export function NotchApp() {
   // cursor WebView is click-through, so its own audio is blocked; the notch's isn't).
   useEffect(() => {
     const pending = listen('cursor:arrived', () => {
-      klog('notch', 'debug', 'cursor:arrived received → pop');
-      playSound('arrive');
+      klog('notch', 'debug', 'cursor:arrived received');
     });
     return () => {
       void pending.then((unlisten) => unlisten());
@@ -1948,7 +1972,21 @@ export function NotchApp() {
         klog('notch', 'info', 'ptt transcript ok', { epoch, transcript_len: transcript.length });
         setQuery(transcript);
         await capturePromise;
-        await submitQuery(transcript, 'voice', epoch);
+        // Freeze the hold's buffer, segment it into truth strokes, composite them
+        // onto the clean release screenshot (full strength, independent of the
+        // on-screen fade), and hand that image to the turn.
+        const strokes = segmentGesturePath(gestureBufferRef.current, gestureConfig);
+        gestureBufferRef.current = [];
+        if (strokes.length > 0 && capturedScreenRef.current) {
+          capturedScreenRef.current = await compositeMarks(capturedScreenRef.current, strokes);
+          klog('notch', 'info', 'gesture marks composited', { strokes: strokes.length, epoch });
+          if (gestureConfig.debugImages && capturedScreenRef.current.imageBase64) {
+            void nativeBridge.saveGestureDebugImage(capturedScreenRef.current.imageBase64);
+          }
+        }
+        // Gesture marks present → force a screen turn (skip the gate) so the
+        // composited screenshot always reaches fable.
+        await submitQuery(transcript, 'voice', epoch, strokes.length > 0);
       } catch (error) {
         // A superseded turn's STT failure must not clobber the newer turn's UI.
         if (turnEpochRef.current !== epoch) {
@@ -2312,20 +2350,16 @@ export function NotchApp() {
 
   // Native push-to-talk delivers the recorded WAV here on key-release; we transcribe
   // + run the turn. (Capture itself is native — instant, mic on only while held.)
-  // Plus the pen shortcut (⌥⇧P).
   useEffect(() => {
     const pending = Promise.all([
       listen<{ audioBase64: string; mimeType: string }>('ptt:audio', (event) => {
         void processCapturedAudio(event.payload.audioBase64, event.payload.mimeType);
-      }),
-      listen('pen:toggle', () => {
-        void startAnnotation('pen');
       })
     ]);
     return () => {
       void pending.then((unlisteners) => unlisteners.forEach((unlisten) => unlisten()));
     };
-  }, [processCapturedAudio, startAnnotation]);
+  }, [processCapturedAudio]);
 
   // Single minimal status capsule (top-center). Live waveform while listening, a
   // pulse while thinking, animated bars while speaking, and it expands into the
@@ -2422,16 +2456,6 @@ export function NotchApp() {
                 placeholder="Ask about this screen — or hold ⌥⌃ to talk"
                 value={query}
               />
-              <button
-                aria-label="Toggle pen"
-                className="kairo-capsule-icon"
-                data-active={activeAnnotationTool === 'pen' ? 'true' : 'false'}
-                title="Pen (⌥⇧P)"
-                type="button"
-                onClick={() => startAnnotation('pen')}
-              >
-                <PenIcon />
-              </button>
               <button
                 className="kairo-capsule-ask"
                 disabled={query.trim().length === 0}

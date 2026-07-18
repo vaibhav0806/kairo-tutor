@@ -9,19 +9,20 @@ import type { ScreenDimensions, UserAnnotation, VisualTarget } from '../core/typ
 import { createNativeBridge } from '../native/nativeBridge';
 import { createPenAnnotationFromDisplayPoints, toScreenPoint } from './annotationMode';
 import { subscribeToOverlayPayload } from './overlayEvents';
+import { GestureLayer } from './GestureLayer';
 import { VisualOverlay } from './VisualOverlay';
 
 // Only free-draw pen and erase are exposed.
 type OverlayAnnotationTool = Extract<AnnotationTool, 'pen' | 'erase'>;
 
-type OverlayDisplayBounds = ScreenDimensions & {
+export type OverlayDisplayBounds = ScreenDimensions & {
   x: number;
   y: number;
   scaleFactor: number;
 };
 
 export type OverlayPayload = {
-  mode?: 'visual' | 'annotate' | 'annotation_preview';
+  mode?: 'visual' | 'annotate' | 'annotation_preview' | 'gesture';
   displayBounds: OverlayDisplayBounds;
   targets: VisualTarget[];
   annotations?: UserAnnotation[];
@@ -336,7 +337,9 @@ export function OverlayApp() {
 
   return (
     <main className="overlay-shell" aria-label="Kairo visual overlay">
-      {payload?.mode === 'annotate' ? (
+      {payload?.mode === 'gesture' ? (
+        <GestureLayer displayBounds={payload.displayBounds} />
+      ) : payload?.mode === 'annotate' ? (
         <AnnotationOverlay
           displayBounds={payload.displayBounds}
           initialTool={payload.initialTool ?? 'pen'}
