@@ -338,7 +338,10 @@ pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
                 if moved || idle_ticks >= 18 {
                     last = Some((x, y));
                     idle_ticks = 0;
-                    let _ = window.emit("cursor:mouse", MousePoint { x, y });
+                    // Broadcast app-wide so the cursor pet, the overlay (cosmetic gesture
+                    // render) and the notch (truth buffer) all receive it. Payload is
+                    // physical px, global top-left; each webview scales as needed.
+                    let _ = app.emit("cursor:mouse", MousePoint { x, y });
                 } else {
                     idle_ticks += 1;
                 }
