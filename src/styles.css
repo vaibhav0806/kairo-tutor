@@ -284,7 +284,8 @@ input {
 /* Hold-to-point cosmetic strokes: same geometry as the pen, softer + fading
    (opacity is set inline per-stroke by GestureLayer). */
 .annotation-shape.pen.gesture {
-  filter: none;
+  /* soft edge to read like the pet's comet trail (which uses blur(0.5px)) */
+  filter: blur(0.5px);
 }
 
 /* stroke color + width come from gestureConfig, set inline by GestureLayer so

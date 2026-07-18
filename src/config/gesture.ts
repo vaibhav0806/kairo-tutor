@@ -16,15 +16,15 @@ export const gestureConfig = {
 
   // Cosmetic render ------------------------------------------------------
   baseOpacity: 0.55, // translucent even while being drawn (never fully opaque)
-  holdMs: 500, // stroke holds at baseOpacity this long after its last point, then fades
-  fadeMs: 300, // fade-out duration after holdMs (gone by holdMs+fadeMs ≈ 0.8s), eased
-  strokeColor: '#c4b5fd', // Kairo accent, light
-  strokeWidthCssPx: 3, // on-screen stroke width (CSS px)
+  holdMs: 200, // stroke holds at baseOpacity this long after its last point, then fades
+  fadeMs: 50, // fade-out duration after holdMs (gone by holdMs+fadeMs ≈ 0.25s), eased
+  strokeColor: '#f87171', // light red
+  strokeWidthCssPx: 7, // on-screen stroke width (CSS px) — matches the pet's 8px comet trail
 
   // Composite (image sent to fable) --------------------------------------
-  compositeWidthPx: 3, // stroke width in physical px, scaled to the encoded image
-  alphaConfident: 0.85,
-  alphaBorderline: 0.5,
+  compositeWidthPx: 14, // stroke width in physical px (~2x css for retina), scaled to encoded
+  alphaConfident: 0.45, // translucent so fable sees THROUGH the marks (not opaque)
+  alphaBorderline: 0.3,
   jpegQuality: 0.9,
 
   // Debug ----------------------------------------------------------------
