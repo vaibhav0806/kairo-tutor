@@ -8,7 +8,6 @@ use std::{
 };
 use tauri::{Emitter, LogicalSize, Manager, State};
 use tauri_nspanel::{tauri_panel, PanelHandle};
-use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 mod prompts;
 
@@ -67,10 +66,6 @@ use panels::{
 
 mod input;
 use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, FollowClickWatch};
-
-// Toggle the pen directly without opening the notch first. Avoids ⌥⌃ (the
-// push-to-talk chord) so holding it never starts a recording.
-const KAIRO_PEN_SHORTCUT: &str = "Alt+Shift+P";
 
 // Non-activating NSPanel for the notch. A non-activating panel can receive
 // input without activating the app, so showing it does not pull the user out
@@ -574,24 +569,6 @@ pub fn run() {
     // into ~/Library/Logs/Kairo/. Never panics.
     klog::init();
 
-    let pen_shortcut: Shortcut = KAIRO_PEN_SHORTCUT
-        .parse()
-        .expect("failed to parse Kairo pen shortcut");
-    let global_shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts([pen_shortcut.clone()])
-        .expect("failed to register Kairo shortcuts")
-        .with_handler(move |app, shortcut, event| {
-            if event.state != ShortcutState::Pressed {
-                return;
-            }
-            // ⌥⇧P toggles the pen. (Voice + typing now both live on ⌥⌃: hold to
-            // talk, tap to type — handled by the PTT event tap, not this plugin.)
-            if shortcut == &pen_shortcut {
-                let _ = app.emit("pen:toggle", ());
-            }
-        })
-        .build();
-
     tauri::Builder::default()
         .manage(OverlayState::default())
         .manage(NotchState::default())
@@ -599,7 +576,6 @@ pub fn run() {
         .manage(ContextWatch::default())
         .manage(FollowClickWatch::default())
         .manage(AudioCapture::default())
-        .plugin(global_shortcut_plugin)
         .plugin(tauri_nspanel::init())
         .setup(|app| {
             let show_setup = should_show_setup_window(&get_permission_status());
