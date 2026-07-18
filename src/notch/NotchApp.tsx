@@ -46,6 +46,9 @@ import {
   voiceStatusCopy,
   type VoiceCaptureState
 } from './voiceRecorder';
+import { segmentGesturePath, type TimedPoint } from './gestureSegmenter';
+import { compositeMarks } from './compositeMarks';
+import { gestureConfig } from '../config/gesture';
 
 const defaultPayload: NotchPayload = {
   state: 'idle',
@@ -287,6 +290,11 @@ export function NotchApp() {
   // Display bounds last used to show the pen overlay — reused to re-assert the marks
   // as a click-through preview through the turn (so PTT doesn't wipe them).
   const displayBoundsRef = useRef<NativeOverlayDisplayBounds | null>(null);
+  // Hold-to-point: raw cursor:mouse points during the current hold (physical px),
+  // whether we're inside a confirmed hold, and the post-release overlay-hide timer.
+  const gestureBufferRef = useRef<TimedPoint[]>([]);
+  const gestureRecordingRef = useRef(false);
+  const gestureHideTimerRef = useRef<number | null>(null);
   // ---- Unified turn: pointer-watch (guide, emergent) --------------------------
   // No state machine / no `active` flag. After a Fable answer whose await_click is
   // present, we DRAW that one target and hand it to a thin pointer-watch that owns
@@ -1398,7 +1406,7 @@ export function NotchApp() {
           nativeBridge,
           aiProvider: env.aiProvider,
           skillSlug: activeSkillRef.current,
-          annotations,
+          annotations: [],
           screenCapture: capturedScreenRef.current,
           recentContext,
           // What the gate just spoke aloud, so the tutor continues instead of re-greeting.
@@ -1719,9 +1727,37 @@ export function NotchApp() {
     listen<{ active?: boolean }>('ptt:recording', (event) => {
       const active = Boolean(event.payload?.active);
       pttRecordingRef.current = active;
+      gestureRecordingRef.current = active;
       klog('notch', 'debug', 'ptt recording', { active });
       // Feeble STT cues: a "boop" as recording starts, a "toing" on release.
       playSound(active ? 'stt-start' : 'stt-end');
+      if (active) {
+        // New hold → cancel any pending hide, fresh buffer, show the gesture overlay.
+        if (gestureHideTimerRef.current != null) {
+          clearTimeout(gestureHideTimerRef.current);
+          gestureHideTimerRef.current = null;
+        }
+        gestureBufferRef.current = [];
+        void (async () => {
+          const bounds =
+            capturedScreenRef.current?.displayBounds ??
+            displayBoundsRef.current ??
+            (await nativeBridge.getDisplayBounds().catch(() => null));
+          if (!bounds) return;
+          displayBoundsRef.current = bounds;
+          await nativeBridge.showGestureOverlay(bounds);
+        })();
+      } else {
+        // Release: DO NOT clear the buffer — processCapturedAudio composites it.
+        // Let the on-screen strokes finish fading, then hide the (empty) overlay so
+        // its render loop stops. Guarded so a new hold cancels the hide. This fires
+        // during the STT/vision "thinking" phase, before any answer box is shown.
+        if (gestureHideTimerRef.current != null) clearTimeout(gestureHideTimerRef.current);
+        gestureHideTimerRef.current = window.setTimeout(() => {
+          gestureHideTimerRef.current = null;
+          if (!gestureRecordingRef.current) void nativeBridge.hideOverlay();
+        }, gestureConfig.fadeMs + 400);
+      }
     })
       .then((next) => {
         unlisten = next;
@@ -1729,6 +1765,19 @@ export function NotchApp() {
       .catch(() => {
         /* browser preview / tests have no event bus */
       });
+    return () => unlisten?.();
+  }, []);
+
+  // Buffer the native cursor:mouse stream (physical px, ~60 Hz) but only while a hold
+  // is confirmed — processCapturedAudio segments this at release into truth strokes.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<{ x: number; y: number }>('cursor:mouse', (event) => {
+      if (!gestureRecordingRef.current) return;
+      gestureBufferRef.current.push({ x: event.payload.x, y: event.payload.y, t: performance.now() });
+    }).then((u) => {
+      unlisten = u;
+    });
     return () => unlisten?.();
   }, []);
 
@@ -1948,6 +1997,18 @@ export function NotchApp() {
         klog('notch', 'info', 'ptt transcript ok', { epoch, transcript_len: transcript.length });
         setQuery(transcript);
         await capturePromise;
+        // Freeze the hold's buffer, segment it into truth strokes, composite them
+        // onto the clean release screenshot (full strength, independent of the
+        // on-screen fade), and hand that image to the turn.
+        const strokes = segmentGesturePath(gestureBufferRef.current, gestureConfig);
+        gestureBufferRef.current = [];
+        if (strokes.length > 0 && capturedScreenRef.current) {
+          capturedScreenRef.current = await compositeMarks(capturedScreenRef.current, strokes);
+          klog('notch', 'info', 'gesture marks composited', { strokes: strokes.length, epoch });
+          if (gestureConfig.debugImages && capturedScreenRef.current.imageBase64) {
+            void nativeBridge.saveGestureDebugImage(capturedScreenRef.current.imageBase64);
+          }
+        }
         await submitQuery(transcript, 'voice', epoch);
       } catch (error) {
         // A superseded turn's STT failure must not clobber the newer turn's UI.
