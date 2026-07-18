@@ -18,28 +18,38 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
     let raf = 0;
     const unlisteners: Array<() => void> = [];
 
+    const tick = () => {
+      const now = performance.now();
+      // Prune points older than the longest a stroke can still be visible.
+      const maxAge =
+        gestureConfig.holdMs + gestureConfig.fadeMs + gestureConfig.windowMs + 200;
+      bufferRef.current = bufferRef.current.filter((p) => now - p.t <= maxAge);
+      force((n) => n + 1);
+      // Keep animating only while there's something to draw or we're recording;
+      // otherwise stop the loop entirely (0 CPU) until the next point or hold.
+      raf = bufferRef.current.length > 0 || recordingRef.current ? requestAnimationFrame(tick) : 0;
+    };
+    // Start the loop on demand so an idle overlay costs nothing.
+    const kick = () => {
+      if (raf === 0) raf = requestAnimationFrame(tick);
+    };
+
     void listen<{ x: number; y: number }>('cursor:mouse', (e) => {
       if (!recordingRef.current) return;
       bufferRef.current.push({ x: e.payload.x, y: e.payload.y, t: performance.now() });
+      kick();
     }).then((u) => unlisteners.push(u));
 
     // Freeze the buffer on release; existing strokes keep fading, no new points.
     void listen<{ active?: boolean }>('ptt:recording', (e) => {
       recordingRef.current = Boolean(e.payload?.active);
+      kick();
     }).then((u) => unlisteners.push(u));
 
-    const tick = () => {
-      const now = performance.now();
-      // Prune points older than the longest a stroke can still be visible.
-      const maxAge = gestureConfig.fadeMs + gestureConfig.windowMs + 200;
-      bufferRef.current = bufferRef.current.filter((p) => now - p.t <= maxAge);
-      force((n) => n + 1);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
+    kick(); // component mounts during an active hold
 
     return () => {
-      cancelAnimationFrame(raf);
+      if (raf !== 0) cancelAnimationFrame(raf);
       unlisteners.forEach((u) => u());
     };
   }, []);
@@ -50,9 +60,12 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
   return (
     <>
       {strokes.map((stroke, i) => {
+        // Translucent baseOpacity while drawn + for holdMs after the last point,
+        // then a smoothstep ease-out to 0 over fadeMs (a real fade, not a cut).
         const age = now - stroke.points[stroke.points.length - 1].t;
-        const opacity = Math.max(0, 1 - age / gestureConfig.fadeMs);
-        if (opacity <= 0) return null;
+        const t = Math.min(1, Math.max(0, (age - gestureConfig.holdMs) / gestureConfig.fadeMs));
+        const opacity = gestureConfig.baseOpacity * (1 - t * t * (3 - 2 * t));
+        if (opacity <= 0.01) return null;
         const annotation = createAnnotationFromPoints({
           id: `gesture-${i}`,
           points: stroke.points.map((p) => ({ x: p.x, y: p.y }))
@@ -82,7 +95,11 @@ function GestureStrokeShape({
   opacity: number;
 }) {
   if (!annotation.points) return null;
-  const scaleFactor = displayBounds.scaleFactor > 0 ? displayBounds.scaleFactor : 1;
+  // cursor:mouse points are true physical px, so convert to CSS px with the
+  // webview's devicePixelRatio — NOT displayBounds.scaleFactor, which the
+  // CGDisplay path reports as 1 in scaled-HiDPI modes (see spawn_mouse_tracker).
+  // The cursor pet uses devicePixelRatio for the same reason.
+  const scaleFactor = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
   const left = annotation.screenRegion.x / scaleFactor - displayBounds.x;
   const top = annotation.screenRegion.y / scaleFactor - displayBounds.y;
   const width = Math.max(annotation.screenRegion.width / scaleFactor, 1);
@@ -97,7 +114,10 @@ function GestureStrokeShape({
       style={{ left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`, opacity }}
       viewBox={`0 0 ${width} ${height}`}
     >
-      <polyline points={points} />
+      <polyline
+        points={points}
+        style={{ stroke: gestureConfig.strokeColor, strokeWidth: gestureConfig.strokeWidthCssPx }}
+      />
     </svg>
   );
 }

@@ -287,10 +287,10 @@ input {
   filter: none;
 }
 
+/* stroke color + width come from gestureConfig, set inline by GestureLayer so
+   there's a single tuning knob; keep only the constant, non-scaling geometry. */
 .annotation-shape.pen.gesture polyline {
-  stroke: #a78bfa;
-  stroke-width: 5px;
-  stroke-opacity: 0.9;
+  stroke-opacity: 1;
 }
 
 .visual-overlay {

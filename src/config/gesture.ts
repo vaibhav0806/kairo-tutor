@@ -15,18 +15,20 @@ export const gestureConfig = {
   confidentDwellMs: 180, // a stroke lasting at least this long renders/composites as "confident"
 
   // Cosmetic render ------------------------------------------------------
-  fadeMs: 900, // on-screen stroke fades to nothing over this (competitor look)
-  strokeColor: '#a78bfa', // Kairo accent
-  strokeWidthCssPx: 5, // on-screen stroke width (CSS px)
+  baseOpacity: 0.55, // translucent even while being drawn (never fully opaque)
+  holdMs: 500, // stroke holds at baseOpacity this long after its last point, then fades
+  fadeMs: 300, // fade-out duration after holdMs (gone by holdMs+fadeMs ≈ 0.8s), eased
+  strokeColor: '#c4b5fd', // Kairo accent, light
+  strokeWidthCssPx: 3, // on-screen stroke width (CSS px)
 
   // Composite (image sent to fable) --------------------------------------
-  compositeWidthPx: 6, // stroke width in physical px, scaled to the encoded image
+  compositeWidthPx: 3, // stroke width in physical px, scaled to the encoded image
   alphaConfident: 0.85,
   alphaBorderline: 0.5,
   jpegQuality: 0.9,
 
   // Debug ----------------------------------------------------------------
-  debugImages: false // true = save each composited image + open the folder once
+  debugImages: true // true = save each composited image + open the folder once
 } as const;
 
 export type GestureConfig = typeof gestureConfig;

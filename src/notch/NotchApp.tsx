@@ -1282,7 +1282,12 @@ export function NotchApp() {
   );
 
   const submitQuery = useCallback(
-    async (nextQuery: string, source: QuerySource = 'typed', epoch?: number) => {
+    async (
+      nextQuery: string,
+      source: QuerySource = 'typed',
+      epoch?: number,
+      hasGestureMarks = false
+    ) => {
       const trimmedQuery = nextQuery.trim();
       if (!trimmedQuery) {
         return;
@@ -1332,7 +1337,9 @@ export function NotchApp() {
         // Phase 1 gate: keep it for voice, where direct answers can avoid a screen
         // turn. Typed asks are already explicit text, so route them screen-first;
         // the tutor/grounder then decides whether any visual target is useful.
-        const gateRan = source === 'voice' && annotations.length === 0;
+        // Gesture marks mean the user pointed at the screen → skip the gate (like
+        // the old pen did) so the turn always uses the screenshot with the marks.
+        const gateRan = source === 'voice' && annotations.length === 0 && !hasGestureMarks;
         const gate = gateRan
           ? await runGate(trimmedQuery)
           : { needsScreen: true, voiceText: '', skillSlug: '' };
@@ -1352,7 +1359,7 @@ export function NotchApp() {
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
         if (turnEpochRef.current !== turnEpoch) return;
         const needsScreen =
-          source === 'typed' || annotations.length > 0 || gate.needsScreen;
+          source === 'typed' || annotations.length > 0 || hasGestureMarks || gate.needsScreen;
 
         // Diagnostic: which route this turn took and whether the gate actually ran,
         // so an "unrelated answer" can be traced to the gate vs the vision turn.
@@ -1702,7 +1709,9 @@ export function NotchApp() {
         gestureHideTimerRef.current = window.setTimeout(() => {
           gestureHideTimerRef.current = null;
           if (!gestureRecordingRef.current) void nativeBridge.hideOverlay();
-        }, gestureConfig.fadeMs + 400);
+          // Wait out the full hold + fade (+margin) so the overlay isn't hidden
+          // mid-fade, which would cut the animation short.
+        }, gestureConfig.holdMs + gestureConfig.fadeMs + 300);
       }
     })
       .then((next) => {
@@ -1962,7 +1971,9 @@ export function NotchApp() {
             void nativeBridge.saveGestureDebugImage(capturedScreenRef.current.imageBase64);
           }
         }
-        await submitQuery(transcript, 'voice', epoch);
+        // Gesture marks present → force a screen turn (skip the gate) so the
+        // composited screenshot always reaches fable.
+        await submitQuery(transcript, 'voice', epoch, strokes.length > 0);
       } catch (error) {
         // A superseded turn's STT failure must not clobber the newer turn's UI.
         if (turnEpochRef.current !== epoch) {
