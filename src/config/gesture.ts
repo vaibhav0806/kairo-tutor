@@ -30,7 +30,7 @@ export const gestureConfig = {
   jpegQuality: 0.9,
 
   // Debug ----------------------------------------------------------------
-  debugImages: true // true = save each composited image + open the folder once
+  debugImages: false // true = save each composited image + open the folder once
 } as const;
 
 export type GestureConfig = typeof gestureConfig;
