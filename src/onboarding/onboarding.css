@@ -1,0 +1,264 @@
+/* Onboarding — dark glass + violet, matching the companion cursor / capsule aesthetic. */
+
+.ob-shell {
+  align-items: center;
+  background:
+    radial-gradient(120% 78% at 50% -6%, rgba(124, 58, 237, 0.38), transparent 60%),
+    radial-gradient(90% 60% at 100% 100%, rgba(162, 115, 255, 0.16), transparent 55%),
+    linear-gradient(180deg, #141019, #0b0b10);
+  color: #f4f6f8;
+  display: flex;
+  height: 100vh;
+  justify-content: center;
+  overflow: hidden;
+  padding: 20px;
+  width: 100%;
+}
+
+.ob-card {
+  animation: ob-card-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  backdrop-filter: blur(14px) saturate(1.2);
+  background: linear-gradient(180deg, rgba(30, 27, 40, 0.72), rgba(16, 15, 22, 0.82));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 26px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 460px;
+  padding: 22px 26px 28px;
+  width: 100%;
+}
+
+@keyframes ob-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ob-top {
+  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.ob-back {
+  background: none;
+  border: 0;
+  color: rgba(244, 246, 248, 0.6);
+  cursor: pointer;
+  font-size: 0.85rem;
+  justify-self: start;
+  padding: 4px 2px;
+}
+.ob-back:hover {
+  color: #f4f6f8;
+}
+
+.ob-dots {
+  display: flex;
+  gap: 6px;
+}
+.ob-dots i {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  height: 6px;
+  transition: all 220ms ease;
+  width: 6px;
+}
+.ob-dots i.on {
+  background: linear-gradient(90deg, #c4a1ff, #7c3aed);
+  width: 22px;
+}
+.ob-dots i.done {
+  background: rgba(162, 115, 255, 0.55);
+}
+
+.ob-body {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: center;
+}
+
+.ob-wave {
+  align-items: center;
+  display: flex;
+  gap: 4px;
+  height: 44px;
+  margin: 8px 0 2px;
+}
+.ob-wave i {
+  background: linear-gradient(180deg, #c4a1ff, #7c3aed);
+  border-radius: 999px;
+  height: 6px;
+  opacity: 0.5;
+  transition: height 90ms ease-out, opacity 200ms ease;
+  width: 4px;
+}
+.ob-wave.is-active i {
+  opacity: 1;
+}
+
+.ob-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 2px 0 0;
+}
+
+.ob-say {
+  color: rgba(231, 221, 255, 0.78);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 34ch;
+}
+
+.ob-controls {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.ob-primary {
+  background: linear-gradient(135deg, #a273ff, #7c3aed);
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 650;
+  padding: 12px 18px;
+  transition: transform 90ms ease, opacity 120ms ease, box-shadow 160ms ease;
+}
+.ob-primary:not(:disabled):hover {
+  box-shadow: 0 10px 30px rgba(124, 58, 237, 0.42);
+  transform: translateY(-1px);
+}
+.ob-primary:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.ob-secondary {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: #eae6ff;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 11px 18px;
+}
+.ob-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ob-signed {
+  color: #b9ffdf;
+  font-weight: 650;
+  padding: 10px;
+}
+
+.ob-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.ob-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: #eae6ff;
+  cursor: pointer;
+  font-size: 0.88rem;
+  padding: 8px 14px;
+  transition: all 120ms ease;
+}
+.ob-chip:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+.ob-chip.is-sel {
+  background: linear-gradient(135deg, #a273ff, #7c3aed);
+  border-color: transparent;
+  color: #fff;
+}
+
+.ob-textrow {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.ob-textrow input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  color: #f4f6f8;
+  flex: 1;
+  font-size: 0.95rem;
+  outline: none;
+  padding: 11px 16px;
+}
+.ob-textrow input:focus {
+  border-color: rgba(168, 139, 250, 0.7);
+}
+.ob-textrow input::placeholder {
+  color: rgba(244, 246, 248, 0.45);
+}
+
+.ob-mic {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 1rem;
+  height: 42px;
+  justify-content: center;
+  transition: background 120ms ease;
+  width: 42px;
+}
+.ob-mic.is-rec {
+  background: rgba(124, 58, 237, 0.5);
+}
+
+.ob-keys {
+  align-items: center;
+  color: rgba(231, 221, 255, 0.7);
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.ob-keys kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 650;
+  padding: 6px 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-card {
+    animation: none;
+  }
+  .ob-wave i {
+    transition: none;
+  }
+}

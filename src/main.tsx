@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
+import { AppRoot } from './AppRoot';
 import { CursorApp } from './cursor/CursorApp';
 import { NotchApp } from './notch/NotchApp';
 import { OverlayApp } from './overlay/OverlayApp';
@@ -18,7 +18,7 @@ const RootApp =
       ? NotchApp
       : window.location.hash === '#/cursor'
         ? CursorApp
-        : App;
+        : AppRoot;
 
 klog('boot', 'info', 'webview mounted');
 

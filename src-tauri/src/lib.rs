@@ -735,6 +735,7 @@ pub fn run() {
             save_gesture_debug_image,
             auth::start_google_auth,
             auth::get_auth_status,
+            auth::get_backend_jwt,
             auth::sign_out
         ])
         .run(tauri::generate_context!())

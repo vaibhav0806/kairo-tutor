@@ -97,8 +97,13 @@ pub(crate) async fn exchange_code(app: &AppHandle, code: &str) {
     }
 }
 
+/// Command: hand the webview a short-lived JWT for authed backend calls (/v1/me, /v1/onboarding).
+#[tauri::command]
+pub async fn get_backend_jwt() -> Option<String> {
+    fetch_jwt().await
+}
+
 /// Fetch a short-lived JWT from the backend using the stored session token (for the proxy path).
-#[allow(dead_code)] // consumed by the provider-repoint work (Plan 2b)
 pub(crate) async fn fetch_jwt() -> Option<String> {
     let session = read_session()?;
     let url = format!("{}/api/auth/token", constants::KAIRO_BACKEND_URL);
