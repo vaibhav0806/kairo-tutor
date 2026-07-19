@@ -15,6 +15,13 @@
       "when": 1784465315188,
       "tag": "0001_secret_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784475641419,
+      "tag": "0002_aspiring_trish_tilby",
+      "breakpoints": true
     }
   ]
 }

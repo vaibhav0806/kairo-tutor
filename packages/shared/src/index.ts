@@ -24,7 +24,26 @@ export interface MeResponse {
   renews_at: string | null;
   cancel_at_period_end: boolean;
   paywalled: boolean;
+  /** True once the user finishes the onboarding flow. */
+  onboarded: boolean;
+  display_name: string | null;
 }
+
+/** Body of `POST /v1/onboarding`. */
+export interface OnboardingBody {
+  displayName: string;
+  source: string;
+}
+
+/** Common "where did you find us" options (the app also allows a free-text "Other"). */
+export const ONBOARDING_SOURCES = [
+  'Twitter / X',
+  'YouTube',
+  'A friend',
+  'Search',
+  'Reddit',
+  'Other',
+] as const;
 
 /** Typed error the desktop branches on (401 / 402 / 5xx bodies share this envelope). */
 export type ErrorCode =

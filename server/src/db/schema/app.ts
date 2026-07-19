@@ -70,3 +70,15 @@ export const oauthCode = pgTable('oauth_code', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   used: boolean('used').notNull().default(false),
 });
+
+/** Onboarding answers + waitlist state (one row per user, written when onboarding completes). */
+export const profile = pgTable('profile', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  displayName: text('display_name'),
+  source: text('source'), // "where did you find us"
+  waitlisted: boolean('waitlisted').notNull().default(true),
+  onboardingCompletedAt: timestamp('onboarding_completed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import multipart from '@fastify/multipart';
 import { env } from './config/env';
 import { auth } from './auth/better-auth';
 import { ownedAuthRoutes } from './auth/routes';
@@ -7,6 +8,7 @@ import { llmRoutes } from './proxy/llm';
 import { speechRoutes } from './proxy/speech';
 import { billingRoutes } from './billing/routes';
 import { dodoWebhookRoutes } from './billing/webhook';
+import { onboardingRoutes } from './onboarding/routes';
 import { registerErrorHandler } from './plugins/error-handler';
 import { healthRoutes } from './health/routes';
 
@@ -16,6 +18,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: 'info' }, bodyLimit: 16 * 1024 * 1024 });
 
   registerErrorHandler(app);
+  await app.register(multipart, { limits: { fileSize: 16 * 1024 * 1024 } });
   await app.register(healthRoutes);
   registerBetterAuth(app);
   await app.register(ownedAuthRoutes);
@@ -24,6 +27,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(speechRoutes);
   await app.register(billingRoutes);
   await app.register(dodoWebhookRoutes);
+  await app.register(onboardingRoutes);
 
   return app;
 }

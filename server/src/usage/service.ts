@@ -47,15 +47,19 @@ export interface MeRow {
   status: string | null;
   current_period_end: string | null;
   cancel_at_period_end: boolean | null;
+  onboarding_completed_at: string | null;
+  display_name: string | null;
 }
 
 export async function readMe(userId: string): Promise<MeRow | undefined> {
   const r = await db.execute(sql`
     SELECT u.email, uc.plan, uc.used_free, uc.free_limit,
-           s.status, s.current_period_end, s.cancel_at_period_end
+           s.status, s.current_period_end, s.cancel_at_period_end,
+           p.onboarding_completed_at, p.display_name
     FROM usage_counter uc
     JOIN "user" u ON u.id = uc.user_id
     LEFT JOIN subscription s ON s.user_id = uc.user_id
+    LEFT JOIN profile p ON p.user_id = uc.user_id
     WHERE uc.user_id = ${userId}`);
   return r.rows[0] as unknown as MeRow | undefined;
 }

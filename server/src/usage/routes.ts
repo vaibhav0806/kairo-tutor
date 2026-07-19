@@ -20,6 +20,8 @@ export async function usageRoutes(app: FastifyInstance) {
       renews_at: row.current_period_end,
       cancel_at_period_end: row.cancel_at_period_end ?? false,
       paywalled: !isPro && remaining === 0,
+      onboarded: !!row.onboarding_completed_at,
+      display_name: row.display_name ?? null,
     };
   });
 }
