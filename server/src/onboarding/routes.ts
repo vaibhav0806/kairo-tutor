@@ -31,6 +31,33 @@ export async function onboardingRoutes(app: FastifyInstance) {
     return json;
   });
 
+  // Extract a clean field value from a spoken answer with a fast, no-reasoning model.
+  // e.g. "hey, my name is Kairo" -> "Kairo". Same cheap Gemini as the gate; reasoning disabled.
+  app.post<{ Body: { transcript?: string; field?: 'name' | 'source' } }>('/v1/onboarding/extract', async (req, reply) => {
+    if (!rateLimit(`ex:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!providers.openrouter.key) return reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
+    const transcript = (req.body?.transcript ?? '').slice(0, 300).trim();
+    if (!transcript) return { value: '' };
+    const instruction =
+      req.body?.field === 'name'
+        ? 'Extract ONLY the speaker\'s own first name from the text. Reply with just the name, capitalized, nothing else. If there is no name, reply with an empty string.'
+        : 'Extract the concise answer from the text (a few words max). Reply with just the answer.';
+    const { json } = await forwardJson('openrouter', '/chat/completions', {
+      model: 'google/gemini-2.5-flash-lite',
+      messages: [
+        { role: 'system', content: instruction },
+        { role: 'user', content: transcript },
+      ],
+      max_tokens: 20,
+      temperature: 0,
+      reasoning: { enabled: false }, // no thinking — keep it instant
+    });
+    const value = String((json as any)?.choices?.[0]?.message?.content ?? '')
+      .trim()
+      .replace(/^["'.\s]+|["'.\s]+$/g, '');
+    return { value };
+  });
+
   // STT for a spoken onboarding answer (name / source).
   app.post('/v1/onboarding/stt', async (req, reply) => {
     if (!rateLimit(`stt:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
