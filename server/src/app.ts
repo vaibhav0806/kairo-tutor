@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { env } from './config/env';
 import { auth } from './auth/better-auth';
+import { ownedAuthRoutes } from './auth/routes';
 import { registerErrorHandler } from './plugins/error-handler';
 import { healthRoutes } from './health/routes';
 
@@ -12,6 +13,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerErrorHandler(app);
   await app.register(healthRoutes);
   registerBetterAuth(app);
+  await app.register(ownedAuthRoutes);
 
   return app;
 }
