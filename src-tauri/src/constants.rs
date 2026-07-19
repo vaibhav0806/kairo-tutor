@@ -21,6 +21,15 @@ pub(crate) const STT_PROVIDER: &str = "sarvam"; // sarvam | elevenlabs | mock
 pub(crate) const TTS_PROVIDER: &str = "sarvam";
 pub(crate) const GROUNDING_PROVIDER: &str = "anthropic"; // anthropic | openrouter | qwen
 
+// Which model runs the single-call answer+box turn (the one that returns the spoken
+// answer AND the pointer box together).
+//   "anthropic" = claude-fable-5 (Anthropic Messages).
+//   "openai"    = gpt-5.6-sol (OpenAI Responses API).
+// Both return the SAME { steps:[{say, box?}] } JSON, so only the model call differs.
+// This is a DIFFERENT knob from POINTING_PROVIDER (that splits narration + pointing).
+// Runtime-overridable via KAIRO_TUTOR_VISION_PROVIDER (no rebuild).
+pub(crate) const TUTOR_VISION_PROVIDER: &str = "openai"; // anthropic | openai
+
 // Which engine finds the on-screen target Kairo points at.
 //   "claude" = the default single vision call (spoken answer + target box together).
 //   "openai" = OpenAI's built-in computer-use tool returns the click point; the spoken
@@ -71,9 +80,12 @@ pub(crate) const QWEN_BASE_URL: &str = "https://dashscope-intl.aliyuncs.com/comp
 // execute the click — the AI points, the user acts. Key = OPENAI_API_KEY in .env.
 // Model/base are overridable via the env var of the same name (default = these).
 pub(crate) const OPENAI_BASE_URL: &str = "https://api.openai.com";
-// gpt-5.6-sol is limited-preview / not on our account yet (OpenAI 404s it and says
-// "use gpt-5.5"); flip back to gpt-5.6-sol once it's broadly available.
-pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.5";
+// gpt-5.6-sol is now available on our account (no longer 404s), so both the OpenAI
+// computer-use pointing path and the single-call tutor vision path use it.
+pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.6-sol";
+// The single-call answer+box model when TUTOR_VISION_PROVIDER="openai" (OpenAI
+// Responses API). Overridable at runtime via OPENAI_TUTOR_MODEL.
+pub(crate) const OPENAI_TUTOR_MODEL: &str = "gpt-5.6-sol";
 // Reasoning effort — kept IDENTICAL to the Claude path (aliases ANTHROPIC_VISION_EFFORT)
 // so both pointing engines think equally hard; change that one knob and both move.
 // Sent as OpenAI's `reasoning.effort` (accepts minimal | low | medium | high).

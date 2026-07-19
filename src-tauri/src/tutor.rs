@@ -6,6 +6,7 @@ use crate::env::{provider_env, provider_env_optional, provider_timeout_ms};
 use crate::grounding::{
     anthropic_vision_chat, apply_box_targets, apply_step_targets, clean_model_json,
     detect_click_point_openai, detect_element_boxes, ground_visual_targets, inject_primary_box,
+    openai_vision_chat,
 };
 use crate::constants;
 use crate::ocr::build_screen_elements_block;
@@ -347,7 +348,13 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
             input.screen.image_base64.as_ref(),
             input.screen.display_bounds.as_ref(),
         ) {
-            let tutor_model = provider_env("ANTHROPIC_VISION_MODEL", constants::TUTOR_VISION_MODEL);
+            // Which model returns the answer+box this turn: "openai" → gpt-5.6-sol
+            // (OpenAI Responses), otherwise Anthropic Fable. Both return the SAME
+            // { steps:[{say, box?}] } JSON, so the clean/ground/return below is
+            // IDENTICAL for both — only the model call differs.
+            let tutor_provider =
+                provider_env("KAIRO_TUTOR_VISION_PROVIDER", constants::TUTOR_VISION_PROVIDER)
+                    .to_lowercase();
             let system_prompt = build_tutor_system_prompt(&input);
             let user_prompt = build_tutor_user_prompt(&input)?;
             let elements_block = build_screen_elements_block(&ocr_elements);
@@ -361,17 +368,37 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
                 .image_mime_type
                 .as_deref()
                 .unwrap_or("image/jpeg");
-            crate::klog!(tutor, info, model = %tutor_model, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
-            match anthropic_vision_chat(
-                &system_prompt,
-                &user_text,
-                image_base64,
-                media_type,
-                &tutor_model,
-                timeout,
-            )
-            .await
-            {
+            let raw = if tutor_provider == "openai" {
+                let openai_model =
+                    provider_env("OPENAI_TUTOR_MODEL", constants::OPENAI_TUTOR_MODEL);
+                let effort =
+                    provider_env("OPENAI_VISION_EFFORT", constants::OPENAI_VISION_EFFORT);
+                crate::klog!(tutor, info, provider = "openai", model = %openai_model, effort = %effort, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
+                openai_vision_chat(
+                    &system_prompt,
+                    &user_text,
+                    image_base64,
+                    media_type,
+                    &openai_model,
+                    &effort,
+                    timeout,
+                )
+                .await
+            } else {
+                let tutor_model =
+                    provider_env("ANTHROPIC_VISION_MODEL", constants::TUTOR_VISION_MODEL);
+                crate::klog!(tutor, info, provider = "anthropic", model = %tutor_model, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
+                anthropic_vision_chat(
+                    &system_prompt,
+                    &user_text,
+                    image_base64,
+                    media_type,
+                    &tutor_model,
+                    timeout,
+                )
+                .await
+            };
+            match raw {
                 Some(raw) => {
                     // Sanitize once so the frontend always gets a clean JSON object,
                     // even if the model wrapped it in prose/fences (no json_object mode).

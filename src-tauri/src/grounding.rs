@@ -153,6 +153,120 @@ pub(crate) async fn anthropic_vision_chat(
     Some(text)
 }
 
+/// OpenAI Responses call with a system prompt, one user text block, and one image,
+/// for the single-call answer+box tutor turn (the OpenAI mirror of
+/// `anthropic_vision_chat`). Posts to `/v1/responses` with Bearer auth and
+/// `reasoning.effort`, and sends the screenshot AS-IS (no further downscale — the
+/// capture pipeline already sized it, same as the Anthropic path). Returns the
+/// assistant's concatenated `output_text` (JSON expected via the prompt — callers
+/// parse defensively with `clean_model_json`). Fails loud: logs + times the
+/// round-trip and returns `None` on any non-2xx or empty body so the caller falls
+/// through to the OpenRouter answer path.
+pub(crate) async fn openai_vision_chat(
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+    media_type: &str,
+    model: &str,
+    effort: &str,
+    timeout: Duration,
+) -> Option<String> {
+    let api_key = provider_env_optional("OPENAI_API_KEY")?;
+    if api_key.trim().is_empty() {
+        crate::klog!(tutor, warn, provider = "openai", "vision chat: OPENAI_API_KEY empty");
+        return None;
+    }
+    let base_url = provider_env("OPENAI_BASE_URL", constants::OPENAI_BASE_URL);
+    let data_url = format!("data:{media_type};base64,{image_base64}");
+    // gpt-5.6-sol rejects reasoning.effort:"minimal" (valid: none|low|medium|high|xhigh).
+    let body = json!({
+        "model": model,
+        "reasoning": { "effort": effort },
+        "instructions": system_prompt,
+        "input": [{
+            "role": "user",
+            "content": [
+                { "type": "input_text", "text": user_text },
+                { "type": "input_image", "image_url": data_url }
+            ]
+        }],
+        "max_output_tokens": constants::ANTHROPIC_VISION_MAX_TOKENS,
+    });
+    crate::klog!(tutor, info, provider = "openai", model = %model, effort = %effort, "openai vision (answer+box) request");
+    let _t = crate::klog::timer("tutor", "openai_vision");
+    let response = match shared_http_client()
+        .post(format!("{}/v1/responses", base_url.trim_end_matches('/')))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .timeout(timeout)
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision request failed: {error}");
+            return None;
+        }
+    };
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        crate::klog!(tutor, warn, provider = "openai", status = %status, model = %model, "openai vision failed: {}", body.chars().take(240).collect::<String>());
+        return None;
+    }
+    let payload = response.json::<Value>().await.ok()?;
+    // Responses shape: output[] holds items; the assistant text lives in the item
+    // with type=="message", whose content[] carries {type:"output_text", text}.
+    let text = payload
+        .get("output")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item.get("type").and_then(Value::as_str) == Some("message"))
+        })
+        .and_then(|item| item.get("content").and_then(Value::as_array))
+        .map(|parts| {
+            parts
+                .iter()
+                .filter(|p| p.get("type").and_then(Value::as_str) == Some("output_text"))
+                .filter_map(|p| p.get("text").and_then(Value::as_str))
+                .collect::<String>()
+        })
+        .unwrap_or_default();
+    if text.trim().is_empty() {
+        crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision returned no text");
+        return None;
+    }
+    // Token usage for cost/latency tracking (never the content itself).
+    let usage = payload.get("usage");
+    let input_tokens = usage
+        .and_then(|u| u.get("input_tokens"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let output_tokens = usage
+        .and_then(|u| u.get("output_tokens"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let total_tokens = usage
+        .and_then(|u| u.get("total_tokens"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    crate::klog!(
+        tutor,
+        info,
+        provider = "openai",
+        model = %model,
+        input_tokens = input_tokens,
+        output_tokens = output_tokens,
+        total_tokens = total_tokens,
+        chars = text.len(),
+        "openai vision chat ok"
+    );
+    Some(text)
+}
+
 // Any OpenAI-compatible chat/completions vision endpoint (OpenRouter, Alibaba
 // DashScope, etc.). The caller resolves base_url/key/model per provider; here we
 // just POST the image + prompt and return the model's raw text. Used for the
