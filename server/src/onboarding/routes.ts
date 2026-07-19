@@ -27,6 +27,9 @@ export async function onboardingRoutes(app: FastifyInstance) {
       target_language_code: 'en-IN',
       speaker: 'shubh',
       model: 'bulbul:v3',
+      pace: 0.9, // match the cached lines' measured pace
+      speech_sample_rate: 44100,
+      encoding: 'WAV',
     });
     return json;
   });
@@ -40,7 +43,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
     if (!transcript) return { value: '' };
     const instruction =
       req.body?.field === 'name'
-        ? 'Extract ONLY the speaker\'s own first name from the text. Reply with just the name, capitalized, nothing else. If there is no name, reply with an empty string.'
+        ? "Extract ONLY the speaker's own first name from the text. Reply with just the name in normal capitalization — first letter uppercase, the rest lowercase (e.g. \"Prasad\", never \"PRASAD\"). Nothing else. If there is no name, reply with an empty string."
         : 'Extract the concise answer from the text (a few words max). Reply with just the answer.';
     const { json } = await forwardJson('openrouter', '/chat/completions', {
       model: 'google/gemini-2.5-flash-lite',

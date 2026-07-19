@@ -17,7 +17,15 @@ for (const { key, text } of CACHED_LINES) {
   const res = await fetch('https://api.sarvam.ai/text-to-speech', {
     method: 'POST',
     headers: { 'api-subscription-key': KEY, 'content-type': 'application/json' },
-    body: JSON.stringify({ text, target_language_code: 'en-IN', speaker: 'shubh', model: 'bulbul:v3' }),
+    body: JSON.stringify({
+      text,
+      target_language_code: 'en-IN',
+      speaker: 'shubh',
+      model: 'bulbul:v3',
+      pace: 0.9, // slightly slower / measured (lower = slower)
+      speech_sample_rate: 44100, // high quality
+      encoding: 'WAV',
+    }),
   });
   if (!res.ok) {
     console.log('FAIL', key, res.status, (await res.text()).slice(0, 120));

@@ -234,21 +234,32 @@ body.onboarding-document {
   line-height: 1.04;
   margin: 0;
 }
-.ob-say {
-  animation: ob-rise 560ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  color: rgba(226, 219, 242, 0.64);
-  font-size: 14.5px;
-  line-height: 1.5;
-  margin: 13px 0 0;
-  max-width: 30ch;
+.ob-field {
+  align-items: center;
+  animation: ob-rise 560ms 90ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 22px;
+  width: 100%;
+}
+.ob-field:empty {
+  display: none;
+}
+.ob-field-col {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
 }
 .ob-controls {
-  animation: ob-rise 560ms 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ob-rise 560ms 170ms cubic-bezier(0.22, 1, 0.36, 1) both;
   display: flex;
   flex-direction: column;
   gap: 12px;
   margin-top: auto;
-  padding: 24px 0 8px;
+  padding: 20px 0 10px;
   width: 100%;
 }
 
@@ -338,28 +349,62 @@ body.onboarding-document {
 .ob-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 9px;
   justify-content: center;
+  max-width: 340px;
 }
 .ob-chip {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  color: #ded5f2;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 11px;
+  color: #d8d0ec;
   cursor: pointer;
-  font-size: 13px;
-  padding: 8px 14px;
-  transition: all 140ms ease;
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 9px 15px;
+  transition: transform 120ms ease, background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 .ob-chip:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
 }
 .ob-chip.is-sel {
-  background: rgba(124, 58, 237, 0.3);
-  border-color: rgba(167, 139, 250, 0.6);
-  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.3), 0 6px 18px -6px rgba(124, 58, 237, 0.6);
+  background: linear-gradient(180deg, rgba(154, 107, 255, 0.92), rgba(124, 58, 237, 0.92));
+  border-color: transparent;
+  box-shadow: 0 6px 18px -6px rgba(124, 58, 237, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.25);
   color: #fff;
+}
+
+.ob-perms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 300px;
+  width: 100%;
+}
+.ob-perm {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: #ded5f2;
+  display: flex;
+  font-size: 14px;
+  justify-content: space-between;
+  padding: 12px 15px;
+}
+.ob-perm em {
+  color: rgba(244, 240, 251, 0.4);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+}
+.ob-perm.is-ok {
+  border-color: rgba(126, 240, 184, 0.22);
+}
+.ob-perm.is-ok em {
+  color: #7ef0b8;
 }
 
 .ob-input {
@@ -368,29 +413,31 @@ body.onboarding-document {
   gap: 8px;
 }
 .ob-input input {
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
   color: #f4f0fb;
   flex: 1;
   font-family: inherit;
   font-size: 15px;
   outline: none;
-  padding: 12px 15px;
-  transition: border-color 140ms ease, background 140ms ease;
+  -webkit-tap-highlight-color: transparent;
+  padding: 13px 16px;
+  transition: background 160ms ease, border-color 160ms ease;
 }
 .ob-input input:focus {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(167, 139, 250, 0.65);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  outline: none;
 }
 .ob-input input::placeholder {
-  color: rgba(244, 240, 251, 0.36);
+  color: rgba(244, 240, 251, 0.32);
 }
 .ob-mic {
   align-items: center;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
   color: #cbbdf0;
   cursor: pointer;
   display: inline-flex;

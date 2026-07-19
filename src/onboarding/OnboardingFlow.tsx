@@ -10,8 +10,15 @@ import '@fontsource/instrument-serif';
 import './onboarding.css';
 
 type OrbMode = 'idle' | 'speaking' | 'listening';
+type Perms = { screenRecording: string; accessibility: string };
 
-/** Kairo's presence — a living aura ringed by an integrated progress arc. */
+function titleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/(^|\s)\S/g, (c) => c.toUpperCase())
+    .trim();
+}
+
 function KairoOrb({ mode, level, progress }: { mode: OrbMode; level: number; progress: number }) {
   const r = 63;
   const c = 2 * Math.PI * r;
@@ -19,18 +26,7 @@ function KairoOrb({ mode, level, progress }: { mode: OrbMode; level: number; pro
     <div className="ob-orb" data-mode={mode} style={{ '--level': level } as React.CSSProperties}>
       <svg className="ob-orb-progress" viewBox="0 0 144 144" width="144" height="144" aria-hidden>
         <circle cx="72" cy="72" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="2.5" />
-        <circle
-          cx="72"
-          cy="72"
-          r={r}
-          fill="none"
-          stroke="url(#ob-arc)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={c * (1 - progress)}
-          transform="rotate(-90 72 72)"
-        />
+        <circle cx="72" cy="72" r={r} fill="none" stroke="url(#ob-arc)" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - progress)} transform="rotate(-90 72 72)" />
         <defs>
           <linearGradient id="ob-arc" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor="#c4a1ff" />
@@ -81,6 +77,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [typed, setTyped] = useState('');
   const [signedIn, setSignedIn] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [perms, setPerms] = useState<Perms | null>(null);
   const voice = useVoice();
   const step = STEPS[index];
   const nameRef = useRef(name);
@@ -88,6 +85,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
 
   const orbMode: OrbMode = voice.isListening ? 'listening' : voice.isSpeaking ? 'speaking' : 'idle';
   const progress = (index + 1) / STEPS.length;
+  const permsOk = !!perms && perms.screenRecording === 'granted' && perms.accessibility === 'granted';
 
   const go = useCallback((delta: number) => {
     setIndex((i) => Math.max(0, Math.min(STEPS.length - 1, i + delta)));
@@ -111,7 +109,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     return () => un();
   }, []);
 
-  // Kairo speaks each step (cached files for static lines; live TTS only for the name greeting).
   useEffect(() => {
     void voice.speak(step.speech, nameRef.current);
     setTyped('');
@@ -125,6 +122,18 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     }
   }, [signedIn, step.id, go]);
 
+  // Live permission status while on the permissions step (updates after the user grants).
+  useEffect(() => {
+    if (step.id !== 'permissions') return;
+    const check = () =>
+      invoke<Perms>('get_permission_status')
+        .then((p) => setPerms({ screenRecording: p.screenRecording, accessibility: p.accessibility }))
+        .catch(() => {});
+    void check();
+    const iv = setInterval(check, 1500);
+    return () => clearInterval(iv);
+  }, [step.id]);
+
   const handleVoiceResult = useCallback(
     async (blob: Blob | null) => {
       if (!blob) return;
@@ -132,7 +141,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       if (!transcript) return;
       if (step.id === 'name') {
         const value = await extractField(transcript, 'name');
-        setTyped(value || transcript.trim());
+        setTyped(titleCase(value || transcript));
       } else {
         setTyped(transcript.trim());
       }
@@ -144,6 +153,12 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     if (voice.isListening) voice.stopListening();
     else void voice.startListening(handleVoiceResult);
   }, [voice, handleVoiceResult]);
+
+  const grantPerms = useCallback(() => {
+    void invoke('request_required_permissions').catch(() => {});
+    if (perms && perms.screenRecording !== 'granted') void invoke('open_permission_settings', { permission: 'screenRecording' }).catch(() => {});
+    else if (perms && perms.accessibility !== 'granted') void invoke('open_permission_settings', { permission: 'accessibility' }).catch(() => {});
+  }, [perms]);
 
   const finish = useCallback(async () => {
     setSaving(true);
@@ -157,12 +172,68 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
 
   const commitName = () => {
     if (typed.trim()) {
-      setName(typed.trim());
+      setName(titleCase(typed));
       go(1);
     }
   };
 
-  const renderControls = () => {
+  // The interactive content that sits directly under the title.
+  const renderField = () => {
+    switch (step.id) {
+      case 'name':
+        return <VoiceInput value={typed} onChange={setTyped} placeholder="your name" listening={voice.isListening} onMic={toggleMic} onSubmit={commitName} />;
+      case 'signin':
+        return signedIn ? (
+          <div className="ob-signed">
+            <span className="ob-check">✓</span> signed in
+          </div>
+        ) : null;
+      case 'source':
+        return (
+          <div className="ob-field-col">
+            <div className="ob-chips">
+              {ONBOARDING_SOURCES.map((s) => (
+                <button key={s} type="button" className={`ob-chip${source === s ? ' is-sel' : ''}`} onClick={() => setSource(s)}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            {source === 'Other' && <VoiceInput value={typed} onChange={setTyped} placeholder="tell me where" listening={voice.isListening} onMic={toggleMic} onSubmit={() => go(1)} />}
+          </div>
+        );
+      case 'permissions':
+        return (
+          <div className="ob-perms">
+            {(['screenRecording', 'accessibility'] as const).map((k) => {
+              const ok = perms?.[k] === 'granted';
+              return (
+                <div key={k} className={`ob-perm${ok ? ' is-ok' : ''}`}>
+                  <span>{k === 'screenRecording' ? 'Screen Recording' : 'Accessibility'}</span>
+                  <em>{ok ? '✓' : 'needed'}</em>
+                </div>
+              );
+            })}
+            {!permsOk && (
+              <button type="button" className="ob-ghost" onClick={grantPerms}>
+                Open Settings to grant
+              </button>
+            )}
+          </div>
+        );
+      case 'learn_talk':
+        return (
+          <div className="ob-keys">
+            <kbd>⌥</kbd>
+            <kbd>⌃</kbd>
+            <span>hold to talk · tap to type</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderPrimary = () => {
     switch (step.id) {
       case 'welcome':
         return (
@@ -172,72 +243,41 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         );
       case 'name':
         return (
-          <>
-            <VoiceInput value={typed} onChange={setTyped} placeholder="your name" listening={voice.isListening} onMic={toggleMic} onSubmit={commitName} />
-            <button type="button" className="ob-cta" disabled={!typed.trim()} onClick={commitName}>
-              Continue
-            </button>
-          </>
+          <button type="button" className="ob-cta" disabled={!typed.trim()} onClick={commitName}>
+            Continue
+          </button>
         );
       case 'signin':
-        return signedIn ? (
-          <div className="ob-signed">
-            <span className="ob-check">✓</span> signed in
-          </div>
-        ) : (
+        return signedIn ? null : (
           <button type="button" className="ob-cta" onClick={() => void startGoogleAuth()}>
             Continue with Google
           </button>
         );
       case 'source':
         return (
-          <>
-            <div className="ob-chips">
-              {ONBOARDING_SOURCES.map((s) => (
-                <button key={s} type="button" className={`ob-chip${source === s ? ' is-sel' : ''}`} onClick={() => setSource(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
-            {source === 'Other' && (
-              <VoiceInput value={typed} onChange={setTyped} placeholder="tell me where" listening={voice.isListening} onMic={toggleMic} onSubmit={() => go(1)} />
-            )}
-            <button
-              type="button"
-              className="ob-cta"
-              disabled={!source}
-              onClick={() => {
-                if (source === 'Other' && typed.trim()) setSource(typed.trim());
-                go(1);
-              }}
-            >
-              Continue
-            </button>
-          </>
+          <button
+            type="button"
+            className="ob-cta"
+            disabled={!source}
+            onClick={() => {
+              if (source === 'Other' && typed.trim()) setSource(typed.trim());
+              go(1);
+            }}
+          >
+            Continue
+          </button>
         );
       case 'permissions':
         return (
-          <>
-            <button type="button" className="ob-ghost" onClick={() => void invoke('request_required_permissions').catch(() => {})}>
-              Grant access
-            </button>
-            <button type="button" className="ob-cta" onClick={() => go(1)}>
-              Continue
-            </button>
-          </>
+          <button type="button" className="ob-cta" onClick={() => go(1)}>
+            {permsOk ? 'Continue' : 'Continue anyway'}
+          </button>
         );
       case 'learn_talk':
         return (
-          <>
-            <div className="ob-keys">
-              <kbd>⌥</kbd>
-              <kbd>⌃</kbd>
-              <span>hold to talk · tap to type</span>
-            </div>
-            <button type="button" className="ob-cta" onClick={() => go(1)}>
-              Got it
-            </button>
-          </>
+          <button type="button" className="ob-cta" onClick={() => go(1)}>
+            Got it
+          </button>
         );
       case 'learn_point':
         return (
@@ -274,7 +314,8 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
 
         <div className="ob-stage" key={step.id}>
           <h1 className="ob-title">{step.title(name)}</h1>
-          <div className="ob-controls">{renderControls()}</div>
+          <div className="ob-field">{renderField()}</div>
+          <div className="ob-controls">{renderPrimary()}</div>
         </div>
       </div>
     </div>
