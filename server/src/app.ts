@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
+import cors from '@fastify/cors';
 import { env } from './config/env';
 import { auth } from './auth/better-auth';
 import { ownedAuthRoutes } from './auth/routes';
@@ -18,6 +19,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: { level: 'info' }, bodyLimit: 16 * 1024 * 1024 });
 
   registerErrorHandler(app);
+  // The desktop webview calls the backend from a different origin (tauri://localhost) — reflect
+  // the origin so those fetches (onboarding voice, /me, /onboarding) aren't blocked by CORS.
+  await app.register(cors, { origin: true, credentials: true });
   await app.register(multipart, { limits: { fileSize: 16 * 1024 * 1024 } });
   await app.register(healthRoutes);
   registerBetterAuth(app);

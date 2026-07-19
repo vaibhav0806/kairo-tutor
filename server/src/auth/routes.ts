@@ -23,14 +23,21 @@ function toHeaders(req: FastifyRequest): Headers {
  * exchanges over HTTPS for a durable session token (stored in the macOS Keychain).
  */
 export async function ownedAuthRoutes(app: FastifyInstance) {
-  // Opened in the system browser by the desktop app.
+  // Opened in the system browser by the desktop app. We must forward Better Auth's Set-Cookie
+  // (the OAuth `state`) to the browser, or the Google callback fails with `state_mismatch`.
   app.get('/auth/start', async (_req, reply) => {
-    const result = await auth.api.signInSocial({
+    const res = await auth.api.signInSocial({
       body: { provider: 'google', callbackURL: `${env.PUBLIC_BASE_URL}/auth/callback` },
+      asResponse: true,
     });
-    const url = (result as { url?: string }).url;
-    if (!url) return reply.status(500).send({ error: 'no_auth_url', code: 'provider_error' });
-    return reply.redirect(url);
+    const cookies = res.headers.getSetCookie?.() ?? [];
+    if (cookies.length) reply.header('set-cookie', cookies);
+
+    const location = res.headers.get('location');
+    if (location) return reply.redirect(location);
+    const data = (await res.json().catch(() => ({}))) as { url?: string };
+    if (data.url) return reply.redirect(data.url);
+    return reply.status(500).send({ error: 'no_auth_url', code: 'provider_error' });
   });
 
   // Better Auth completes OAuth and redirects the browser here (with the session cookie).
