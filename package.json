@@ -18,7 +18,13 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke:providers": "node scripts/smoke-providers.mjs"
+    "smoke:providers": "node scripts/smoke-providers.mjs",
+    "server:dev": "npm run dev -w @kairo/server",
+    "server:build": "npm run build -w @kairo/server",
+    "server:start": "npm run start -w @kairo/server",
+    "server:test": "npm run test -w @kairo/server",
+    "db:generate": "npm run db:generate -w @kairo/server",
+    "db:migrate": "npm run db:migrate -w @kairo/server"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
