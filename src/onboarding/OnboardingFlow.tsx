@@ -7,54 +7,52 @@ import { hasNativeBridge } from './config';
 import { getAuthStatus, getBackendJwt, onAuthChanged, startGoogleAuth } from './authClient';
 import { onboardingStt, saveOnboarding } from './backendClient';
 import { useVoice } from './useVoice';
+import '@fontsource/instrument-serif';
 import './onboarding.css';
 
-// Foreground (Regular policy + compact centered focusable window) for onboarding; background on
-// finish. Done natively because an Accessory app's window can't front or take keyboard focus.
-async function setForeground(active: boolean) {
-  if (!hasNativeBridge) return;
-  try {
-    await invoke('set_onboarding_foreground', { active });
-  } catch {
-    /* ignore — best effort */
-  }
-}
+type OrbMode = 'idle' | 'speaking' | 'listening';
 
-function Waveform({ level, active }: { level: number; active: boolean }) {
-  const bars = [0.55, 0.85, 1, 0.72, 0.6];
+/** Kairo's presence — a living aura (the same identity as the companion cursor) that breathes when
+ *  idle, blooms while speaking, and ripples with your mic level while listening. */
+function KairoOrb({ mode, level }: { mode: OrbMode; level: number }) {
   return (
-    <div className={`ob-wave${active ? ' is-active' : ''}`}>
-      {bars.map((base, i) => (
-        <i key={i} style={{ height: `${6 + base * level * 34}px` }} />
-      ))}
+    <div className="ob-orb" data-mode={mode} style={{ '--level': level } as React.CSSProperties}>
+      <span className="ob-orb-field" />
+      <span className="ob-orb-sheen" />
+      <span className="ob-orb-ring" />
+      <span className="ob-orb-core" />
     </div>
   );
 }
 
-function TextRow(props: {
+function VoiceInput(props: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   listening: boolean;
-  level: number;
   onMic: () => void;
+  onSubmit: () => void;
 }) {
   return (
-    <div className="ob-textrow">
+    <div className="ob-input">
       <input
         value={props.value}
-        placeholder={props.listening ? 'Listening…' : props.placeholder}
+        placeholder={props.listening ? 'listening…' : props.placeholder}
         onChange={(e) => props.onChange(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && props.onSubmit()}
         autoFocus
+        spellCheck={false}
       />
       <button
         type="button"
-        className={`ob-mic${props.listening ? ' is-rec' : ''}`}
+        className={`ob-mic${props.listening ? ' is-live' : ''}`}
         onClick={props.onMic}
-        title="Talk"
-        style={props.listening ? { boxShadow: `0 0 0 ${4 + props.level * 10}px rgba(124,58,237,0.18)` } : undefined}
+        aria-label={props.listening ? 'Stop' : 'Talk'}
       >
-        🎙
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor" />
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
       </button>
     </div>
   );
@@ -72,15 +70,19 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const nameRef = useRef(name);
   nameRef.current = name;
 
+  const orbMode: OrbMode = voice.isListening ? 'listening' : voice.isSpeaking ? 'speaking' : 'idle';
+
   const go = useCallback((delta: number) => {
     setIndex((i) => Math.max(0, Math.min(STEPS.length - 1, i + delta)));
   }, []);
 
-  // Bring the app forward for onboarding; send it back to the background on unmount.
+  // Transparent window: strip the light page background so the rounded surface floats.
   useEffect(() => {
-    void setForeground(true);
+    document.documentElement.classList.add('onboarding-document');
+    document.body.classList.add('onboarding-document');
     return () => {
-      void setForeground(false);
+      document.documentElement.classList.remove('onboarding-document');
+      document.body.classList.remove('onboarding-document');
     };
   }, []);
 
@@ -94,7 +96,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     return () => un();
   }, []);
 
-  // Speak each step's line as it appears.
+  // Kairo speaks each step as it appears.
   useEffect(() => {
     void voice.speak(step.say(nameRef.current));
     setTyped('');
@@ -104,7 +106,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   // Auto-advance the sign-in step once signed in.
   useEffect(() => {
     if (step.id === 'signin' && signedIn) {
-      const t = setTimeout(() => go(1), 800);
+      const t = setTimeout(() => go(1), 900);
       return () => clearTimeout(t);
     }
   }, [signedIn, step.id, go]);
@@ -130,41 +132,47 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     } else {
       klog('onboarding', 'warn', 'onboarding finished but no jwt (not signed in?)');
     }
-    await setForeground(false);
     onComplete();
   }, [name, source, onComplete]);
+
+  const commitName = () => {
+    if (typed.trim()) {
+      setName(typed.trim());
+      go(1);
+    }
+  };
 
   const renderControls = () => {
     switch (step.id) {
       case 'welcome':
         return (
-          <button type="button" className="ob-primary" onClick={() => go(1)}>
+          <button type="button" className="ob-cta" onClick={() => go(1)}>
             Let&apos;s go
           </button>
         );
       case 'name':
         return (
           <>
-            <TextRow value={typed} onChange={setTyped} placeholder="Your name" listening={voice.isListening} level={voice.level} onMic={toggleMic} />
-            <button
-              type="button"
-              className="ob-primary"
-              disabled={!typed.trim()}
-              onClick={() => {
-                setName(typed.trim());
-                go(1);
-              }}
-            >
+            <VoiceInput value={typed} onChange={setTyped} placeholder="your name" listening={voice.isListening} onMic={toggleMic} onSubmit={commitName} />
+            <button type="button" className="ob-cta" disabled={!typed.trim()} onClick={commitName}>
               Continue
             </button>
           </>
         );
       case 'signin':
         return signedIn ? (
-          <div className="ob-signed">Signed in ✓</div>
+          <div className="ob-signed">
+            <span className="ob-check">✓</span> signed in
+          </div>
         ) : (
-          <button type="button" className="ob-primary" onClick={() => void startGoogleAuth()}>
-            Sign in with Google
+          <button type="button" className="ob-cta" onClick={() => void startGoogleAuth()}>
+            <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden style={{ marginRight: 9 }}>
+              <path fill="#fff" d="M22.5 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2-1.9 3.2-4.7 3.2-7.9Z" opacity=".95" />
+              <path fill="#fff" d="M12 23c2.9 0 5.4-1 7.2-2.6l-3.6-2.7c-1 .7-2.3 1-3.6 1-2.8 0-5.1-1.9-6-4.4H2.3v2.8A11 11 0 0 0 12 23Z" opacity=".8" />
+              <path fill="#fff" d="M6 14.3a6.6 6.6 0 0 1 0-4.2V7.3H2.3a11 11 0 0 0 0 9.8L6 14.3Z" opacity=".65" />
+              <path fill="#fff" d="M12 5.4c1.6 0 3 .5 4.1 1.6l3.1-3.1A11 11 0 0 0 2.3 7.3L6 10.1c.9-2.6 3.2-4.7 6-4.7Z" opacity=".9" />
+            </svg>
+            Continue with Google
           </button>
         );
       case 'source':
@@ -178,11 +186,11 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
               ))}
             </div>
             {source === 'Other' && (
-              <TextRow value={typed} onChange={setTyped} placeholder="Tell me where" listening={voice.isListening} level={voice.level} onMic={toggleMic} />
+              <VoiceInput value={typed} onChange={setTyped} placeholder="tell me where" listening={voice.isListening} onMic={toggleMic} onSubmit={() => go(1)} />
             )}
             <button
               type="button"
-              className="ob-primary"
+              className="ob-cta"
               disabled={!source}
               onClick={() => {
                 if (source === 'Other' && typed.trim()) setSource(typed.trim());
@@ -196,10 +204,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       case 'permissions':
         return (
           <>
-            <button type="button" className="ob-secondary" onClick={() => void invoke('request_required_permissions').catch(() => {})}>
-              Grant permissions
+            <button type="button" className="ob-ghost" onClick={() => void invoke('request_required_permissions').catch(() => {})}>
+              Grant access
             </button>
-            <button type="button" className="ob-primary" onClick={() => go(1)}>
+            <button type="button" className="ob-cta" onClick={() => go(1)}>
               Continue
             </button>
           </>
@@ -208,24 +216,24 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         return (
           <>
             <div className="ob-keys">
-              <kbd>⌥ option</kbd>
-              <span>+</span>
-              <kbd>⌃ control</kbd>
+              <kbd>⌥</kbd>
+              <kbd>⌃</kbd>
+              <span>hold to talk · tap to type</span>
             </div>
-            <button type="button" className="ob-primary" onClick={() => go(1)}>
+            <button type="button" className="ob-cta" onClick={() => go(1)}>
               Got it
             </button>
           </>
         );
       case 'learn_point':
         return (
-          <button type="button" className="ob-primary" onClick={() => go(1)}>
+          <button type="button" className="ob-cta" onClick={() => go(1)}>
             Makes sense
           </button>
         );
       case 'done':
         return (
-          <button type="button" className="ob-primary" disabled={saving} onClick={() => void finish()}>
+          <button type="button" className="ob-cta" disabled={saving} onClick={() => void finish()}>
             {saving ? 'Setting up…' : 'Start using Kairo'}
           </button>
         );
@@ -233,29 +241,34 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   };
 
   return (
-    <div className="ob-shell">
-      <div className="ob-card">
-        <header className="ob-top">
+    <div className="ob">
+      <div className="ob-surface">
+        <div className="ob-aurora" aria-hidden />
+        <div className="ob-grain" aria-hidden />
+
+        <header className="ob-head">
           {index > 0 ? (
-            <button type="button" className="ob-back" onClick={() => go(-1)}>
-              ‹ Back
+            <button type="button" className="ob-back" onClick={() => go(-1)} aria-label="Back">
+              ←
             </button>
           ) : (
             <span />
           )}
-          <div className="ob-dots">
-            {STEPS.map((s, i) => (
-              <i key={s.id} className={i === index ? 'on' : i < index ? 'done' : ''} />
-            ))}
-          </div>
-          <span />
+          <span className="ob-count">
+            {String(index + 1).padStart(2, '0')} <em>/ {String(STEPS.length).padStart(2, '0')}</em>
+          </span>
         </header>
 
-        <div className="ob-body">
-          <Waveform level={voice.isListening ? voice.level : voice.isSpeaking ? 0.6 : 0.15} active={voice.isListening || voice.isSpeaking} />
+        <KairoOrb mode={orbMode} level={voice.level} />
+
+        <div className="ob-stage" key={step.id}>
           <h1 className="ob-title">{step.title(name)}</h1>
           <p className="ob-say">{step.say(name)}</p>
           <div className="ob-controls">{renderControls()}</div>
+        </div>
+
+        <div className="ob-progress" aria-hidden>
+          <span style={{ width: `${((index + 1) / STEPS.length) * 100}%` }} />
         </div>
       </div>
     </div>

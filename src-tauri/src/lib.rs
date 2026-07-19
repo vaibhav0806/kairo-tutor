@@ -564,32 +564,60 @@ fn save_gesture_debug_image(app: tauri::AppHandle, base64: String) -> Result<Str
     Ok(path.display().to_string())
 }
 
-/// Bring the app to the foreground for onboarding (Regular policy + a compact, centered, focusable
-/// main window), or send it back to the background (Accessory + hidden) when onboarding finishes.
-/// Needed because a background/Accessory app's window can't front or take keyboard focus.
+fn onboarded_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("onboarded"))
+}
+
+fn is_onboarded(app: &tauri::AppHandle) -> bool {
+    onboarded_marker(app).map(|p| p.exists()).unwrap_or(false)
+}
+
+/// Create + show the borderless, transparent onboarding window — its own floating surface with no
+/// title bar and no chrome. The caller sets Regular activation policy so it can take keyboard focus.
+fn show_onboarding_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("onboarding") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
+    }
+    let built = tauri::WebviewWindowBuilder::new(
+        app,
+        "onboarding",
+        tauri::WebviewUrl::App("index.html#/onboarding".into()),
+    )
+    .title("Welcome to Kairo")
+    .inner_size(480.0, 660.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .center()
+    .focused(true)
+    .build();
+    match built {
+        Ok(_) => klog!(app, info, "onboarding window created"),
+        Err(error) => klog!(app, error, "failed to create onboarding window: {error}"),
+    }
+}
+
+/// Called when the onboarding flow completes: persist the marker (so we never onboard again), close
+/// the window, and drop back to the background (Accessory).
 #[tauri::command]
-fn set_onboarding_foreground(app: tauri::AppHandle, active: bool) {
+fn finish_onboarding(app: tauri::AppHandle) {
+    if let Some(path) = onboarded_marker(&app) {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(&path, b"1");
+    }
+    if let Some(win) = app.get_webview_window("onboarding") {
+        let _ = win.close();
+    }
     #[cfg(target_os = "macos")]
     {
-        let policy = if active {
-            tauri::ActivationPolicy::Regular
-        } else {
-            tauri::ActivationPolicy::Accessory
-        };
-        let _ = app.set_activation_policy(policy);
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
-    if let Some(window) = app.get_webview_window("main") {
-        if active {
-            let _ = window.set_size(LogicalSize::new(560.0, 720.0));
-            let _ = window.center();
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
-        } else {
-            let _ = window.hide();
-        }
-    }
-    klog!(app, info, active = active, "onboarding foreground toggled");
+    klog!(app, info, "onboarding finished");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -609,6 +637,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let show_setup = should_show_setup_window(&get_permission_status());
+            let need_onboarding = !is_onboarded(app.handle());
             // Activation policy. By default a Tauri app is `Regular` (Dock icon), so
             // launching it *activates* the app and macOS yanks the user off any
             // full-screen Space onto the desktop. Kairo is a background notch/cursor
@@ -619,16 +648,16 @@ pub fn run() {
             // launch. (Same idea as clicky's `LSUIElement=true` menu-bar-only design.)
             #[cfg(target_os = "macos")]
             {
-                if !show_setup {
+                if !show_setup && !need_onboarding {
                     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 }
-                klog!(app, info, setup = show_setup, accessory = !show_setup, "activation policy set");
+                klog!(app, info, setup = show_setup, onboarding = need_onboarding, "activation policy set");
             }
             if let Some(window) = app.get_webview_window("main") {
                 log_window_startup(&window);
                 let _ = window.set_size(LogicalSize::new(1180.0, 820.0));
                 let _ = window.center();
-                if show_setup {
+                if show_setup && !need_onboarding {
                     let _ = window.unminimize();
                     let _ = window.show();
                     let _ = window.set_focus();
@@ -637,6 +666,10 @@ pub fn run() {
                 }
             } else {
                 klog!(app, warn, "startup: main window was not created");
+            }
+            // First run: show the dedicated borderless onboarding window instead of the dashboard.
+            if need_onboarding {
+                show_onboarding_window(app.handle());
             }
             // Pre-create the notch panel + webview at startup so the first
             // shortcut press shows it instantly instead of building it lazily.
@@ -761,7 +794,7 @@ pub fn run() {
             synthesize_speech,
             synthesize_speech_stream,
             save_gesture_debug_image,
-            set_onboarding_foreground,
+            finish_onboarding,
             auth::start_google_auth,
             auth::get_auth_status,
             auth::get_backend_jwt,
