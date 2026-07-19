@@ -86,11 +86,11 @@ pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.6-sol";
 // The single-call answer+box model when TUTOR_VISION_PROVIDER="openai" (OpenAI
 // Responses API). Overridable at runtime via OPENAI_TUTOR_MODEL.
 pub(crate) const OPENAI_TUTOR_MODEL: &str = "gpt-5.6-sol";
-// Reasoning effort — kept IDENTICAL to the Claude path (aliases ANTHROPIC_VISION_EFFORT)
-// so both pointing engines think equally hard; change that one knob and both move.
-// Sent as OpenAI's `reasoning.effort` (accepts minimal | low | medium | high).
-// Overridable at runtime via OPENAI_VISION_EFFORT.
-pub(crate) const OPENAI_VISION_EFFORT: &str = ANTHROPIC_VISION_EFFORT;
+// Reasoning effort for the OpenAI vision paths (pointing + single-call tutor).
+// Pinned explicitly to "low" (decoupled from the Claude knob). Sent as OpenAI's
+// `reasoning.effort`; gpt-5.6-sol accepts none | low | medium | high | xhigh (NOT
+// minimal). Overridable at runtime via OPENAI_VISION_EFFORT.
+pub(crate) const OPENAI_VISION_EFFORT: &str = "low";
 // Half-size of the box synthesized around OpenAI's click POINT, as a fraction of the
 // screenshot's longest (resized) edge. computer-use returns a point, not a box, so we
 // draw a small square target around it for the highlight; the cursor uses its center.
