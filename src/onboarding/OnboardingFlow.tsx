@@ -3,20 +3,41 @@ import { invoke } from '@tauri-apps/api/core';
 import { ONBOARDING_SOURCES } from '@kairo/shared';
 import { klog } from '../core/logger';
 import { STEPS } from './copy';
-import { hasNativeBridge } from './config';
 import { getAuthStatus, getBackendJwt, onAuthChanged, startGoogleAuth } from './authClient';
-import { onboardingStt, saveOnboarding } from './backendClient';
+import { extractField, onboardingStt, saveOnboarding } from './backendClient';
 import { useVoice } from './useVoice';
 import '@fontsource/instrument-serif';
 import './onboarding.css';
 
 type OrbMode = 'idle' | 'speaking' | 'listening';
 
-/** Kairo's presence — a living aura (the same identity as the companion cursor) that breathes when
- *  idle, blooms while speaking, and ripples with your mic level while listening. */
-function KairoOrb({ mode, level }: { mode: OrbMode; level: number }) {
+/** Kairo's presence — a living aura ringed by an integrated progress arc. */
+function KairoOrb({ mode, level, progress }: { mode: OrbMode; level: number; progress: number }) {
+  const r = 63;
+  const c = 2 * Math.PI * r;
   return (
     <div className="ob-orb" data-mode={mode} style={{ '--level': level } as React.CSSProperties}>
+      <svg className="ob-orb-progress" viewBox="0 0 144 144" width="144" height="144" aria-hidden>
+        <circle cx="72" cy="72" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="2.5" />
+        <circle
+          cx="72"
+          cy="72"
+          r={r}
+          fill="none"
+          stroke="url(#ob-arc)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - progress)}
+          transform="rotate(-90 72 72)"
+        />
+        <defs>
+          <linearGradient id="ob-arc" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#c4a1ff" />
+            <stop offset="1" stopColor="#7c3aed" />
+          </linearGradient>
+        </defs>
+      </svg>
       <span className="ob-orb-field" />
       <span className="ob-orb-sheen" />
       <span className="ob-orb-ring" />
@@ -43,12 +64,7 @@ function VoiceInput(props: {
         autoFocus
         spellCheck={false}
       />
-      <button
-        type="button"
-        className={`ob-mic${props.listening ? ' is-live' : ''}`}
-        onClick={props.onMic}
-        aria-label={props.listening ? 'Stop' : 'Talk'}
-      >
+      <button type="button" className={`ob-mic${props.listening ? ' is-live' : ''}`} onClick={props.onMic} aria-label={props.listening ? 'Stop' : 'Talk'}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
           <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor" />
           <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -71,12 +87,12 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   nameRef.current = name;
 
   const orbMode: OrbMode = voice.isListening ? 'listening' : voice.isSpeaking ? 'speaking' : 'idle';
+  const progress = (index + 1) / STEPS.length;
 
   const go = useCallback((delta: number) => {
     setIndex((i) => Math.max(0, Math.min(STEPS.length - 1, i + delta)));
   }, []);
 
-  // Transparent window: strip the light page background so the rounded surface floats.
   useEffect(() => {
     document.documentElement.classList.add('onboarding-document');
     document.body.classList.add('onboarding-document');
@@ -86,7 +102,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     };
   }, []);
 
-  // Auth status + live updates from the deep-link exchange.
   useEffect(() => {
     let un = () => {};
     void getAuthStatus().then((s) => setSignedIn(s.signed_in));
@@ -96,14 +111,13 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     return () => un();
   }, []);
 
-  // Kairo speaks each step as it appears.
+  // Kairo speaks each step (cached files for static lines; live TTS only for the name greeting).
   useEffect(() => {
-    void voice.speak(step.say(nameRef.current));
+    void voice.speak(step.speech, nameRef.current);
     setTyped('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
-  // Auto-advance the sign-in step once signed in.
   useEffect(() => {
     if (step.id === 'signin' && signedIn) {
       const t = setTimeout(() => go(1), 900);
@@ -111,17 +125,25 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     }
   }, [signedIn, step.id, go]);
 
-  const toggleMic = useCallback(async () => {
-    if (voice.isListening) {
-      const blob = await voice.stopListening();
-      if (blob) {
-        const text = await onboardingStt(blob);
-        if (text) setTyped((t) => (t ? `${t} ${text}` : text));
+  const handleVoiceResult = useCallback(
+    async (blob: Blob | null) => {
+      if (!blob) return;
+      const transcript = await onboardingStt(blob);
+      if (!transcript) return;
+      if (step.id === 'name') {
+        const value = await extractField(transcript, 'name');
+        setTyped(value || transcript.trim());
+      } else {
+        setTyped(transcript.trim());
       }
-    } else {
-      await voice.startListening();
-    }
-  }, [voice]);
+    },
+    [step.id],
+  );
+
+  const toggleMic = useCallback(() => {
+    if (voice.isListening) voice.stopListening();
+    else void voice.startListening(handleVoiceResult);
+  }, [voice, handleVoiceResult]);
 
   const finish = useCallback(async () => {
     setSaving(true);
@@ -129,8 +151,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     if (jwt) {
       const ok = await saveOnboarding(jwt, name || 'there', source || 'unknown');
       klog('onboarding', 'info', 'onboarding saved', { ok });
-    } else {
-      klog('onboarding', 'warn', 'onboarding finished but no jwt (not signed in?)');
     }
     onComplete();
   }, [name, source, onComplete]);
@@ -166,12 +186,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           </div>
         ) : (
           <button type="button" className="ob-cta" onClick={() => void startGoogleAuth()}>
-            <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden style={{ marginRight: 9 }}>
-              <path fill="#fff" d="M22.5 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2-1.9 3.2-4.7 3.2-7.9Z" opacity=".95" />
-              <path fill="#fff" d="M12 23c2.9 0 5.4-1 7.2-2.6l-3.6-2.7c-1 .7-2.3 1-3.6 1-2.8 0-5.1-1.9-6-4.4H2.3v2.8A11 11 0 0 0 12 23Z" opacity=".8" />
-              <path fill="#fff" d="M6 14.3a6.6 6.6 0 0 1 0-4.2V7.3H2.3a11 11 0 0 0 0 9.8L6 14.3Z" opacity=".65" />
-              <path fill="#fff" d="M12 5.4c1.6 0 3 .5 4.1 1.6l3.1-3.1A11 11 0 0 0 2.3 7.3L6 10.1c.9-2.6 3.2-4.7 6-4.7Z" opacity=".9" />
-            </svg>
             Continue with Google
           </button>
         );
@@ -254,21 +268,13 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           ) : (
             <span />
           )}
-          <span className="ob-count">
-            {String(index + 1).padStart(2, '0')} <em>/ {String(STEPS.length).padStart(2, '0')}</em>
-          </span>
         </header>
 
-        <KairoOrb mode={orbMode} level={voice.level} />
+        <KairoOrb mode={orbMode} level={voice.level} progress={progress} />
 
         <div className="ob-stage" key={step.id}>
           <h1 className="ob-title">{step.title(name)}</h1>
-          <p className="ob-say">{step.say(name)}</p>
           <div className="ob-controls">{renderControls()}</div>
-        </div>
-
-        <div className="ob-progress" aria-hidden>
-          <span style={{ width: `${((index + 1) / STEPS.length) * 100}%` }} />
         </div>
       </div>
     </div>

@@ -590,7 +590,7 @@ fn show_onboarding_window(app: &tauri::AppHandle) {
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    .shadow(false)
+    .shadow(true) // macOS casts a clean rounded shadow from the opaque content
     .center()
     .focused(true)
     .build();

@@ -32,6 +32,22 @@ export async function onboardingStt(audio: Blob): Promise<string | null> {
   }
 }
 
+/** Extract a clean field value ("my name is Kairo" -> "Kairo") via the fast no-reasoning model. */
+export async function extractField(transcript: string, field: 'name' | 'source'): Promise<string> {
+  try {
+    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding/extract`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ transcript, field }),
+    });
+    if (!res.ok) return '';
+    const json = (await res.json()) as { value?: string };
+    return typeof json.value === 'string' ? json.value : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function saveOnboarding(jwt: string, displayName: string, source: string): Promise<boolean> {
   try {
     const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding`, {
