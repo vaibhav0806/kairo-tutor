@@ -1,4 +1,5 @@
 import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, pgEnum } from 'drizzle-orm/pg-core';
+import { user } from './auth';
 
 export const planT = pgEnum('plan_t', ['free', 'pro']);
 export const subStatusT = pgEnum('sub_status_t', [
@@ -17,7 +18,9 @@ export const subStatusT = pgEnum('sub_status_t', [
 
 /** Hot-path counter. "used N of limit" + a denormalized plan for the O(1) metering gate. */
 export const usageCounter = pgTable('usage_counter', {
-  userId: text('user_id').primaryKey(),
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
   plan: planT('plan').notNull().default('free'),
   usedFree: integer('used_free').notNull().default(0),
   freeLimit: integer('free_limit').notNull().default(10),
@@ -27,14 +30,18 @@ export const usageCounter = pgTable('usage_counter', {
 /** Idempotency + refund ledger. One row per ask attempt (keyed by the client-minted ask id). */
 export const usageEvent = pgTable('usage_event', {
   askId: uuid('ask_id').primaryKey(),
-  userId: text('user_id').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
   counted: boolean('counted').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** Billing source of truth (one row per user, upserted by the Dodo webhook sync). */
 export const subscription = pgTable('subscription', {
-  userId: text('user_id').primaryKey(),
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
   status: subStatusT('status').notNull().default('none'),
   dodoSubscriptionId: text('dodo_subscription_id').unique(),
   dodoCustomerId: text('dodo_customer_id'),
@@ -57,7 +64,9 @@ export const webhookEvent = pgTable('webhook_event', {
 /** One-time codes for the desktop `kairo://` deep-link handshake. */
 export const oauthCode = pgTable('oauth_code', {
   code: text('code').primaryKey(),
-  userId: text('user_id').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   used: boolean('used').notNull().default(false),
 });
