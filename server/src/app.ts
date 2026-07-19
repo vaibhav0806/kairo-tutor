@@ -3,6 +3,7 @@ import { env } from './config/env';
 import { auth } from './auth/better-auth';
 import { ownedAuthRoutes } from './auth/routes';
 import { usageRoutes } from './usage/routes';
+import { llmRoutes } from './proxy/llm';
 import { registerErrorHandler } from './plugins/error-handler';
 import { healthRoutes } from './health/routes';
 
@@ -16,6 +17,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerBetterAuth(app);
   await app.register(ownedAuthRoutes);
   await app.register(usageRoutes);
+  await app.register(llmRoutes);
 
   return app;
 }
