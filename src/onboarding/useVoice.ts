@@ -79,10 +79,14 @@ export function useVoice() {
       p?.();
     };
     window.addEventListener('pointerdown', unlock);
+    window.addEventListener('pointermove', unlock);
     window.addEventListener('keydown', unlock);
+    window.addEventListener('focus', unlock);
     return () => {
       window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('pointermove', unlock);
       window.removeEventListener('keydown', unlock);
+      window.removeEventListener('focus', unlock);
     };
   }, []);
 
