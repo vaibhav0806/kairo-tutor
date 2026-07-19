@@ -16,6 +16,9 @@ const Env = z.object({
   DODO_PAYMENTS_API_KEY: z.string().optional(),
   DODO_PAYMENTS_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(['test_mode', 'live_mode']).default('test_mode'),
+  // Set once the Pro products exist in the Dodo dashboard. Until then, billing routes 503.
+  DODO_PRO_MONTHLY_PRODUCT_ID: z.string().optional(),
+  DODO_PRO_YEARLY_PRODUCT_ID: z.string().optional(),
 });
 
 export const env = Env.parse(process.env);

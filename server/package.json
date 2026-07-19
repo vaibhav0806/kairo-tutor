@@ -16,6 +16,7 @@
     "@fastify/multipart": "^10.1.0",
     "@kairo/shared": "*",
     "better-auth": "^1.6.23",
+    "dodopayments": "^2.42.2",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.10.0",
@@ -23,6 +24,7 @@
     "jose": "^6.2.3",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
+    "standardwebhooks": "^1.0.0",
     "undici": "^8.7.0",
     "zod": "^4.4.3"
   },

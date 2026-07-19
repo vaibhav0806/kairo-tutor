@@ -5,6 +5,8 @@ import { ownedAuthRoutes } from './auth/routes';
 import { usageRoutes } from './usage/routes';
 import { llmRoutes } from './proxy/llm';
 import { speechRoutes } from './proxy/speech';
+import { billingRoutes } from './billing/routes';
+import { dodoWebhookRoutes } from './billing/webhook';
 import { registerErrorHandler } from './plugins/error-handler';
 import { healthRoutes } from './health/routes';
 
@@ -20,6 +22,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(usageRoutes);
   await app.register(llmRoutes);
   await app.register(speechRoutes);
+  await app.register(billingRoutes);
+  await app.register(dodoWebhookRoutes);
 
   return app;
 }
