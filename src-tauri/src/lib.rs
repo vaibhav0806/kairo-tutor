@@ -564,6 +564,34 @@ fn save_gesture_debug_image(app: tauri::AppHandle, base64: String) -> Result<Str
     Ok(path.display().to_string())
 }
 
+/// Bring the app to the foreground for onboarding (Regular policy + a compact, centered, focusable
+/// main window), or send it back to the background (Accessory + hidden) when onboarding finishes.
+/// Needed because a background/Accessory app's window can't front or take keyboard focus.
+#[tauri::command]
+fn set_onboarding_foreground(app: tauri::AppHandle, active: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if active {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        let _ = app.set_activation_policy(policy);
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        if active {
+            let _ = window.set_size(LogicalSize::new(560.0, 720.0));
+            let _ = window.center();
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        } else {
+            let _ = window.hide();
+        }
+    }
+    klog!(app, info, active = active, "onboarding foreground toggled");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // First thing: stand up the universal logger so every subsystem below logs
@@ -733,6 +761,7 @@ pub fn run() {
             synthesize_speech,
             synthesize_speech_stream,
             save_gesture_debug_image,
+            set_onboarding_foreground,
             auth::start_google_auth,
             auth::get_auth_status,
             auth::get_backend_jwt,

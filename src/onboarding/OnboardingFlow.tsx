@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { LogicalSize } from '@tauri-apps/api/dpi';
 import { ONBOARDING_SOURCES } from '@kairo/shared';
 import { klog } from '../core/logger';
 import { STEPS } from './copy';
@@ -11,14 +9,12 @@ import { onboardingStt, saveOnboarding } from './backendClient';
 import { useVoice } from './useVoice';
 import './onboarding.css';
 
-async function resizeWindow(w: number, h: number) {
+// Foreground (Regular policy + compact centered focusable window) for onboarding; background on
+// finish. Done natively because an Accessory app's window can't front or take keyboard focus.
+async function setForeground(active: boolean) {
   if (!hasNativeBridge) return;
   try {
-    const win = getCurrentWindow();
-    await win.setSize(new LogicalSize(w, h));
-    await win.center();
-    await win.show();
-    await win.setFocus();
+    await invoke('set_onboarding_foreground', { active });
   } catch {
     /* ignore — best effort */
   }
@@ -80,11 +76,11 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     setIndex((i) => Math.max(0, Math.min(STEPS.length - 1, i + delta)));
   }, []);
 
-  // Compact, centered window for onboarding; restore on unmount.
+  // Bring the app forward for onboarding; send it back to the background on unmount.
   useEffect(() => {
-    resizeWindow(560, 720);
+    void setForeground(true);
     return () => {
-      void resizeWindow(1180, 820);
+      void setForeground(false);
     };
   }, []);
 
@@ -134,7 +130,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     } else {
       klog('onboarding', 'warn', 'onboarding finished but no jwt (not signed in?)');
     }
-    await resizeWindow(1180, 820);
+    await setForeground(false);
     onComplete();
   }, [name, source, onComplete]);
 

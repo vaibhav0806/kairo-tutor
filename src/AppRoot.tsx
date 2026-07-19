@@ -3,6 +3,7 @@ import { App } from './App';
 import { OnboardingFlow } from './onboarding/OnboardingFlow';
 import { getBackendJwt } from './onboarding/authClient';
 import { fetchMe } from './onboarding/backendClient';
+import { klog } from './core/logger';
 
 const ONBOARDED_KEY = 'kairo_onboarded';
 
@@ -16,6 +17,7 @@ export function AppRoot() {
 
   useEffect(() => {
     if (localStorage.getItem(ONBOARDED_KEY) === '1') {
+      klog('onboarding', 'info', 'AppRoot: local flag set → dashboard');
       setState('done');
       return;
     }
@@ -24,11 +26,13 @@ export function AppRoot() {
       const jwt = await getBackendJwt();
       if (!alive) return;
       if (!jwt) {
+        klog('onboarding', 'info', 'AppRoot: no jwt → show onboarding');
         setState('show'); // not signed in yet → onboard
         return;
       }
       const me = await fetchMe(jwt);
       if (!alive) return;
+      klog('onboarding', 'info', 'AppRoot: me checked', { onboarded: !!me?.onboarded });
       if (me?.onboarded) {
         localStorage.setItem(ONBOARDED_KEY, '1');
         setState('done');
