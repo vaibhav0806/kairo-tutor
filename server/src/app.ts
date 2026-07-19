@@ -4,6 +4,7 @@ import { auth } from './auth/better-auth';
 import { ownedAuthRoutes } from './auth/routes';
 import { usageRoutes } from './usage/routes';
 import { llmRoutes } from './proxy/llm';
+import { speechRoutes } from './proxy/speech';
 import { registerErrorHandler } from './plugins/error-handler';
 import { healthRoutes } from './health/routes';
 
@@ -18,6 +19,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(ownedAuthRoutes);
   await app.register(usageRoutes);
   await app.register(llmRoutes);
+  await app.register(speechRoutes);
 
   return app;
 }
