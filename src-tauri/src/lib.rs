@@ -65,6 +65,7 @@ use panels::{
 };
 
 mod input;
+mod auth;
 use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, FollowClickWatch};
 
 // Non-activating NSPanel for the notch. A non-activating panel can receive
@@ -577,6 +578,7 @@ pub fn run() {
         .manage(FollowClickWatch::default())
         .manage(AudioCapture::default())
         .plugin(tauri_nspanel::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let show_setup = should_show_setup_window(&get_permission_status());
             // Activation policy. By default a Tauri app is `Regular` (Dock icon), so
@@ -670,6 +672,31 @@ pub fn run() {
             if let Err(error) = create_menu_bar_tray(app) {
                 klog!(app, error, "failed to create menu bar tray: {error}");
             }
+            // Deep link: after Google sign-in the browser redirects to
+            // kairo://auth-callback?code=…; exchange the one-time code for a session token and
+            // store it in the Keychain. Do NOT touch the activation policy here — keep the
+            // Accessory / no-Space-switch design so sign-in doesn't yank the user's focus.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if url.scheme() != "kairo" {
+                            continue;
+                        }
+                        let code = url
+                            .query_pairs()
+                            .find(|(k, _)| k == "code")
+                            .map(|(_, v)| v.into_owned());
+                        if let Some(code) = code {
+                            let handle = handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                crate::auth::exchange_code(&handle, &code).await;
+                            });
+                        }
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -705,7 +732,10 @@ pub fn run() {
             transcribe_audio,
             synthesize_speech,
             synthesize_speech_stream,
-            save_gesture_debug_image
+            save_gesture_debug_image,
+            auth::start_google_auth,
+            auth::get_auth_status,
+            auth::sign_out
         ])
         .run(tauri::generate_context!())
         .expect("error while running Kairo Tutor");

@@ -92,6 +92,13 @@
       "capabilities": ["default"]
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["kairo"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

@@ -21,6 +21,16 @@ pub(crate) const STT_PROVIDER: &str = "sarvam"; // sarvam | elevenlabs | mock
 pub(crate) const TTS_PROVIDER: &str = "sarvam";
 pub(crate) const GROUNDING_PROVIDER: &str = "anthropic"; // anthropic | openrouter | qwen
 
+// ---------------------------------------------------------------- Backend (auth + proxy)
+// The Kairo backend base URL. Auth (Google sign-in) always goes through it; when
+// USE_BACKEND_PROXY is true, provider calls route through it too (holding the real keys
+// server-side). Dev = localhost; prod = https://api.<domain>.
+pub(crate) const KAIRO_BACKEND_URL: &str = "http://localhost:8787";
+// Master switch for routing provider calls through the backend proxy. Default `false` keeps the
+// working direct-provider path; flip to `true` (with the backend running) to use the proxy.
+#[allow(dead_code)]
+pub(crate) const USE_BACKEND_PROXY: bool = false;
+
 // Which model runs the single-call answer+box turn (the one that returns the spoken
 // answer AND the pointer box together).
 //   "anthropic" = claude-fable-5 (Anthropic Messages).
