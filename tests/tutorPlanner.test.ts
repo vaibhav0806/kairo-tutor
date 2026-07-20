@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseTutorPlannerResponse } from '../src/server/providers/tutorPlanner';
+import { parseTutorPlannerResponse } from '../src/core/tutorPlanner';
 import type { TutorTurnInput } from '../src/core/orchestrator';
 
 const tutorInput: TutorTurnInput = {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { TutorTurnInput } from '../../core/orchestrator';
-import type { TutorResponse, VisualTarget } from '../../core/types';
+import type { TutorTurnInput } from './orchestrator';
+import type { TutorResponse, VisualTarget } from './types';
 
 const providerVisualTargetSchema = z.object({
   kind: z.enum(['highlight_box', 'pointer']),

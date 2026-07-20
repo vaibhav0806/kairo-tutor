@@ -2,7 +2,7 @@ import { createMockTutorPlanner } from './mockTutor';
 import type { TutorPlannerAdapter, TutorTurnInput } from './orchestrator';
 import { createTutorRuntimeErrorResponse } from './tutorErrors';
 import type { TutorRequest } from './types';
-import { parseTutorPlannerResponse } from '../server/providers/tutorPlanner';
+import { parseTutorPlannerResponse } from './tutorPlanner';
 
 export type RuntimeTutorProvider = 'mock' | 'openrouter';
 
