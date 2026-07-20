@@ -4,14 +4,12 @@
 
 use crate::env::{provider_env, provider_env_optional, provider_timeout_ms};
 use crate::grounding::{
-    anthropic_vision_chat, apply_box_targets, apply_step_targets, clean_model_json,
-    detect_click_point_openai, detect_element_boxes, ground_visual_targets, inject_primary_box,
-    openai_vision_chat,
+    anthropic_vision_chat, apply_step_targets, clean_model_json, detect_click_point_openai,
+    ground_visual_targets, inject_primary_box, openai_vision_chat,
 };
 use crate::constants;
-use crate::ocr::build_screen_elements_block;
 use crate::prompts::{ack_system_prompt, build_tutor_system_prompt, gate_system_prompt};
-use crate::types::{AckInput, GateInput, OcrElement, TutorTurnInput};
+use crate::types::{AckInput, GateInput, TutorTurnInput};
 use serde_json::{json, Value};
 use std::time::Duration;
 
@@ -58,24 +56,21 @@ fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
 pub(crate) fn build_openrouter_messages(
     input: &TutorTurnInput,
     include_screenshot: bool,
-    elements: &[OcrElement],
 ) -> Result<Value, String> {
     let user_prompt = build_tutor_user_prompt(input)?;
     let system_prompt = build_tutor_system_prompt(input);
-    let elements_block = build_screen_elements_block(elements);
 
     if include_screenshot && input.screen.captured {
         if let (Some(mime_type), Some(image_base64)) =
             (&input.screen.image_mime_type, &input.screen.image_base64)
         {
-            let mut user_content = vec![json!({ "type": "text", "text": user_prompt })];
-            if !elements_block.is_empty() {
-                user_content.push(json!({ "type": "text", "text": elements_block }));
-            }
-            user_content.push(json!({
-                "type": "image_url",
-                "image_url": { "url": format!("data:{mime_type};base64,{image_base64}") },
-            }));
+            let user_content = vec![
+                json!({ "type": "text", "text": user_prompt }),
+                json!({
+                    "type": "image_url",
+                    "image_url": { "url": format!("data:{mime_type};base64,{image_base64}") },
+                }),
+            ];
             return Ok(json!([
                 { "role": "system", "content": system_prompt },
                 { "role": "user", "content": user_content },
@@ -93,11 +88,10 @@ pub(crate) fn build_openrouter_request_body(
     input: &TutorTurnInput,
     model: &str,
     include_screenshot: bool,
-    elements: &[OcrElement],
 ) -> Result<Value, String> {
     Ok(json!({
         "model": model,
-        "messages": build_openrouter_messages(input, include_screenshot, elements)?,
+        "messages": build_openrouter_messages(input, include_screenshot)?,
         "response_format": { "type": "json_object" },
         "temperature": 0.2,
         "max_tokens": 700,
@@ -317,17 +311,9 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
     )));
     let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
-    // OCR the screenshot (fast, local) for the Set-of-Mark fallback and for
-    // snapping the Computer Use point onto a tight text box.
-    // OCR disabled: Set-of-Mark grounding was only a fallback for the (off) separate
-    // grounding path and bloated the single-call prompt every turn. The one vision
-    // call returns the box directly, so we never OCR.
-    let ocr_elements: Vec<OcrElement> = Vec::new();
-
     let client = shared_http_client();
     let site_url_ref = site_url.as_deref();
 
-    let separate_grounding = constants::SEPARATE_GROUNDING;
     let has_vision = input.screen.captured && input.screen.image_base64.is_some();
 
     // Alternate pointing engine: when POINTING_PROVIDER="openai", OpenAI's computer-use
@@ -336,14 +322,14 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
     let pointing =
         provider_env("KAIRO_POINTING_PROVIDER", constants::POINTING_PROVIDER).to_lowercase();
     let use_openai_pointing = pointing == "openai";
-    crate::klog!(tutor, info, pointing = %pointing, separate = separate_grounding, has_vision = has_vision, "tutor turn routing");
+    crate::klog!(tutor, info, pointing = %pointing, has_vision = has_vision, "tutor turn routing");
 
     // DEFAULT: one Opus/Fable vision call returns the answer AND the primary target box.
     // On ANY Opus/Fable failure (no key, non-2xx, empty, missing bounds) we fall THROUGH
-    // to the legacy OpenRouter answer path below — a transient hiccup must never
-    // zero out the spoken answer; the user still gets an answer, grounded via OCR.
-    // Skipped entirely when OpenAI pointing is selected (that path grounds separately).
-    if has_vision && !separate_grounding && !use_openai_pointing {
+    // to the legacy OpenRouter answer path below — a transient hiccup must never zero
+    // out the spoken answer; the user still gets an answer, grounded from any screen
+    // regions the answer itself carries. Skipped when OpenAI pointing is selected.
+    if has_vision && !use_openai_pointing {
         if let (Some(image_base64), Some(bounds)) = (
             input.screen.image_base64.as_ref(),
             input.screen.display_bounds.as_ref(),
@@ -356,13 +342,7 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
                 provider_env("KAIRO_TUTOR_VISION_PROVIDER", constants::TUTOR_VISION_PROVIDER)
                     .to_lowercase();
             let system_prompt = build_tutor_system_prompt(&input);
-            let user_prompt = build_tutor_user_prompt(&input)?;
-            let elements_block = build_screen_elements_block(&ocr_elements);
-            let user_text = if elements_block.is_empty() {
-                user_prompt
-            } else {
-                format!("{user_prompt}\n\n{elements_block}")
-            };
+            let user_text = build_tutor_user_prompt(&input)?;
             let media_type = input
                 .screen
                 .image_mime_type
@@ -427,13 +407,13 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
         }
     }
 
-    // LEGACY (constants::SEPARATE_GROUNDING=true, or a text-only turn): the OpenRouter
-    // answer call, plus — for vision — the separate grounding call in parallel.
+    // FALLBACK (a text-only turn, or the single-call vision path above fell through):
+    // the OpenRouter answer call. OpenAI pointing, when selected, still runs in parallel.
     let answer_future = async {
         let request_body = {
             let (request_model, include_screenshot) =
                 select_openrouter_request_model(&input, &model, &vision_model);
-            build_openrouter_request_body(&input, &request_model, include_screenshot, &ocr_elements)?
+            build_openrouter_request_body(&input, &request_model, include_screenshot)?
         };
         let first = send_openrouter_chat_request(
             client, &endpoint, &api_key, &app_title, site_url_ref, timeout, request_body,
@@ -449,7 +429,7 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
                 crate::klog!(tutor, warn, "screenshot request failed; retrying text-only: {}", error.message);
                 send_openrouter_chat_request(
                     client, &endpoint, &api_key, &app_title, site_url_ref, timeout,
-                    build_openrouter_request_body(&input, &model, false, &[])?,
+                    build_openrouter_request_body(&input, &model, false)?,
                 )
                 .await
                 .map_err(|retry_error| {
@@ -462,17 +442,6 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
             Err(error) => Err(error.message),
         }
     };
-    let boxes_future = async {
-        if !has_vision || !separate_grounding {
-            return Vec::new();
-        }
-        let (Some(image_base64), Some(bounds)) =
-            (&input.screen.image_base64, &input.screen.display_bounds)
-        else {
-            return Vec::new();
-        };
-        detect_element_boxes(image_base64, bounds, &input.user_query, &ocr_elements).await
-    };
     // OpenAI pointing: one computer-use call for the click target, run in parallel
     // with the narration answer above. None → we keep the narration's own boxes.
     let openai_point_future = async {
@@ -482,8 +451,7 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
         let image_base64 = input.screen.image_base64.as_deref()?;
         detect_click_point_openai(image_base64, &input.user_query).await
     };
-    let (answer_result, detected_boxes, openai_point) =
-        tokio::join!(answer_future, boxes_future, openai_point_future);
+    let (answer_result, openai_point) = tokio::join!(answer_future, openai_point_future);
     let content = answer_result?;
 
     // OpenAI pointing path: inject OpenAI's grounded target into the narration, then
@@ -512,10 +480,7 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
         crate::klog!(tutor, warn, "openai pointing missing display bounds; using OpenRouter grounding");
     }
 
-    match (detected_boxes.is_empty(), input.screen.display_bounds.as_ref()) {
-        (false, Some(bounds)) => Ok(apply_box_targets(content, &detected_boxes, bounds)),
-        _ => Ok(ground_visual_targets(content, &ocr_elements, input.screen.display_bounds.as_ref())),
-    }
+    Ok(ground_visual_targets(content, input.screen.display_bounds.as_ref()))
 }
 
 /// One-shot OpenRouter text completion (system + user) → the assistant message

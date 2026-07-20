@@ -41,8 +41,6 @@ use capture::main_display_bounds;
 
 mod framehash;
 
-mod ocr;
-
 mod color;
 
 mod grounding;
@@ -880,15 +878,15 @@ pub fn run() {
 mod tests {
     use crate::constants;
     use crate::env::{parse_local_env, provider_timeout_ms};
-    use crate::grounding::{apply_box_targets, ground_visual_targets};
+    use crate::grounding::ground_visual_targets;
     use crate::panels::notch_window_size;
     use crate::speech::{audio_filename, decode_audio_base64};
     use crate::tutor::{
         build_openrouter_messages, build_openrouter_request_body, select_openrouter_request_model,
     };
     use crate::types::{
-        DetectedBox, OcrElement, OverlayDisplayBounds, ScreenRegion, SynthesizeSpeechInput,
-        TranscribeAudioInput, TutorActiveAppContext, TutorScreenInput, TutorTurnInput,
+        OverlayDisplayBounds, SynthesizeSpeechInput, TranscribeAudioInput, TutorActiveAppContext,
+        TutorScreenInput, TutorTurnInput,
     };
     use serde_json::json;
 
@@ -954,7 +952,7 @@ mod tests {
     fn openrouter_messages_use_openrouter_image_url_shape() {
         let input = sample_tutor_turn_input();
 
-        let messages = build_openrouter_messages(&input, true, &[]).expect("messages should build");
+        let messages = build_openrouter_messages(&input, true).expect("messages should build");
         let image_part = &messages[1]["content"][1];
 
         assert_eq!(image_part["type"], "image_url");
@@ -968,7 +966,7 @@ mod tests {
     #[test]
     fn openrouter_request_body_requests_json_object_output() {
         let input = sample_tutor_turn_input();
-        let body = build_openrouter_request_body(&input, "qwen/qwen3.6-flash", true, &[])
+        let body = build_openrouter_request_body(&input, "qwen/qwen3.6-flash", true)
             .expect("body should build");
 
         assert_eq!(body["model"], "qwen/qwen3.6-flash");
@@ -978,7 +976,7 @@ mod tests {
     #[test]
     fn openrouter_request_body_can_omit_screenshot_for_text_fallback() {
         let input = sample_tutor_turn_input();
-        let body = build_openrouter_request_body(&input, "qwen/qwen3.6-flash", false, &[])
+        let body = build_openrouter_request_body(&input, "qwen/qwen3.6-flash", false)
             .expect("body should build");
         let user_message = &body["messages"][1];
 
@@ -1047,130 +1045,13 @@ mod tests {
         }))
         .expect("raw target JSON should serialize");
 
-        let grounded = ground_visual_targets(raw, &[], None);
+        let grounded = ground_visual_targets(raw, None);
         let parsed: serde_json::Value =
             serde_json::from_str(&grounded).expect("grounded response should stay JSON");
 
         assert_eq!(parsed["visualTargets"][0]["kind"], "pointer");
         assert_eq!(parsed["visualTargets"][0]["targetId"], "rectangle-tool");
         assert_eq!(parsed["visualTargets"][0]["screenRegion"]["x"], 820.0);
-    }
-
-    #[test]
-    fn box_locator_context_includes_ocr_position_hints() {
-        let context = crate::ocr::build_box_locator_context(&[OcrElement {
-            id: 7,
-            text: "github.com".to_string(),
-            region: ScreenRegion {
-                x: 420.0,
-                y: 256.0,
-                width: 180.0,
-                height: 36.0,
-            },
-            center_x_pct: 24.0,
-            center_y_pct: 9.0,
-        }]);
-
-        assert!(context.contains("visible text boxes"));
-        assert!(context.contains("7: \"github.com\" @ 24%,9% size 180x36px"));
-        assert!(context.contains("still return the final tight pixel box from the image"));
-    }
-
-    #[test]
-    fn apply_box_targets_places_pointer_at_detected_box_center() {
-        let raw = serde_json::to_string(&json!({
-            "mode": "stuck_help",
-            "skillSlug": "general",
-            "voiceText": "Click the address field.",
-            "screenText": "Click the address field.",
-            "visualTargets": [],
-            "expectedNextState": "user_clicks_address_field"
-        }))
-        .expect("raw response should serialize");
-        let bounds = OverlayDisplayBounds {
-            x: 0.0,
-            y: 0.0,
-            width: 1000.0,
-            height: 700.0,
-            scale_factor: 2.0,
-        };
-        let boxes = vec![DetectedBox {
-            norm_x1: 0.10,
-            norm_y1: 0.20,
-            norm_x2: 0.20,
-            norm_y2: 0.30,
-            label: "Address field".to_string(),
-            color: "#a78bfa".to_string(),
-        }];
-
-        let grounded = apply_box_targets(raw, &boxes, &bounds);
-        let parsed: serde_json::Value =
-            serde_json::from_str(&grounded).expect("grounded response should stay JSON");
-
-        let pointer = &parsed["visualTargets"][0];
-        assert_eq!(pointer["kind"], "pointer");
-        assert_eq!(pointer["label"], "Address field");
-        assert_eq!(pointer["screenRegion"]["width"], 44.0);
-        assert_eq!(pointer["screenRegion"]["height"], 44.0);
-        // Raw detected center is (150, 175) display points. The 44px cursor
-        // marker is centered there.
-        assert_eq!(pointer["screenRegion"]["x"], 128.0);
-        assert_eq!(pointer["screenRegion"]["y"], 153.0);
-
-        let highlight = &parsed["visualTargets"][1];
-        assert_eq!(highlight["kind"], "highlight_box");
-        assert_eq!(highlight["label"], "Address field");
-    }
-
-    #[test]
-    fn ground_visual_targets_pads_ocr_highlights() {
-        let raw = serde_json::to_string(&json!({
-            "mode": "stuck_help",
-            "skillSlug": "general",
-            "voiceText": "Use the repository search.",
-            "screenText": "Use the repository search.",
-            "visualTargets": [{
-                "kind": "highlight_box",
-                "targetId": "repo-search",
-                "label": "Repository search",
-                "confidence": 0.9,
-                "elementId": 4
-            }],
-            "expectedNextState": "user_searches_repo"
-        }))
-        .expect("raw target JSON should serialize");
-        let bounds = OverlayDisplayBounds {
-            x: 0.0,
-            y: 0.0,
-            width: 1000.0,
-            height: 700.0,
-            scale_factor: 2.0,
-        };
-        let elements = vec![OcrElement {
-            id: 4,
-            text: "Find a repository...".to_string(),
-            region: ScreenRegion {
-                x: 80.0,
-                y: 500.0,
-                width: 240.0,
-                height: 32.0,
-            },
-            center_x_pct: 20.0,
-            center_y_pct: 36.0,
-        }];
-
-        let grounded = ground_visual_targets(raw, &elements, Some(&bounds));
-        let parsed: serde_json::Value =
-            serde_json::from_str(&grounded).expect("grounded response should stay JSON");
-        let region = &parsed["visualTargets"][0]["screenRegion"];
-
-        // Padding is capped in display points so skinny controls do not balloon.
-        // pad_x = min(max(0.08·240, 6), 24) = 19.2
-        // pad_y = min(max(0.08·32, 6), 24) = 6
-        assert_eq!(region["x"], 60.8);
-        assert_eq!(region["y"], 494.0);
-        assert_eq!(region["width"], 278.4);
-        assert_eq!(region["height"], 44.0);
     }
 
     #[test]

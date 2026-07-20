@@ -38,18 +38,6 @@ Return ONLY the sentence, no quotes, no JSON."
         .to_string()
 }
 
-/// Pixel-grounding prompt: the SINGLE exact target box for the cursor/highlight.
-pub(crate) fn box_locator_prompt(
-    user_query: &str,
-    rw: u32,
-    rh: u32,
-    screen_context: &str,
-) -> String {
-    format!(
-        "You are Kairo's pixel grounding model. Find the SINGLE control the user should look at or click, in absolute pixels.\n\nUser asked: \"{user_query}\".\n\n{screen_context}\n\nBox the exact control they mean — not a nearby heading, label, tooltip, or large region. All visible UI counts (app/browser chrome, address bar, tabs, toolbars, sidebars, dialogs, page content). Ignore Kairo's own notch, answer card, purple labels, and cursor. Infer icon-only controls from shape + toolbar context (box = square outline, pen = pencil, arrow = arrow, text = T, hand = pan). To edit a URL/path/link, pick the editable field holding it, not a search box.\n\nReturn JSON only: {{\"elements\":[{{\"label\":\"1-3 words\",\"box\":[x1,y1,x2,y2]}}]}}. Use ABSOLUTE PIXELS of this {rw}x{rh} image (origin top-left, x right, y down). Return exactly ONE element, or {{\"elements\":[]}} if nothing is relevant."
-    )
-}
-
 /// System prompt for the tutor answer turn: the spoken answer + the one box to
 /// point at. One vision call returns both.
 pub(crate) fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {

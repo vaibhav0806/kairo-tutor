@@ -255,20 +255,6 @@ pub(crate) struct SpeechSynthesisResult {
     pub(crate) provider: String,
 }
 
-// A text element detected on the user's screen by OCR, with its real on-screen
-// region. The LLM picks elements by `id` (Set-of-Mark grounding) instead of
-// guessing pixel coordinates, which vision models do unreliably.
-#[derive(Debug, Clone)]
-pub(crate) struct OcrElement {
-    pub(crate) id: u32,
-    pub(crate) text: String,
-    // Display-point region. Final UI targets, overlay windows, and cursor windows
-    // all use the same logical coordinate space.
-    pub(crate) region: ScreenRegion,
-    pub(crate) center_x_pct: f64,
-    pub(crate) center_y_pct: f64,
-}
-
 // A bounding box on the user's screen, normalized [0,1] with a top-left origin.
 // `color` is a vibrant accent hex derived from the pixels behind the box.
 #[derive(Debug, Clone)]
