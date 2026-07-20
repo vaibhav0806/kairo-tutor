@@ -124,7 +124,8 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           ? 'speaking'
           : 'idle';
   const orbLevel = demoMode ? demoLevel : voice.level;
-  const progress = (index + 1) / STEPS.length;
+  // 0 on the very first step, full on the last (not 1/N on step one).
+  const progress = STEPS.length > 1 ? index / (STEPS.length - 1) : 1;
   const permsOk = !!perms && perms.screenRecording === 'granted' && perms.accessibility === 'granted';
 
   const go = useCallback((delta: number) => {
@@ -358,8 +359,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       if (recordingRef.current) setDemoLevel(Math.min(1, Number(e.payload?.level ?? 0)));
     }).then(push);
 
-    // The recorded WAV on release → run the practice turn.
-    void listen<{ audioBase64: string; mimeType: string }>('ptt:audio', (e) => {
+    // The recorded WAV on release → run the practice turn. Dedicated event (NOT the
+    // notch's `ptt:audio`, which broadcasts app-wide) so only onboarding reacts — the
+    // notch stays inert instead of firing its own product turn on the same press.
+    void listen<{ audioBase64: string; mimeType: string }>('onboarding:audio', (e) => {
       void runDemoTurn(mode, e.payload.audioBase64);
     }).then(push);
 
@@ -536,12 +539,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       case 'learn_talk':
       case 'learn_point':
       case 'circle':
-        // Always live so the user can move on even if they'd rather not try it now.
-        return (
-          <button type="button" className="ob-cta" onClick={() => go(1)}>
-            {demoDone ? 'Continue' : 'Skip'}
-          </button>
-        );
+        // No button — the user must actually do the practice; it auto-advances when Kairo
+        // finishes. (The back arrow in the header is still there as an escape hatch.)
+        return null;
       case 'done':
         return (
           <button type="button" className="ob-cta" disabled={saving} onClick={() => void finish()}>

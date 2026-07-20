@@ -359,19 +359,20 @@ pub(crate) fn spawn_audio_capture(
                     let wav = encode_wav_mono(&captured, current_rate);
                     use base64::Engine;
                     let audio_base64 = base64::engine::general_purpose::STANDARD.encode(&wav);
-                    // While the onboarding demo owns push-to-talk, its window transcribes
-                    // + drives the practice turn instead of the notch.
-                    let target = if crate::input::ONBOARDING_PTT.load(Ordering::SeqCst) {
-                        "onboarding"
+                    // IMPORTANT: `emit` broadcasts to EVERY webview (Tauri's event bus is
+                    // app-global; emitting on a window handle does NOT scope it). So while
+                    // the onboarding demo owns push-to-talk we emit a DISTINCT event that
+                    // only the onboarding window listens for — reusing `ptt:audio` here
+                    // would also wake the notch, firing a second (product) turn.
+                    let event = if crate::input::ONBOARDING_PTT.load(Ordering::SeqCst) {
+                        "onboarding:audio"
                     } else {
-                        "notch"
+                        "ptt:audio"
                     };
-                    if let Some(window) = app.get_webview_window(target) {
-                        let _ = window.emit(
-                            "ptt:audio",
-                            json!({ "audioBase64": audio_base64, "mimeType": "audio/wav" }),
-                        );
-                    }
+                    let _ = app.emit(
+                        event,
+                        json!({ "audioBase64": audio_base64, "mimeType": "audio/wav" }),
+                    );
                 }
                 AudioCommand::Cancel => {
                     // Stop + discard: close the gate, pause the unit (mic indicator off),
