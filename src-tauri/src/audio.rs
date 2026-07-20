@@ -1,13 +1,36 @@
 //! Native microphone capture (cpal) for push-to-talk: device selection, WAV
 //! encoding, the capture thread, and the command channel.
 
-use crate::{AudioCapture, AudioCommand};
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
+
+// Push-to-talk command channel: the input state-machine sends these to the capture
+// thread. Warm is a no-op seam (the mic unit is built lazily on the first press and
+// kept for the session, so the hardware stays closed until the user first talks).
+pub(crate) enum AudioCommand {
+    Warm,
+    // Carries the chord-down instant so we can log time-to-record-start.
+    Start(Instant),
+    Stop,
+    // Stop + discard: drop the stream and clear the buffer WITHOUT encoding or
+    // emitting `ptt:audio`. Used when a ⌥⌃ press turns out to be a tap (→ typing).
+    Cancel,
+}
+
+// Managed state for mic capture: the command sender, the live capture flag, and the
+// normalized mic level (f32 bits) that drives the cursor listening halo.
+#[derive(Default)]
+pub(crate) struct AudioCapture {
+    pub(crate) tx: Mutex<Option<Sender<AudioCommand>>>,
+    // True while the mic stream is running; drives the level emitter.
+    pub(crate) capturing: Arc<AtomicBool>,
+    // Latest normalized mic level (0..1) as f32 bits, for the cursor listening halo.
+    pub(crate) level: Arc<AtomicU32>,
+}
 
 // Pick the real built-in microphone. The OS *default* input on this machine is a
 // silent virtual device (BlackHole), so `default_input_device()` would capture
