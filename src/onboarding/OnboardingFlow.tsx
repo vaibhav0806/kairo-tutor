@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { ONBOARDING_SOURCES } from '@kairo/shared';
 import { klog } from '../core/logger';
-import { STEPS } from './copy';
+import { RESPONSES, STEPS } from './copy';
 import { getAuthStatus, getBackendJwt, onAuthChanged, startGoogleAuth } from './authClient';
 import { extractField, onboardingStt, saveOnboarding } from './backendClient';
 import { useVoice } from './useVoice';
 import '@fontsource/instrument-serif';
 import './onboarding.css';
 
-type OrbMode = 'idle' | 'speaking' | 'listening';
+type OrbMode = 'idle' | 'speaking' | 'listening' | 'thinking';
 type Perms = { screenRecording: string; accessibility: string };
 
 function titleCase(s: string): string {
@@ -78,12 +78,22 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [signedIn, setSignedIn] = useState(false);
   const [saving, setSaving] = useState(false);
   const [perms, setPerms] = useState<Perms | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [practiceText, setPracticeText] = useState('');
+  const [talkDone, setTalkDone] = useState(false);
+  const [pointDone, setPointDone] = useState(false);
   const voice = useVoice();
   const step = STEPS[index];
   const nameRef = useRef(name);
   nameRef.current = name;
 
-  const orbMode: OrbMode = voice.isListening ? 'listening' : voice.isSpeaking ? 'speaking' : 'idle';
+  const orbMode: OrbMode = processing
+    ? 'thinking'
+    : voice.isListening
+      ? 'listening'
+      : voice.isSpeaking
+        ? 'speaking'
+        : 'idle';
   const progress = (index + 1) / STEPS.length;
   const permsOk = !!perms && perms.screenRecording === 'granted' && perms.accessibility === 'granted';
 
@@ -147,14 +157,17 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const handleVoiceResult = useCallback(
     async (blob: Blob | null) => {
       if (!blob) return;
+      setProcessing(true); // orb goes "thinking" while we transcribe + extract
       const transcript = await onboardingStt(blob);
-      if (!transcript) return;
-      if (step.id === 'name') {
-        const value = await extractField(transcript, 'name');
-        setTyped(titleCase(value || transcript));
-      } else {
-        setTyped(transcript.trim());
+      if (transcript) {
+        if (step.id === 'name') {
+          const value = await extractField(transcript, 'name');
+          setTyped(titleCase(value || transcript));
+        } else {
+          setTyped(transcript.trim());
+        }
       }
+      setProcessing(false);
     },
     [step.id],
   );
@@ -163,6 +176,33 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     if (voice.isListening) voice.stopListening();
     else void voice.startListening(handleVoiceResult);
   }, [voice, handleVoiceResult]);
+
+  // learn_talk practice: the user actually talks, then Kairo responds.
+  const practiceTalk = useCallback(() => {
+    if (voice.isListening) {
+      voice.stopListening();
+      return;
+    }
+    void voice.startListening(async (blob) => {
+      if (!blob) {
+        setTalkDone(true); // mic hiccup — don't hard-block onboarding
+        return;
+      }
+      setProcessing(true);
+      const t = await onboardingStt(blob);
+      setProcessing(false);
+      setPracticeText(t || 'heard you loud and clear');
+      setTalkDone(true);
+      void voice.speak([{ cacheKey: 'talk_done', text: () => RESPONSES.talk_done }], name);
+    });
+  }, [voice, name]);
+
+  // learn_point practice: Kairo points (a glowing dot); the user clicks it.
+  const completePoint = useCallback(() => {
+    if (pointDone) return;
+    setPointDone(true);
+    void voice.speak([{ cacheKey: 'point_done', text: () => RESPONSES.point_done }], name);
+  }, [pointDone, voice, name]);
 
   const grantPerms = useCallback(() => {
     void invoke('request_required_permissions').catch(() => {});
@@ -232,10 +272,28 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         );
       case 'learn_talk':
         return (
-          <div className="ob-keys">
-            <kbd>⌥</kbd>
-            <kbd>⌃</kbd>
-            <span>hold to talk · tap to type</span>
+          <div className="ob-field-col">
+            <button type="button" className={`ob-talk${voice.isListening ? ' is-live' : ''}`} onClick={practiceTalk} disabled={processing}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              {voice.isListening ? 'Listening… tap to stop' : processing ? 'Thinking…' : talkDone ? 'Say something else' : 'Tap & say anything'}
+            </button>
+            {practiceText && <div className="ob-practice">“{practiceText}”</div>}
+          </div>
+        );
+      case 'learn_point':
+        return pointDone ? (
+          <div className="ob-signed">
+            <span className="ob-check">✓</span> nice — you got it
+          </div>
+        ) : (
+          <div className="ob-point-zone">
+            <button type="button" className="ob-point-target" onClick={completePoint} aria-label="Click the glowing dot">
+              <span className="ob-point-ping" />
+              <span className="ob-point-core" />
+            </button>
           </div>
         );
       default:
@@ -285,14 +343,14 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         );
       case 'learn_talk':
         return (
-          <button type="button" className="ob-cta" onClick={() => go(1)}>
-            Got it
+          <button type="button" className="ob-cta" disabled={!talkDone} onClick={() => go(1)}>
+            Continue
           </button>
         );
       case 'learn_point':
         return (
-          <button type="button" className="ob-cta" onClick={() => go(1)}>
-            Makes sense
+          <button type="button" className="ob-cta" disabled={!pointDone} onClick={() => go(1)}>
+            Continue
           </button>
         );
       case 'done':

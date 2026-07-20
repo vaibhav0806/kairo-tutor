@@ -211,6 +211,17 @@ body.onboarding-document {
 .ob-orb[data-mode='listening'] .ob-orb-ring {
   border-color: rgba(255, 255, 255, calc(0.5 + var(--level) * 0.5));
 }
+/* thinking: fast sheen spin + a quick core pulse — reads as "working". */
+.ob-orb[data-mode='thinking'] .ob-orb-sheen {
+  animation-duration: 1.5s;
+  opacity: 1;
+}
+.ob-orb[data-mode='thinking'] .ob-orb-core {
+  animation-duration: 0.85s;
+}
+.ob-orb[data-mode='thinking'] .ob-orb-field {
+  animation-duration: 1.9s;
+}
 
 /* ---------- Stage (re-keyed per step → staggered entrance) ---------- */
 .ob-stage {
@@ -455,6 +466,105 @@ body.onboarding-document {
   border-color: rgba(167, 139, 250, 0.6);
   box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.18);
   color: #fff;
+}
+
+/* learn_talk practice */
+.ob-talk {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 13px;
+  color: #e6def7;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 14.5px;
+  font-weight: 500;
+  gap: 9px;
+  justify-content: center;
+  padding: 13px 20px;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 160ms ease;
+}
+.ob-talk:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.ob-talk.is-live {
+  background: rgba(124, 58, 237, 0.42);
+  border-color: rgba(167, 139, 250, 0.6);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.16);
+  color: #fff;
+}
+.ob-talk:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+.ob-practice {
+  color: rgba(226, 219, 242, 0.72);
+  font-size: 14px;
+  font-style: italic;
+  max-width: 30ch;
+  text-align: center;
+}
+
+/* learn_point practice — a glowing target Kairo "points" at */
+.ob-point-zone {
+  align-items: center;
+  display: flex;
+  height: 72px;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+}
+.ob-point-target {
+  animation: ob-target-in 300ms cubic-bezier(0.2, 1.35, 0.4, 1) both;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  height: 42px;
+  padding: 0;
+  position: relative;
+  width: 42px;
+}
+@keyframes ob-target-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.ob-point-core,
+.ob-point-ping {
+  border-radius: 999px;
+  height: 18px;
+  left: 50%;
+  margin: -9px 0 0 -9px;
+  position: absolute;
+  top: 50%;
+  width: 18px;
+}
+.ob-point-core {
+  background: radial-gradient(circle at 40% 35%, #fff, #c9b4ff 42%, #7c3aed 100%);
+  box-shadow: 0 0 16px rgba(163, 124, 255, 0.9);
+  transition: transform 120ms ease;
+}
+.ob-point-ping {
+  animation: ob-ping 1.4s ease-out infinite;
+  border: 2px solid rgba(199, 155, 255, 0.7);
+}
+.ob-point-target:hover .ob-point-core {
+  transform: scale(1.12);
+}
+@keyframes ob-ping {
+  0% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3);
+  }
 }
 
 .ob-keys {

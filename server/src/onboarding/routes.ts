@@ -46,7 +46,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
         ? "Extract ONLY the speaker's own first name from the text. Reply with just the name in normal capitalization — first letter uppercase, the rest lowercase (e.g. \"Prasad\", never \"PRASAD\"). Nothing else. If there is no name, reply with an empty string."
         : 'Extract the concise answer from the text (a few words max). Reply with just the answer.';
     const { json } = await forwardJson('openrouter', '/chat/completions', {
-      model: 'anthropic/claude-haiku-4.5',
+      model: 'google/gemini-2.5-flash-lite', // measured fastest for this tiny task
       messages: [
         { role: 'system', content: instruction },
         { role: 'user', content: transcript },
@@ -54,7 +54,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
       max_tokens: 10, // a first name is tiny
       temperature: 0,
       reasoning: { enabled: false }, // no thinking — instant
-      provider: { sort: 'throughput' }, // route to the fastest Haiku endpoint
+      provider: { sort: 'throughput' }, // route to the fastest endpoint
     });
     const value = String((json as any)?.choices?.[0]?.message?.content ?? '')
       .trim()
