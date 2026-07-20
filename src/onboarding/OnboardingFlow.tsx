@@ -47,24 +47,30 @@ function VoiceInput(props: {
   onChange: (v: string) => void;
   placeholder: string;
   listening: boolean;
+  processing?: boolean;
   onMic: () => void;
   onSubmit: () => void;
 }) {
   return (
-    <div className="ob-input">
+    <div className={`ob-input${props.processing ? ' is-processing' : ''}`}>
       <input
         value={props.value}
-        placeholder={props.listening ? 'listening…' : props.placeholder}
+        placeholder={props.processing ? 'thinking…' : props.listening ? 'listening…' : props.placeholder}
         onChange={(e) => props.onChange(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && props.onSubmit()}
+        disabled={props.processing}
         autoFocus
         spellCheck={false}
       />
-      <button type="button" className={`ob-mic${props.listening ? ' is-live' : ''}`} onClick={props.onMic} aria-label={props.listening ? 'Stop' : 'Talk'}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor" />
-          <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
+      <button type="button" className={`ob-mic${props.listening ? ' is-live' : ''}`} onClick={props.onMic} disabled={props.processing} aria-label={props.listening ? 'Stop' : 'Talk'}>
+        {props.processing ? (
+          <span className="ob-mic-spin" />
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor" />
+            <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        )}
       </button>
     </div>
   );
@@ -86,6 +92,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const step = STEPS[index];
   const nameRef = useRef(name);
   nameRef.current = name;
+  const autoOpenedRef = useRef(false);
 
   const orbMode: OrbMode = processing
     ? 'thinking'
@@ -120,8 +127,18 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   }, []);
 
   useEffect(() => {
-    void voice.speak(step.speech, nameRef.current);
+    let cancelled = false;
+    void voice.speak(step.speech, nameRef.current).then(() => {
+      // Once Kairo finishes the sign-in line, open Google automatically (no extra click).
+      if (!cancelled && step.id === 'signin' && !signedIn && !autoOpenedRef.current) {
+        autoOpenedRef.current = true;
+        void startGoogleAuth();
+      }
+    });
     setTyped('');
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
@@ -204,11 +221,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     void voice.speak([{ cacheKey: 'point_done', text: () => RESPONSES.point_done }], name);
   }, [pointDone, voice, name]);
 
-  const grantPerms = useCallback(() => {
-    void invoke('request_required_permissions').catch(() => {});
-    if (perms && perms.screenRecording !== 'granted') void invoke('open_permission_settings', { permission: 'screenRecording' }).catch(() => {});
-    else if (perms && perms.accessibility !== 'granted') void invoke('open_permission_settings', { permission: 'accessibility' }).catch(() => {});
-  }, [perms]);
+  const openGoogle = useCallback(() => {
+    autoOpenedRef.current = true;
+    void startGoogleAuth();
+  }, []);
 
   const finish = useCallback(async () => {
     setSaving(true);
@@ -231,7 +247,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const renderField = () => {
     switch (step.id) {
       case 'name':
-        return <VoiceInput value={typed} onChange={setTyped} placeholder="your name" listening={voice.isListening} onMic={toggleMic} onSubmit={commitName} />;
+        return (
+          <VoiceInput value={typed} onChange={setTyped} placeholder="your name" listening={voice.isListening} processing={processing} onMic={toggleMic} onSubmit={commitName} />
+        );
       case 'signin':
         return signedIn ? (
           <div className="ob-signed">
@@ -248,7 +266,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
                 </button>
               ))}
             </div>
-            {source === 'Other' && <VoiceInput value={typed} onChange={setTyped} placeholder="tell me where" listening={voice.isListening} onMic={toggleMic} onSubmit={() => go(1)} />}
+            {source === 'Other' && (
+              <VoiceInput value={typed} onChange={setTyped} placeholder="tell me where" listening={voice.isListening} processing={processing} onMic={toggleMic} onSubmit={() => go(1)} />
+            )}
           </div>
         );
       case 'permissions':
@@ -259,15 +279,24 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
               return (
                 <div key={k} className={`ob-perm${ok ? ' is-ok' : ''}`}>
                   <span>{k === 'screenRecording' ? 'Screen Recording' : 'Accessibility'}</span>
-                  <em>{ok ? '✓' : 'needed'}</em>
+                  {ok ? (
+                    <em className="ob-perm-ok">✓</em>
+                  ) : (
+                    <button
+                      type="button"
+                      className="ob-perm-open"
+                      onClick={() => void invoke('open_permission_settings', { permission: k }).catch(() => {})}
+                      aria-label={`Open ${k} settings`}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Open
+                    </button>
+                  )}
                 </div>
               );
             })}
-            {!permsOk && (
-              <button type="button" className="ob-ghost" onClick={grantPerms}>
-                Open Settings to grant
-              </button>
-            )}
           </div>
         );
       case 'learn_talk':
@@ -317,7 +346,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         );
       case 'signin':
         return signedIn ? null : (
-          <button type="button" className="ob-cta" onClick={() => void startGoogleAuth()}>
+          <button type="button" className="ob-cta" onClick={openGoogle}>
             Continue with Google
           </button>
         );

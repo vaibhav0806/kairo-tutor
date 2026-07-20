@@ -414,8 +414,27 @@ body.onboarding-document {
 .ob-perm.is-ok {
   border-color: rgba(126, 240, 184, 0.22);
 }
-.ob-perm.is-ok em {
+.ob-perm-ok {
   color: #7ef0b8;
+  font-size: 15px;
+  font-weight: 700;
+}
+.ob-perm-open {
+  align-items: center;
+  background: rgba(124, 58, 237, 0.28);
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  border-radius: 8px;
+  color: #ece4ff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 5px;
+  padding: 5px 10px;
+  transition: background 140ms ease;
+}
+.ob-perm-open:hover {
+  background: rgba(124, 58, 237, 0.44);
 }
 
 .ob-input {
@@ -443,6 +462,31 @@ body.onboarding-document {
 }
 .ob-input input::placeholder {
   color: rgba(244, 240, 251, 0.32);
+}
+/* Processing: a violet light sweeps across the field (skeleton-shimmer) while we transcribe. */
+.ob-input.is-processing input {
+  animation: ob-shimmer 1.1s linear infinite;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.05) 36%, rgba(162, 115, 255, 0.24) 50%, rgba(255, 255, 255, 0.05) 64%);
+  background-size: 220% 100%;
+  border-color: rgba(167, 139, 250, 0.4);
+  color: rgba(244, 240, 251, 0.55);
+}
+@keyframes ob-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.ob-mic-spin {
+  animation: ob-spin 0.7s linear infinite;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  border-top-color: #c9b4ff;
+  display: inline-block;
+  height: 15px;
+  width: 15px;
 }
 .ob-mic {
   align-items: center;

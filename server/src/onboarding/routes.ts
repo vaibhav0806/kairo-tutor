@@ -27,7 +27,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
       target_language_code: 'en-IN',
       speaker: 'shubh',
       model: 'bulbul:v3',
-      pace: 0.9, // match the cached lines' measured pace
+      pace: 1.0, // natural, to match the cached lines
       speech_sample_rate: 44100,
       encoding: 'WAV',
     });

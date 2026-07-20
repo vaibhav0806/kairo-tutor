@@ -22,7 +22,7 @@ for (const { key, text } of CACHED_LINES) {
       target_language_code: 'en-IN',
       speaker: 'shubh',
       model: 'bulbul:v3',
-      pace: 0.9, // slightly slower / measured (lower = slower)
+      pace: 1.0, // natural (0.9 dragged / sounded bored)
       speech_sample_rate: 44100, // high quality
       encoding: 'WAV',
     }),

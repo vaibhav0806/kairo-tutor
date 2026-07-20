@@ -31,7 +31,7 @@ export const STEPS: StepDef[] = [
       {
         cacheKey: 'welcome',
         text: () =>
-          "Hey, I'm Kairo. I live on your screen and help you get things done, one step at a time. Give me a minute, and I'll show you how.",
+          "Hey, I'm Kairo. I live on your screen, and help you get things done, one step at a time. Give me a minute, and I'll show you how.",
       },
     ],
   },
@@ -45,7 +45,7 @@ export const STEPS: StepDef[] = [
     title: () => 'Sign in with Google',
     speech: [
       { text: (n) => (n ? `Nice to meet you, ${n}.` : '') },
-      { cacheKey: 'signin', text: () => 'Sign in with Google, so I remember you next time.' },
+      { cacheKey: 'signin', text: () => "Let's get you signed in." },
     ],
   },
   {
