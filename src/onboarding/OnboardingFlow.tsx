@@ -122,6 +122,16 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     }
   }, [signedIn, step.id, go]);
 
+  // The `auth:changed` event (above) is the primary signal. As a belt-and-suspenders that's still
+  // event-driven (not a poll), re-check once when the window regains focus — i.e. the moment the
+  // user tabs back from the browser after signing in.
+  useEffect(() => {
+    if (step.id !== 'signin' || signedIn) return;
+    const recheck = () => void getAuthStatus().then((s) => s.signed_in && setSignedIn(true));
+    window.addEventListener('focus', recheck);
+    return () => window.removeEventListener('focus', recheck);
+  }, [step.id, signedIn]);
+
   // Live permission status while on the permissions step (updates after the user grants).
   useEffect(() => {
     if (step.id !== 'permissions') return;
