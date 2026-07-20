@@ -116,9 +116,42 @@ const NOTCH_IDLE_CLOSE_MS = 3000;
 // after the LLM has replied but before playback (and the visuals) begin.
 const PREPARING_NEXT_STEP_TEXT = 'Preparing the next step';
 
-// "Let me look" fillers, pre-synthesized at launch so they play INSTANTLY when the
-// gate flags a screen question — no per-question TTS latency.
-const FILLER_LINES = ['Let me take a look.', 'Sure, one sec.', 'Okay, let me check.', 'Let me see.'];
+// "Let me look" fillers spoken while a screen turn runs. A big, varied pool so the user
+// doesn't hear the same line every time — one is picked at random per turn and STREAMED
+// live (Sarvam, first byte ~300ms). Used whenever there's no contextual gate filler:
+// gesture/annotation asks (which skip the gate by design) and typed asks.
+const FILLER_LINES = [
+  'Let me take a look.',
+  'Sure, one sec.',
+  'Okay, let me check.',
+  'Let me see.',
+  'One moment, looking now.',
+  'Let me find that for you.',
+  'On it — taking a look.',
+  'Give me a second here.',
+  'Let me pull that up.',
+  'Alright, let me look.',
+  'Let me get eyes on that.',
+  'Hang tight, checking now.',
+  'Let me see what you mean.',
+  'Okay, scanning the screen.',
+  'Just a sec, looking.',
+  'Let me have a look at that.',
+  'Right, let me check that out.',
+  'Let me take a peek.',
+  'Sure, looking now.',
+  'Let me spot that for you.',
+  'One sec, let me see.',
+  'Okay, on it now.',
+  'Let me look that over.',
+  'Give me a moment.',
+  'Let me zero in on that.',
+];
+// Only pre-synthesize a few at launch (a cheap fallback for the rare case a live filler
+// stream fails). The random pick above draws from the full pool regardless.
+const FILLER_FALLBACK = FILLER_LINES.slice(0, 4);
+// Random filler for turns with no contextual gate line.
+const pickFiller = () => FILLER_LINES[Math.floor(Math.random() * FILLER_LINES.length)];
 type QuerySource = 'typed' | 'voice';
 
 function NotchIcon({ children, size = 18 }: { children: ReactNode; size?: number }) {
@@ -1416,10 +1449,10 @@ export function NotchApp() {
           return;
         }
 
-        // Phase 2: needs the screen. ALWAYS play a "let me look" filler while the
-        // vision turn runs (cached → instant), including annotation asks where the
-        // gate is skipped and there's no gate voiceText.
-        const filler = gate.voiceText || 'Let me take a look.';
+        // Phase 2: needs the screen. ALWAYS play a "let me look" filler while the vision
+        // turn runs. Prefer the gate's own contextual line; otherwise (gesture/annotation/
+        // typed — no gate filler) pick a RANDOM line from the pool so it isn't repetitive.
+        const filler = gate.voiceText || pickFiller();
         void speakFiller(filler, turnEpoch);
 
         const result = await askTutorFromNotch({
@@ -2196,7 +2229,7 @@ export function NotchApp() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      for (const line of FILLER_LINES) {
+      for (const line of FILLER_FALLBACK) {
         try {
           const result = await nativeBridge.synthesizeSpeech({ text: line });
           const url = buildAudioDataUrl(result);
