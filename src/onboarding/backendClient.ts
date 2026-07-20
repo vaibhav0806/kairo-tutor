@@ -48,6 +48,22 @@ export async function extractField(transcript: string, field: 'name' | 'source')
   }
 }
 
+/** "Talk to me" practice: send what the user said, get Kairo's dynamic spoken reply. */
+export async function onboardingChat(transcript: string, name: string): Promise<string> {
+  try {
+    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ transcript, name }),
+    });
+    if (!res.ok) return '';
+    const json = (await res.json()) as { reply?: string };
+    return typeof json.reply === 'string' ? json.reply : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function saveOnboarding(jwt: string, displayName: string, source: string): Promise<boolean> {
   try {
     const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding`, {

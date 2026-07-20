@@ -62,6 +62,35 @@ export async function onboardingRoutes(app: FastifyInstance) {
     return { value };
   });
 
+  // Onboarding "talk to me" practice: the user says anything and Kairo replies for real.
+  // Fully dynamic (never scripted) — same fast, no-reasoning Gemini as the gate, but with a
+  // plain assistant persona instead of the needsScreen gate prompt. The desktop app speaks
+  // the reply via Sarvam. Unauthenticated (runs mid-onboarding) + IP-rate-limited.
+  app.post<{ Body: { transcript?: string; name?: string } }>('/v1/onboarding/chat', async (req, reply) => {
+    if (!rateLimit(`chat:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!providers.openrouter.key) return reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
+    const transcript = (req.body?.transcript ?? '').slice(0, 400).trim();
+    if (!transcript) return { reply: '' };
+    const name = (req.body?.name ?? '').slice(0, 40).trim();
+    const persona =
+      `You are Kairo, a warm, upbeat screen-native AI assistant. This is the user's first-ever chat with you during onboarding${name ? `, and their name is ${name}` : ''}. ` +
+      'Reply naturally and conversationally to what they said, in ONE or at most TWO short spoken sentences. ' +
+      'Sound friendly and human, never robotic. Do not use emojis, markdown, or lists — this will be read aloud. Keep it brief.';
+    const { json } = await forwardJson('openrouter', '/chat/completions', {
+      model: 'google/gemini-2.5-flash-lite', // same fast model as the gate
+      messages: [
+        { role: 'system', content: persona },
+        { role: 'user', content: transcript },
+      ],
+      max_tokens: 90, // one or two short sentences
+      temperature: 0.7, // a little warmth, still fast
+      reasoning: { enabled: false }, // no thinking — instant
+      provider: { sort: 'throughput' }, // route to the fastest endpoint
+    });
+    const text = String((json as any)?.choices?.[0]?.message?.content ?? '').trim();
+    return { reply: text };
+  });
+
   // STT for a spoken onboarding answer (name / source).
   app.post('/v1/onboarding/stt', async (req, reply) => {
     if (!rateLimit(`stt:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
