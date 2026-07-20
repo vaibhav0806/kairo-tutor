@@ -512,103 +512,61 @@ body.onboarding-document {
   color: #fff;
 }
 
-/* learn_talk practice */
-.ob-talk {
-  align-items: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 13px;
-  color: #e6def7;
-  cursor: pointer;
-  display: inline-flex;
-  font-size: 14.5px;
-  font-weight: 500;
-  gap: 9px;
-  justify-content: center;
-  padding: 13px 20px;
-  transition: background 140ms ease, border-color 140ms ease, box-shadow 160ms ease;
-}
-.ob-talk:hover {
-  background: rgba(255, 255, 255, 0.09);
-}
-.ob-talk.is-live {
-  background: rgba(124, 58, 237, 0.42);
-  border-color: rgba(167, 139, 250, 0.6);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.16);
-  color: #fff;
-}
-.ob-talk:disabled {
-  cursor: default;
-  opacity: 0.8;
-}
-.ob-practice {
-  color: rgba(226, 219, 242, 0.72);
-  font-size: 14px;
-  font-style: italic;
-  max-width: 30ch;
-  text-align: center;
-}
-
-/* learn_point practice — a glowing target Kairo "points" at */
-.ob-point-zone {
+/* Interactive practice steps (learn_talk / learn_point / circle) — real ⌥⌃ push-to-talk. */
+.ob-demo {
   align-items: center;
   display: flex;
-  height: 72px;
+  flex-direction: column;
+  gap: 12px;
+}
+.ob-demo-keys {
+  align-items: center;
+  color: rgba(226, 219, 242, 0.82);
+  display: flex;
+  font-size: 14px;
+  gap: 8px;
   justify-content: center;
-  position: relative;
-  width: 100%;
 }
-.ob-point-target {
-  animation: ob-target-in 300ms cubic-bezier(0.2, 1.35, 0.4, 1) both;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  height: 42px;
-  padding: 0;
-  position: relative;
-  width: 42px;
+.ob-demo-keys kbd {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+  display: inline-grid;
+  font-family: inherit;
+  font-size: 16px;
+  height: 34px;
+  min-width: 34px;
+  place-items: center;
 }
-@keyframes ob-target-in {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+.ob-demo-plus {
+  color: rgba(226, 219, 242, 0.5);
+  font-size: 13px;
 }
-.ob-point-core,
-.ob-point-ping {
-  border-radius: 999px;
-  height: 18px;
-  left: 50%;
-  margin: -9px 0 0 -9px;
-  position: absolute;
-  top: 50%;
-  width: 18px;
+.ob-demo-action {
+  color: rgba(226, 219, 242, 0.62);
+  margin-left: 6px;
 }
-.ob-point-core {
-  background: radial-gradient(circle at 40% 35%, #fff, #c9b4ff 42%, #7c3aed 100%);
-  box-shadow: 0 0 16px rgba(163, 124, 255, 0.9);
-  transition: transform 120ms ease;
+.ob-demo-hint {
+  color: rgba(226, 219, 242, 0.7);
+  font-size: 14px;
+  font-style: italic;
 }
-.ob-point-ping {
-  animation: ob-ping 1.4s ease-out infinite;
-  border: 2px solid rgba(199, 155, 255, 0.7);
+.ob-demo-status {
+  color: rgba(226, 219, 242, 0.55);
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  transition: color 160ms ease;
 }
-.ob-point-target:hover .ob-point-core {
-  transform: scale(1.12);
+.ob-demo-status.is-listening {
+  color: #c9b4ff;
 }
-@keyframes ob-ping {
-  0% {
-    opacity: 0.8;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(3);
-  }
+.ob-demo-status.is-thinking {
+  color: #a78bfa;
+}
+.ob-demo-status.is-speaking {
+  color: #b7f5d6;
 }
 
 .ob-keys {

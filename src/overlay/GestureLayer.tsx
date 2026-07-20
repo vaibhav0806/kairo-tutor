@@ -81,11 +81,15 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
       kick();
     }).then(addUnlisten);
 
-    // Freeze the buffer on release; existing strokes keep fading, no new points.
-    void listen<{ active?: boolean }>('ptt:recording', (e) => {
-      recordingRef.current = Boolean(e.payload?.active);
+    // Freeze the buffer on release; existing strokes keep fading, no new points. The
+    // onboarding practice steps drive the same trail via `onboarding:ptt` (the notch's
+    // `ptt:recording` is suppressed while onboarding owns push-to-talk).
+    const onRecording = (active: boolean) => {
+      recordingRef.current = active;
       kick();
-    }).then(addUnlisten);
+    };
+    void listen<{ active?: boolean }>('ptt:recording', (e) => onRecording(Boolean(e.payload?.active))).then(addUnlisten);
+    void listen<{ active?: boolean }>('onboarding:ptt', (e) => onRecording(Boolean(e.payload?.active))).then(addUnlisten);
 
     kick();
 

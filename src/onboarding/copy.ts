@@ -10,6 +10,7 @@ export type StepId =
   | 'permissions'
   | 'learn_talk'
   | 'learn_point'
+  | 'circle'
   | 'done';
 
 export interface Segment {
@@ -54,34 +55,45 @@ export const STEPS: StepDef[] = [
     speech: [{ cacheKey: 'source', text: () => 'By the way, where did you hear about Kairo?' }],
   },
   {
+    // Spoken dynamically (see permissionSpeech) so Kairo only mentions the permissions that
+    // are still missing. `speech` here is a fallback only.
     id: 'permissions',
     title: () => 'A couple of permissions',
-    speech: [
-      {
-        cacheKey: 'permissions',
-        text: () => 'To see your screen and point things out, I need Screen Recording and Accessibility.',
-      },
-    ],
+    speech: [{ text: () => PERMISSION_LINES.perm_both }],
   },
   {
-    // Interactive: the user actually talks; Kairo responds (RESPONSES.talk_done).
+    // Interactive: the user holds ⌥⌃ and actually talks; Kairo replies for real (dynamic chat).
     id: 'learn_talk',
-    title: () => 'Your turn — talk to me',
+    title: () => 'Talk to me',
     speech: [
       {
         cacheKey: 'learn_talk',
-        text: () => "Now, you try! Tap the mic below, and say anything at all — I'm listening.",
+        text: () =>
+          "Now you try. Hold Option and Control together, say something like 'hey Kairo, what's up', then let go. I'm listening.",
       },
     ],
   },
   {
-    // Interactive: Kairo points (a glowing dot); the user clicks it (RESPONSES.point_done).
+    // Interactive: the user asks Kairo to point at something on their real screen (gate → vision).
     id: 'learn_point',
     title: () => 'I point, you act',
     speech: [
       {
         cacheKey: 'learn_point',
-        text: () => "See that glowing dot? That's me, pointing. Go on — give it a click.",
+        text: () =>
+          "Here's the fun part. Open any app or web page you like, then hold Option and Control and ask me to point something out — like 'where do I search?'. Watch me find it.",
+      },
+    ],
+  },
+  {
+    // Interactive: the user circles anything on screen; Kairo describes what was circled.
+    id: 'circle',
+    title: () => 'Circle anything',
+    speech: [
+      {
+        cacheKey: 'circle',
+        text: () =>
+          "One more trick. Hold Option and Control, then draw a circle around anything on your screen, and I'll tell you all about it.",
       },
     ],
   },
@@ -95,16 +107,28 @@ export const STEPS: StepDef[] = [
   },
 ];
 
-/** Kairo's spoken replies to the interactive practice steps (also pre-generated + shipped). */
-export const RESPONSES: Record<string, string> = {
-  talk_done: "Perfect — that's all there is to it! In the app, just hold Option and Control instead of tapping. You've got it.",
-  point_done: 'Nailed it! I point, you act. That is the whole idea.',
+/** The permissions line spoken depends on what's already granted — only mention what's missing. */
+export const PERMISSION_LINES: Record<'perm_both' | 'perm_screen' | 'perm_access', string> = {
+  perm_both:
+    'Two last things. I need Screen Recording so I can see your screen, and Accessibility so I can point things out. Grant them below.',
+  // Accessibility already on → only Screen Recording missing.
+  perm_screen: 'Just one more. Turn on Screen Recording so I can see your screen.',
+  // Screen Recording already on → only Accessibility missing.
+  perm_access: 'Almost there. Turn on Accessibility so I can point things out for you.',
 };
+
+/** Which permission line to speak for the current grant state. null → both granted (say nothing). */
+export function permissionSpeech(screenOk: boolean, accessibilityOk: boolean): Segment[] | null {
+  if (screenOk && accessibilityOk) return null;
+  const key: keyof typeof PERMISSION_LINES = accessibilityOk ? 'perm_screen' : !screenOk ? 'perm_both' : 'perm_access';
+  return [{ cacheKey: key, text: () => PERMISSION_LINES[key] }];
+}
 
 /** The static lines we pre-generate + ship (consumed by scripts/gen-onboarding-audio.ts). */
 export const CACHED_LINES: { key: string; text: string }[] = [
   ...STEPS.flatMap((s) => s.speech)
     .filter((seg) => seg.cacheKey)
     .map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
-  ...Object.entries(RESPONSES).map(([key, text]) => ({ key, text })),
+  // The permission variants aren't reachable via STEPS.speech (spoken dynamically), so add them.
+  ...Object.entries(PERMISSION_LINES).map(([key, text]) => ({ key, text })),
 ];

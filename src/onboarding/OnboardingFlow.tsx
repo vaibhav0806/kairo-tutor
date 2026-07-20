@@ -1,16 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { ONBOARDING_SOURCES } from '@kairo/shared';
 import { klog } from '../core/logger';
-import { RESPONSES, STEPS } from './copy';
+import { permissionSpeech, STEPS, type StepId } from './copy';
 import { getAuthStatus, getBackendJwt, onAuthChanged, startGoogleAuth } from './authClient';
 import { extractField, onboardingStt, saveOnboarding } from './backendClient';
+import { runCircleTurn, runPointTurn, runTalkTurn } from './demoController';
+import { createNativeBridge } from '../native/nativeBridge';
+import type { TimedPoint } from '../notch/gestureSegmenter';
 import { useVoice } from './useVoice';
 import '@fontsource/instrument-serif';
 import './onboarding.css';
 
 type OrbMode = 'idle' | 'speaking' | 'listening' | 'thinking';
 type Perms = { screenRecording: string; accessibility: string };
+
+// The interactive practice steps that run the real Kairo pipeline (see demoController).
+type DemoMode = 'talk' | 'point' | 'circle';
+const DEMO_MODES: Partial<Record<StepId, DemoMode>> = {
+  learn_talk: 'talk',
+  learn_point: 'point',
+  circle: 'circle',
+};
 
 function titleCase(s: string): string {
   return s
@@ -85,22 +98,31 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [saving, setSaving] = useState(false);
   const [perms, setPerms] = useState<Perms | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [practiceText, setPracticeText] = useState('');
-  const [talkDone, setTalkDone] = useState(false);
-  const [pointDone, setPointDone] = useState(false);
+  // Interactive practice-step state (learn_talk / learn_point / circle).
+  const [demoState, setDemoState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+  const [demoDone, setDemoDone] = useState(false);
+  const [demoLevel, setDemoLevel] = useState(0);
   const voice = useVoice();
   const step = STEPS[index];
   const nameRef = useRef(name);
   nameRef.current = name;
   const autoOpenedRef = useRef(false);
+  const nativeBridge = useMemo(() => createNativeBridge(), []);
+  const gestureBufferRef = useRef<TimedPoint[]>([]);
+  const recordingRef = useRef(false);
+  const demoDoneRef = useRef(false);
+  const demoMode = DEMO_MODES[step.id];
 
-  const orbMode: OrbMode = processing
-    ? 'thinking'
-    : voice.isListening
-      ? 'listening'
-      : voice.isSpeaking
-        ? 'speaking'
-        : 'idle';
+  const orbMode: OrbMode = demoMode
+    ? demoState
+    : processing
+      ? 'thinking'
+      : voice.isListening
+        ? 'listening'
+        : voice.isSpeaking
+          ? 'speaking'
+          : 'idle';
+  const orbLevel = demoMode ? demoLevel : voice.level;
   const progress = (index + 1) / STEPS.length;
   const permsOk = !!perms && perms.screenRecording === 'granted' && perms.accessibility === 'granted';
 
@@ -126,7 +148,28 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     return () => un();
   }, []);
 
+  // Resume where onboarding left off. Granting Screen Recording forces macOS to quit +
+  // reopen the app, which would otherwise restart onboarding at the welcome screen. The
+  // native marker records the furthest step so we jump back to it. Runs once, on mount.
   useEffect(() => {
+    void invoke<string>('get_onboarding_step')
+      .then((saved) => {
+        const i = STEPS.findIndex((s) => s.id === saved);
+        // Never resume onto the final 'done' screen — re-run the last practice instead.
+        if (i > 0 && STEPS[i].id !== 'done') setIndex(i);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Persist the current step so a permission-triggered relaunch resumes here.
+  useEffect(() => {
+    void invoke('set_onboarding_step', { step: step.id }).catch(() => {});
+  }, [step.id]);
+
+  useEffect(() => {
+    // permissions speaks a dynamic line from its own effect below; every other step
+    // (including the practice steps' instructions) speaks its scripted line here.
+    if (step.id === 'permissions') return;
     let cancelled = false;
     void voice.speak(step.speech, nameRef.current).then(() => {
       // Once Kairo finishes the sign-in line, open Google automatically (no extra click).
@@ -159,16 +202,40 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     return () => window.removeEventListener('focus', recheck);
   }, [step.id, signedIn]);
 
-  // Live permission status while on the permissions step (updates after the user grants).
+  // Permissions step: poll status, speak a dynamic line that only mentions what's still
+  // missing, and auto-advance once BOTH are granted (e.g. after the Screen-Recording
+  // quit+reopen resumes us here with everything already granted).
   useEffect(() => {
     if (step.id !== 'permissions') return;
-    const check = () =>
-      invoke<Perms>('get_permission_status')
-        .then((p) => setPerms({ screenRecording: p.screenRecording, accessibility: p.accessibility }))
-        .catch(() => {});
+    let advanced = false;
+    let spoke = false;
+    const check = async () => {
+      let p: Perms;
+      try {
+        p = await invoke<Perms>('get_permission_status');
+      } catch {
+        return;
+      }
+      setPerms({ screenRecording: p.screenRecording, accessibility: p.accessibility });
+      const screenOk = p.screenRecording === 'granted';
+      const accessOk = p.accessibility === 'granted';
+      if (screenOk && accessOk) {
+        if (!advanced) {
+          advanced = true;
+          setTimeout(() => go(1), 600);
+        }
+        return;
+      }
+      if (!spoke) {
+        spoke = true;
+        const seg = permissionSpeech(screenOk, accessOk);
+        if (seg) void voice.speak(seg, nameRef.current);
+      }
+    };
     void check();
     const iv = setInterval(check, 1500);
     return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.id]);
 
   const handleVoiceResult = useCallback(
@@ -194,32 +261,111 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     else void voice.startListening(handleVoiceResult);
   }, [voice, handleVoiceResult]);
 
-  // learn_talk practice: the user actually talks, then Kairo responds.
-  const practiceTalk = useCallback(() => {
-    if (voice.isListening) {
-      voice.stopListening();
-      return;
+  // Practice steps hide the onboarding window so the real overlay + companion cursor own
+  // the screen (and the screenshot is clean), then bring it back to advance.
+  const hideSelf = useCallback(async () => {
+    try {
+      await getCurrentWebviewWindow().hide();
+    } catch {
+      /* ignore */
     }
-    void voice.startListening(async (blob) => {
-      if (!blob) {
-        setTalkDone(true); // mic hiccup — don't hard-block onboarding
-        return;
-      }
-      setProcessing(true);
-      const t = await onboardingStt(blob);
-      setProcessing(false);
-      setPracticeText(t || 'heard you loud and clear');
-      setTalkDone(true);
-      void voice.speak([{ cacheKey: 'talk_done', text: () => RESPONSES.talk_done }], name);
-    });
-  }, [voice, name]);
+  }, []);
+  const showSelf = useCallback(async () => {
+    try {
+      const w = getCurrentWebviewWindow();
+      await w.show();
+      await w.setFocus();
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
-  // learn_point practice: Kairo points (a glowing dot); the user clicks it.
-  const completePoint = useCallback(() => {
-    if (pointDone) return;
-    setPointDone(true);
-    void voice.speak([{ cacheKey: 'point_done', text: () => RESPONSES.point_done }], name);
-  }, [pointDone, voice, name]);
+  // Run one practice turn on the recorded audio, then auto-advance. `talk` stays in-window
+  // (voice chat); `point`/`circle` drew on the real screen, so restore the window first.
+  const runDemoTurn = useCallback(
+    async (mode: DemoMode, audioBase64: string) => {
+      if (demoDoneRef.current) return; // one turn per step
+      setDemoLevel(0);
+      const cb = {
+        onThinking: () => setDemoState('thinking'),
+        onSpeaking: () => setDemoState('speaking'),
+      };
+      try {
+        if (mode === 'talk') await runTalkTurn(nativeBridge, audioBase64, nameRef.current, cb);
+        else if (mode === 'point') await runPointTurn(nativeBridge, audioBase64, cb);
+        else await runCircleTurn(nativeBridge, audioBase64, gestureBufferRef.current, cb);
+      } catch (error) {
+        klog('onboarding', 'error', 'demo turn failed', { mode, error: String(error) });
+      } finally {
+        setDemoState('idle');
+        demoDoneRef.current = true;
+        setDemoDone(true);
+        if (mode !== 'talk') {
+          await nativeBridge.hideOverlay();
+          await showSelf();
+        }
+        setTimeout(() => go(1), 1200);
+      }
+    },
+    [nativeBridge, go, showSelf],
+  );
+
+  // Wire the interactive practice steps: claim push-to-talk, listen for the ⌥⌃ hold +
+  // recorded audio (+ cursor points for the circle step), and run the turn on release.
+  useEffect(() => {
+    const mode = DEMO_MODES[step.id];
+    if (!mode) return;
+    let disposed = false;
+    const unlisteners: Array<() => void> = [];
+    setDemoState('idle');
+    setDemoDone(false);
+    setDemoLevel(0);
+    demoDoneRef.current = false;
+    gestureBufferRef.current = [];
+    recordingRef.current = false;
+    void invoke('set_onboarding_ptt', { active: true }).catch(() => {});
+
+    const push = (u: () => void) => (disposed ? u() : unlisteners.push(u));
+
+    // ⌥⌃ hold confirmed / released (recording-truth for onboarding).
+    void listen<{ active?: boolean }>('onboarding:ptt', (e) => {
+      const active = Boolean(e.payload?.active);
+      recordingRef.current = active;
+      if (active) {
+        setDemoState('listening');
+        gestureBufferRef.current = [];
+        if (mode !== 'talk') {
+          void hideSelf();
+          if (mode === 'circle') void nativeBridge.getDisplayBounds().then((b) => nativeBridge.showGestureOverlay(b));
+        }
+      }
+    }).then(push);
+
+    // Circle step: buffer the native cursor stream (physical px) during the hold.
+    if (mode === 'circle') {
+      void listen<{ x: number; y: number }>('cursor:mouse', (e) => {
+        if (!recordingRef.current) return;
+        gestureBufferRef.current.push({ x: e.payload.x, y: e.payload.y, t: performance.now() });
+      }).then(push);
+    }
+
+    // Mic level → orb (visible during the in-window talk step).
+    void listen<{ level?: number }>('cursor:level', (e) => {
+      if (recordingRef.current) setDemoLevel(Math.min(1, Number(e.payload?.level ?? 0)));
+    }).then(push);
+
+    // The recorded WAV on release → run the practice turn.
+    void listen<{ audioBase64: string; mimeType: string }>('ptt:audio', (e) => {
+      void runDemoTurn(mode, e.payload.audioBase64);
+    }).then(push);
+
+    return () => {
+      disposed = true;
+      void invoke('set_onboarding_ptt', { active: false }).catch(() => {});
+      unlisteners.forEach((u) => u());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.id]);
 
   const openGoogle = useCallback(() => {
     autoOpenedRef.current = true;
@@ -241,6 +387,33 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       setName(titleCase(typed));
       go(1);
     }
+  };
+
+  // Shared UI for the interactive practice steps: the ⌥⌃ key hint + a live status.
+  const renderDemo = (mode: DemoMode) => {
+    const action = mode === 'talk' ? 'hold & talk' : mode === 'point' ? 'hold & ask' : 'hold & circle';
+    const status =
+      demoState === 'listening'
+        ? 'listening…'
+        : demoState === 'thinking'
+          ? 'thinking…'
+          : demoState === 'speaking'
+            ? 'speaking…'
+            : demoDone
+              ? 'nice — you’ve got it!'
+              : 'ready when you are';
+    return (
+      <div className="ob-demo">
+        <div className="ob-demo-keys">
+          <kbd>⌥</kbd>
+          <span className="ob-demo-plus">+</span>
+          <kbd>⌃</kbd>
+          <span className="ob-demo-action">{action}</span>
+        </div>
+        {mode === 'talk' && <div className="ob-demo-hint">try: “hey Kairo, what’s up?”</div>}
+        <div className={`ob-demo-status is-${demoState}`}>{status}</div>
+      </div>
+    );
   };
 
   // The interactive content that sits directly under the title.
@@ -274,7 +447,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       case 'permissions':
         return (
           <div className="ob-perms">
-            {(['screenRecording', 'accessibility'] as const).map((k) => {
+            {/* Accessibility first — it doesn't force a relaunch. Screen Recording last,
+                since granting it makes macOS quit + reopen the app. */}
+            {(['accessibility', 'screenRecording'] as const).map((k) => {
               const ok = perms?.[k] === 'granted';
               return (
                 <div key={k} className={`ob-perm${ok ? ' is-ok' : ''}`}>
@@ -300,31 +475,11 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           </div>
         );
       case 'learn_talk':
-        return (
-          <div className="ob-field-col">
-            <button type="button" className={`ob-talk${voice.isListening ? ' is-live' : ''}`} onClick={practiceTalk} disabled={processing}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor" />
-                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-              {voice.isListening ? 'Listening… tap to stop' : processing ? 'Thinking…' : talkDone ? 'Say something else' : 'Tap & say anything'}
-            </button>
-            {practiceText && <div className="ob-practice">“{practiceText}”</div>}
-          </div>
-        );
+        return renderDemo('talk');
       case 'learn_point':
-        return pointDone ? (
-          <div className="ob-signed">
-            <span className="ob-check">✓</span> nice — you got it
-          </div>
-        ) : (
-          <div className="ob-point-zone">
-            <button type="button" className="ob-point-target" onClick={completePoint} aria-label="Click the glowing dot">
-              <span className="ob-point-ping" />
-              <span className="ob-point-core" />
-            </button>
-          </div>
-        );
+        return renderDemo('point');
+      case 'circle':
+        return renderDemo('circle');
       default:
         return null;
     }
@@ -371,15 +526,12 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           </button>
         );
       case 'learn_talk':
-        return (
-          <button type="button" className="ob-cta" disabled={!talkDone} onClick={() => go(1)}>
-            Continue
-          </button>
-        );
       case 'learn_point':
+      case 'circle':
+        // Always live so the user can move on even if they'd rather not try it now.
         return (
-          <button type="button" className="ob-cta" disabled={!pointDone} onClick={() => go(1)}>
-            Continue
+          <button type="button" className="ob-cta" onClick={() => go(1)}>
+            {demoDone ? 'Continue' : 'Skip'}
           </button>
         );
       case 'done':
@@ -407,7 +559,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           )}
         </header>
 
-        <KairoOrb mode={orbMode} level={voice.level} progress={progress} />
+        <KairoOrb mode={orbMode} level={orbLevel} progress={progress} />
 
         <div className="ob-stage" key={step.id}>
           <h1 className="ob-title">{step.title(name)}</h1>
