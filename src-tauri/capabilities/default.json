@@ -4,9 +4,6 @@
   "description": "Default Kairo Tutor desktop window capability",
   "windows": ["main", "overlay", "notch", "cursor", "onboarding"],
   "permissions": [
-    "core:default",
-    "global-shortcut:allow-is-registered",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "core:default"
   ]
 }
