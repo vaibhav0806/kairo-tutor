@@ -111,6 +111,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const gestureBufferRef = useRef<TimedPoint[]>([]);
   const recordingRef = useRef(false);
   const demoDoneRef = useRef(false);
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const demoMode = DEMO_MODES[step.id];
 
   const orbMode: OrbMode = demoMode
@@ -304,7 +305,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           await nativeBridge.hideOverlay();
           await showSelf();
         }
-        setTimeout(() => go(1), 1200);
+        // Auto-advance, but let a manual Skip (which unmounts the step + clears this
+        // timer in the effect cleanup) win so we never double-advance and skip a step.
+        if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+        advanceTimerRef.current = setTimeout(() => go(1), 1200);
       }
     },
     [nativeBridge, go, showSelf],
@@ -361,6 +365,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
 
     return () => {
       disposed = true;
+      if (advanceTimerRef.current) {
+        clearTimeout(advanceTimerRef.current);
+        advanceTimerRef.current = null;
+      }
       void invoke('set_onboarding_ptt', { active: false }).catch(() => {});
       unlisteners.forEach((u) => u());
     };
