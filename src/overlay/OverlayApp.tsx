@@ -33,8 +33,8 @@ function displayPointFromPointerEvent(event: PointerEvent<HTMLElement>): Annotat
   const bounds = event.currentTarget.getBoundingClientRect();
 
   return {
-    x: ((event.clientX - bounds.left) / bounds.width) * bounds.width,
-    y: ((event.clientY - bounds.top) / bounds.height) * bounds.height
+    x: event.clientX - bounds.left,
+    y: event.clientY - bounds.top
   };
 }
 

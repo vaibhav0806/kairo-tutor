@@ -9,8 +9,10 @@ import {
 // color.rs emits a 6-digit hex accent (#rrggbb) engineered to pop against the pixels
 // behind the target. Convert it to the "r g b" triplet the overlay CSS expects
 // (rgb(var(--box-rgb) / a)); null when absent/malformed → the CSS purple fallback wins.
+const HEX6_PATTERN = /^#?([0-9a-f]{6})$/i;
+
 function hexToRgbTriplet(hex: string): string | null {
-  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  const match = HEX6_PATTERN.exec(hex.trim());
   if (!match) {
     return null;
   }
