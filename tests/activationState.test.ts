@@ -1,20 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
   activationStateToNotchPayload,
-  captureFailureToNotchPayload,
-  tutorResponseToNotchPayload,
-  reduceActivationState
+  tutorResponseToNotchPayload
 } from '../src/activation/activationState';
 
 describe('activation state', () => {
-  test('moves through shortcut capture and tutor response states', () => {
-    expect(reduceActivationState('idle', { type: 'shortcut_pressed' })).toBe('listening');
-    expect(reduceActivationState('listening', { type: 'capture_complete' })).toBe('captured');
-    expect(reduceActivationState('captured', { type: 'thinking_started' })).toBe('thinking');
-    expect(reduceActivationState('thinking', { type: 'response_ready' })).toBe('showing_step');
-    expect(reduceActivationState('showing_step', { type: 'dismissed' })).toBe('idle');
-  });
-
   test('maps activation states to notch copy', () => {
     expect(activationStateToNotchPayload('listening')).toMatchObject({
       state: 'listening',
@@ -30,15 +20,6 @@ describe('activation state', () => {
       state: 'thinking',
       layout: 'compact',
       title: 'Kairo is thinking'
-    });
-  });
-
-  test('builds a prompt-visible capture failure payload', () => {
-    expect(captureFailureToNotchPayload('Screen tutoring is paused.')).toEqual({
-      state: 'captured',
-      layout: 'prompt',
-      title: 'Capture unavailable',
-      detail: 'Screen tutoring is paused.'
     });
   });
 

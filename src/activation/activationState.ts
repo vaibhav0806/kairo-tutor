@@ -3,41 +3,6 @@ import type { TutorResponse } from '../core/types';
 
 export type ActivationState = NotchState;
 
-export type ActivationEvent =
-  | { type: 'shortcut_pressed' }
-  | { type: 'capture_complete' }
-  | { type: 'capture_failed' }
-  | { type: 'thinking_started' }
-  | { type: 'response_ready' }
-  | { type: 'dismissed' };
-
-export function reduceActivationState(
-  state: ActivationState,
-  event: ActivationEvent
-): ActivationState {
-  if (event.type === 'shortcut_pressed') {
-    return 'listening';
-  }
-
-  if (event.type === 'capture_complete' && state === 'listening') {
-    return 'captured';
-  }
-
-  if (event.type === 'thinking_started') {
-    return 'thinking';
-  }
-
-  if (event.type === 'response_ready' && state === 'thinking') {
-    return 'showing_step';
-  }
-
-  if (event.type === 'dismissed' || event.type === 'capture_failed') {
-    return 'idle';
-  }
-
-  return state;
-}
-
 export function activationStateToNotchPayload(state: ActivationState): NotchPayload {
   const payloads: Record<ActivationState, NotchPayload> = {
     idle: {
@@ -73,15 +38,6 @@ export function activationStateToNotchPayload(state: ActivationState): NotchPayl
   };
 
   return payloads[state];
-}
-
-export function captureFailureToNotchPayload(reason?: string): NotchPayload {
-  return {
-    state: 'captured',
-    layout: 'prompt',
-    title: 'Capture unavailable',
-    detail: reason?.trim() || 'Screen capture failed. You can still ask with text or retry voice.'
-  };
 }
 
 function visibleResponseText(text: string) {

@@ -1,58 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
-import { listen } from '@tauri-apps/api/event';
-import {
-  type AnnotationPoint,
-  type AnnotationTool,
-  type DragAnnotationTool,
-  createAnnotationFromPoints,
-  createAnnotationFromDrag,
-  eraseAnnotationAtPoint,
-  normalizeDragToRegion
-} from './annotations/annotationTools';
-import {
-  type ActivationState,
-  activationStateToNotchPayload,
-  reduceActivationState,
-  tutorResponseToNotchPayload
-} from './activation/activationState';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadBrowserEnv } from './config/env';
-import { createMockTutorPlanner } from './core/mockTutor';
-import { createTutorOrchestrator } from './core/orchestrator';
-import { createRuntimeTutorPlanner } from './core/runtimePlanner';
-import { createTutorRuntimeErrorResponse } from './core/tutorErrors';
-import type { ScreenDimensions, TutorResponse, UserAnnotation } from './core/types';
 import {
   createNativeBridge,
-  type NativeActiveApp,
   type NativePermissionState,
-  type NativePermissionStatus,
-  type NativeScreenCapture
+  type NativePermissionStatus
 } from './native/nativeBridge';
-import { normalizeRegionToPercent } from './overlay/coordinates';
-import { VisualOverlay } from './overlay/VisualOverlay';
-import { releaseVisualTargets, routeVisualTargets } from './overlay/targetRouting';
-import type { NotchAskPayload } from './notch/prompt';
-import {
-  normalizeAnnotationStartPayload,
-  type NotchAnnotationStartPayload
-} from './notch/annotationActions';
-import { resolveScreenPreview } from './screenPreview';
 
-const demoContext = {
-  activeApp: 'Blender',
-  bundleId: 'org.blenderfoundation.blender',
-  windowTitle: 'Blender',
-  source: 'web-fallback' as const
-};
+// The main window is normally hidden. Rust only reveals it on first run when TCC
+// permissions still need granting (see lib.rs setup). So this component is purely
+// the permission-recovery screen — the live tutor UI lives in the notch WebView.
 
-const mockPreviewDimensions: ScreenDimensions = {
-  width: 1920,
-  height: 1080
-};
-
-const annotationTools: AnnotationTool[] = ['rectangle', 'circle', 'highlight', 'underline', 'pen', 'erase'];
-
-function isPermissionGranted(status: NativePermissionStatus, permission: keyof NativePermissionStatus) {
+function isPermissionGranted(
+  status: NativePermissionStatus,
+  permission: keyof NativePermissionStatus
+) {
   return status[permission] === 'granted';
 }
 
@@ -72,86 +33,9 @@ function permissionStateLabel(state: NativePermissionState) {
   return 'Checking';
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function AnnotationShape({
-  annotation,
-  dimensions
-}: {
-  annotation: UserAnnotation;
-  dimensions: ScreenDimensions;
-}) {
-  const region = normalizeRegionToPercent(annotation.screenRegion, dimensions);
-  const style = {
-    left: `${region.left}%`,
-    top: `${region.top}%`,
-    width: `${region.width}%`,
-    height: `${region.height}%`
-  };
-
-  if (annotation.type === 'pen' && annotation.points) {
-    const width = Math.max(annotation.screenRegion.width, 1);
-    const height = Math.max(annotation.screenRegion.height, 1);
-    const points = annotation.points
-      .map((point) => `${point.x - annotation.screenRegion.x},${point.y - annotation.screenRegion.y}`)
-      .join(' ');
-
-    return (
-      <svg
-        aria-label="pen annotation"
-        className="annotation-shape pen"
-        style={style}
-        viewBox={`0 0 ${width} ${height}`}
-      >
-        <polyline points={points} />
-      </svg>
-    );
-  }
-
-  return (
-    <div
-      aria-label={`${annotation.type} annotation`}
-      className={`annotation-shape ${annotation.type}`}
-      style={style}
-    />
-  );
-}
-
-function AnnotationLayer({
-  annotations,
-  draftAnnotation,
-  dimensions
-}: {
-  annotations: UserAnnotation[];
-  draftAnnotation: UserAnnotation | null;
-  dimensions: ScreenDimensions;
-}) {
-  return (
-    <div className="annotation-layer" aria-label="User annotations">
-      {[...annotations, ...(draftAnnotation ? [draftAnnotation] : [])].map((annotation) => (
-        <AnnotationShape key={annotation.id} annotation={annotation} dimensions={dimensions} />
-      ))}
-    </div>
-  );
-}
-
 export function App() {
   const env = loadBrowserEnv();
   const nativeBridge = useMemo(() => createNativeBridge(), []);
-  const planner = useMemo(() => createMockTutorPlanner(), []);
-  const orchestrator = useMemo(
-    () =>
-      createTutorOrchestrator({
-        planner: createRuntimeTutorPlanner({
-          aiProvider: env.aiProvider,
-          nativeBridge,
-          mockPlanner: planner
-        })
-      }),
-    [env.aiProvider, nativeBridge, planner]
-  );
   const requiredPermissions = useMemo(
     () =>
       [
@@ -177,210 +61,18 @@ export function App() {
       ],
     [env.sttProvider]
   );
-  const [query, setQuery] = useState('Help me make my first animation');
-  const [activeApp, setActiveApp] = useState<NativeActiveApp>(demoContext);
   const [permissions, setPermissions] = useState<NativePermissionStatus>({
     screenRecording: 'unknown',
     accessibility: 'unknown',
     microphone: 'unknown'
   });
-  const [screenCapture, setScreenCapture] = useState<NativeScreenCapture | null>(null);
-  const [isOverlayActive, setIsOverlayActive] = useState(false);
-  const [activationState, setActivationState] = useState<ActivationState>('idle');
-  const [overlayActivationCount, setOverlayActivationCount] = useState(0);
-  const [annotationTool, setAnnotationTool] = useState<AnnotationTool>('rectangle');
-  const [annotations, setAnnotations] = useState<UserAnnotation[]>([]);
-  const [draftDrag, setDraftDrag] = useState<{
-    type: DragAnnotationTool;
-    start: AnnotationPoint;
-    end: AnnotationPoint;
-  } | null>(null);
-  const [draftPenPoints, setDraftPenPoints] = useState<AnnotationPoint[] | null>(null);
   const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
-  const annotationSequence = useRef(0);
-  const [response, setResponse] = useState<TutorResponse>(() =>
-    planner.createIdleResponse(env.defaultSkill)
-  );
-  const previewSource = resolveScreenPreview(screenCapture, mockPreviewDimensions);
-
-  const showActivationState = useCallback(
-    (nextState: ActivationState) => {
-      setActivationState(nextState);
-      void nativeBridge.showNotch(activationStateToNotchPayload(nextState));
-    },
-    [nativeBridge]
-  );
-
-  const askTutor = useCallback(async (nextQuery = query) => {
-    const nextThinkingState = reduceActivationState(activationState, { type: 'thinking_started' });
-    showActivationState(nextThinkingState);
-    let notchResponsePayload: ReturnType<typeof tutorResponseToNotchPayload> | null = null;
-    try {
-      const nextResponse = await orchestrator.runTextTurn({
-        request: {
-          ...activeApp,
-          userQuery: nextQuery,
-          annotations
-        },
-        screenCapture,
-        skillSlug: env.defaultSkill
-      });
-      setResponse(nextResponse);
-      notchResponsePayload = tutorResponseToNotchPayload(nextResponse);
-
-      const hasVisualTargets = nextResponse.visualTargets.length > 0;
-      setIsOverlayActive(hasVisualTargets);
-      if (hasVisualTargets) {
-        setOverlayActivationCount((count) => count + 1);
-      } else {
-        void nativeBridge.hideOverlay();
-      }
-    } catch (error) {
-      const errorResponse = createTutorRuntimeErrorResponse({
-        skillSlug: env.defaultSkill,
-        error
-      });
-      setResponse(errorResponse);
-      notchResponsePayload = tutorResponseToNotchPayload(errorResponse);
-      setIsOverlayActive(false);
-      void nativeBridge.hideOverlay();
-    } finally {
-      const nextState = reduceActivationState(nextThinkingState, { type: 'response_ready' });
-      setActivationState(nextState);
-      void nativeBridge.showNotch(notchResponsePayload ?? activationStateToNotchPayload(nextState));
-    }
-  }, [
-    activationState,
-    activeApp,
-    annotations,
-    env.defaultSkill,
-    nativeBridge,
-    orchestrator,
-    query,
-    screenCapture,
-    showActivationState
-  ]);
-
-  function pointFromPointerEvent(event: PointerEvent<HTMLElement>): AnnotationPoint {
-    const bounds = event.currentTarget.getBoundingClientRect();
-
-    return {
-      x: clamp(
-        ((event.clientX - bounds.left) / bounds.width) * previewSource.dimensions.width,
-        0,
-        previewSource.dimensions.width
-      ),
-      y: clamp(
-        ((event.clientY - bounds.top) / bounds.height) * previewSource.dimensions.height,
-        0,
-        previewSource.dimensions.height
-      )
-    };
-  }
-
-  function handleAnnotationPointerDown(event: PointerEvent<HTMLElement>) {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const point = pointFromPointerEvent(event);
-    if (annotationTool === 'erase') {
-      setAnnotations((currentAnnotations) => eraseAnnotationAtPoint(currentAnnotations, point));
-      return;
-    }
-
-    event.currentTarget.setPointerCapture(event.pointerId);
-    if (annotationTool === 'pen') {
-      setDraftPenPoints([point]);
-      return;
-    }
-
-    setDraftDrag({
-      type: annotationTool,
-      start: point,
-      end: point
-    });
-  }
-
-  function handleAnnotationPointerMove(event: PointerEvent<HTMLElement>) {
-    if (draftPenPoints) {
-      setDraftPenPoints([...draftPenPoints, pointFromPointerEvent(event)]);
-      return;
-    }
-
-    if (!draftDrag) {
-      return;
-    }
-
-    setDraftDrag({
-      ...draftDrag,
-      end: pointFromPointerEvent(event)
-    });
-  }
-
-  function handleAnnotationPointerUp(event: PointerEvent<HTMLElement>) {
-    if (draftPenPoints) {
-      const points = [...draftPenPoints, pointFromPointerEvent(event)];
-      const annotation = createAnnotationFromPoints({
-        id: `annotation-${annotationSequence.current + 1}`,
-        points
-      });
-      setDraftPenPoints(null);
-
-      if (
-        points.length < 2 ||
-        Math.max(annotation.screenRegion.width, annotation.screenRegion.height) < 4
-      ) {
-        return;
-      }
-
-      annotationSequence.current += 1;
-      setAnnotations((currentAnnotations) => [...currentAnnotations, annotation]);
-      return;
-    }
-
-    if (!draftDrag) {
-      return;
-    }
-
-    const end = pointFromPointerEvent(event);
-    const screenRegion = normalizeDragToRegion(draftDrag.start, end);
-    setDraftDrag(null);
-
-    if (screenRegion.width < 4 || screenRegion.height < 4) {
-      return;
-    }
-
-    annotationSequence.current += 1;
-    setAnnotations((currentAnnotations) => [
-      ...currentAnnotations,
-      createAnnotationFromDrag({
-        id: `annotation-${annotationSequence.current}`,
-        type: draftDrag.type,
-        start: draftDrag.start,
-        end
-      })
-    ]);
-  }
-
-  const refreshNativeContext = useCallback(async () => {
-    const [nextActiveApp, nextPermissions] = await Promise.all([
-      nativeBridge.getActiveApp(),
-      nativeBridge.getPermissionStatus()
-    ]);
-    setActiveApp(nextActiveApp);
-    setPermissions(nextPermissions);
-  }, [nativeBridge]);
 
   const refreshPermissionStatus = useCallback(async () => {
     setPermissions(await nativeBridge.getPermissionStatus());
   }, [nativeBridge]);
 
-  async function captureNativeScreen() {
-    setScreenCapture(await nativeBridge.captureScreen());
-  }
-
-  async function requestRequiredPermissions() {
+  const requestRequiredPermissions = useCallback(async () => {
     setIsRequestingPermissions(true);
     try {
       const nextPermissions = await nativeBridge.requestRequiredPermissions();
@@ -389,76 +81,14 @@ export function App() {
       if (env.sttProvider === 'sarvam' && nextPermissions.microphone !== 'granted') {
         await nativeBridge.openPermissionSettings('microphone');
       }
-
-      await refreshNativeContext();
     } finally {
       setIsRequestingPermissions(false);
     }
-  }
+  }, [env.sttProvider, nativeBridge]);
 
   useEffect(() => {
-    void refreshNativeContext();
-  }, [refreshNativeContext]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const unlisteners: Array<() => void> = [];
-
-    void Promise.all([
-      listen<NotchAskPayload>('notch:ask', (event) => {
-        if (!isMounted) {
-          return;
-        }
-
-        setQuery(event.payload.query);
-        void askTutor(event.payload.query);
-      }),
-      listen<Partial<NotchAnnotationStartPayload>>('annotation:start', (event) => {
-        if (!isMounted || !screenCapture?.displayBounds) {
-          return;
-        }
-
-        const annotationPayload = normalizeAnnotationStartPayload(event.payload);
-        const { displayBounds } = screenCapture;
-        void (async () => {
-          await nativeBridge.showAnnotationOverlay(displayBounds, annotationPayload.tool);
-          await nativeBridge.showNotch(activationStateToNotchPayload('captured'));
-        })();
-      }),
-      listen<UserAnnotation>('annotation:add', (event) => {
-        if (!isMounted) {
-          return;
-        }
-
-        setAnnotations((currentAnnotations) => [...currentAnnotations, event.payload]);
-      }),
-      listen<UserAnnotation[]>('annotation:sync', (event) => {
-        if (!isMounted) {
-          return;
-        }
-
-        setAnnotations(event.payload);
-      }),
-      listen('annotation:done', () => {
-        if (!isMounted) {
-          return;
-        }
-
-        void showActivationState('captured');
-      })
-    ])
-      .then((nextUnlisteners) => {
-        unlisteners.push(...nextUnlisteners);
-      })
-      .catch(() => {
-        // Browser preview runs without the native event bus.
-      });
-
-    return () => {
-      isMounted = false;
-      unlisteners.forEach((unlisten) => unlisten());
-    };
-  }, [askTutor, nativeBridge, screenCapture?.displayBounds, showActivationState]);
+    void refreshPermissionStatus();
+  }, [refreshPermissionStatus]);
 
   const missingPermissions = requiredPermissions.filter(
     (permission) => !isPermissionGranted(permissions, permission.key)
@@ -489,55 +119,12 @@ export function App() {
     };
   }, [missingPermissions.length, refreshPermissionStatus]);
 
-  useEffect(() => {
-    if (!isOverlayActive || response.visualTargets.length === 0) {
-      void releaseVisualTargets(nativeBridge);
-      return undefined;
-    }
-
-    void routeVisualTargets(
-      nativeBridge,
-      response.visualTargets,
-      screenCapture?.displayBounds ?? {
-        x: 0,
-        y: 0,
-        width: mockPreviewDimensions.width,
-        height: mockPreviewDimensions.height,
-        scaleFactor: 1
-      }
-    );
-
-    return () => {
-      void releaseVisualTargets(nativeBridge);
-    };
-  }, [
-    isOverlayActive,
-    nativeBridge,
-    overlayActivationCount,
-    response.visualTargets,
-    screenCapture?.displayBounds
-  ]);
-
-  const draftAnnotation = draftDrag
-    ? createAnnotationFromDrag({
-        id: 'draft-annotation',
-        type: draftDrag.type,
-        start: draftDrag.start,
-        end: draftDrag.end
-      })
-    : draftPenPoints
-      ? createAnnotationFromPoints({
-          id: 'draft-annotation',
-          points: draftPenPoints
-        })
-    : null;
-
   return (
     <main className="app-shell">
       <section className="topbar" aria-label="Tutor status">
         <div>
           <p className="eyebrow">Kairo Tutor</p>
-          <h1>Screen-native AI tutor shell</h1>
+          <h1>Enable Kairo permissions</h1>
         </div>
         <div className="status-pill">Provider: {env.aiProvider}</div>
       </section>
@@ -570,7 +157,7 @@ export function App() {
           <button
             className="primary-button"
             type="button"
-            onClick={requestRequiredPermissions}
+            onClick={() => void requestRequiredPermissions()}
             disabled={isRequestingPermissions}
           >
             {isRequestingPermissions ? 'Checking...' : 'Enable permissions'}
@@ -587,134 +174,18 @@ export function App() {
             Restart Kairo
           </button>
         </section>
-      ) : null}
-
-      <section className="workspace">
-        <aside className="panel">
-          <h2>Activation</h2>
-          <p>State: {activationState}</p>
-          <p>Shortcuts: ⌥⌃ hold to talk / tap to type · ⌥⇧P pen</p>
-          <p>Default skill: {env.defaultSkill}</p>
-          <p>Voice: {env.sttProvider === 'sarvam' || env.ttsProvider === 'sarvam' ? 'Sarvam' : 'Mock'}</p>
-          <p>Active app: {activeApp.activeApp}</p>
-          <p>Window: {activeApp.windowTitle ?? 'unknown'}</p>
-          <p>Source: {activeApp.source}</p>
-          <button className="secondary-button" type="button" onClick={refreshNativeContext}>
-            Refresh Native Context
-          </button>
-          <button className="secondary-button" type="button" onClick={captureNativeScreen}>
-            Capture Screen
-          </button>
-          <div className="permission-grid">
-            <span>Screen</span>
-            <strong>{permissionStateLabel(permissions.screenRecording)}</strong>
-            <span>Accessibility</span>
-            <strong>{permissionStateLabel(permissions.accessibility)}</strong>
-            <span>Mic</span>
-            <strong>{permissionStateLabel(permissions.microphone)}</strong>
+      ) : (
+        <section className="permission-onboarding" aria-label="Setup complete">
+          <div>
+            <p className="eyebrow">Setup complete</p>
+            <h2>Kairo is ready</h2>
           </div>
-          {screenCapture ? (
-            <div className="capture-status">
-              <strong>{screenCapture.captured ? 'Capture ready' : 'Capture unavailable'}</strong>
-              <span>
-                {screenCapture.captured
-                  ? `${screenCapture.imageMimeType ?? 'image'} · ${screenCapture.byteLength ?? 0} bytes`
-                  : screenCapture.reason}
-              </span>
-              {screenCapture.blockedSensitiveApp ? <span>Sensitive app block is active.</span> : null}
-              {screenCapture.displayBounds ? (
-                <span>
-                  Display: {Math.round(screenCapture.displayBounds.width)}x
-                  {Math.round(screenCapture.displayBounds.height)} @ {screenCapture.displayBounds.scaleFactor.toFixed(2)}x
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-        </aside>
-
-        <section className="tutor-surface">
-          <div className="screen-preview" aria-label="Screen preview">
-            <div className="toolbar">{previewSource.title}</div>
-            <div
-              className="screen-preview-stage"
-              style={{
-                aspectRatio: `${previewSource.dimensions.width} / ${previewSource.dimensions.height}`
-              }}
-            >
-              <div
-                className={`annotation-canvas ${annotationTool === 'erase' ? 'erasing' : 'drawing'}`}
-                onPointerDown={handleAnnotationPointerDown}
-                onPointerMove={handleAnnotationPointerMove}
-                onPointerUp={handleAnnotationPointerUp}
-                onPointerCancel={() => {
-                  setDraftDrag(null);
-                  setDraftPenPoints(null);
-                }}
-                role="presentation"
-              >
-                {previewSource.imageSrc ? (
-                  <img
-                    alt=""
-                    className="screen-capture-image"
-                    draggable={false}
-                    src={previewSource.imageSrc}
-                  />
-                ) : previewSource.mode === 'mock' ? (
-                  <div className="screen-empty">
-                    <strong>Waiting for screen capture</strong>
-                    <span>Press the shortcut to capture the current app.</span>
-                  </div>
-                ) : null}
-                <AnnotationLayer
-                  annotations={annotations}
-                  draftAnnotation={draftAnnotation}
-                  dimensions={previewSource.dimensions}
-                />
-              </div>
-              <VisualOverlay targets={response.visualTargets} dimensions={previewSource.dimensions} />
-            </div>
-            <div className="timeline">Timeline: frame 1 - 250</div>
-          </div>
-
-          <div className="annotation-toolbar" aria-label="Annotation tools">
-            {annotationTools.map((tool) => (
-              <button
-                aria-pressed={annotationTool === tool}
-                className={annotationTool === tool ? 'selected' : undefined}
-                key={tool}
-                type="button"
-                onClick={() => setAnnotationTool(tool)}
-              >
-                {tool}
-              </button>
-            ))}
-            <button type="button" onClick={() => setAnnotations([])}>
-              clear
-            </button>
-            <span>{annotations.length} annotation{annotations.length === 1 ? '' : 's'}</span>
-          </div>
-
-          <div className="ask-row">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} />
-            <button type="button" onClick={() => void askTutor()}>
-              Ask
-            </button>
-          </div>
-
-          <article className="response">
-            <p className="eyebrow">{response.mode}</p>
-            <h2>{response.screenText}</h2>
-            <p>{response.voiceText}</p>
-            <ul>
-              {response.visualTargets.map((target) => (
-                <li key={`${target.kind}-${target.targetId}`}>
-                  {target.kind}: {target.label} ({Math.round(target.confidence * 100)}%)
-                </li>
-              ))}
-            </ul>
-          </article>
+          <p className="permission-hint">
+            All permissions are granted. Press ⌥⌃ to talk or tap to type — the tutor lives in
+            the notch.
+          </p>
         </section>
-      </section>
+      )}
     </main>
   );
 }
