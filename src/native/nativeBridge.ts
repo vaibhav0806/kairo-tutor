@@ -1,25 +1,11 @@
 import { invoke as tauriInvoke, Channel } from '@tauri-apps/api/core';
 import { emit as tauriEmit } from '@tauri-apps/api/event';
-import { register as registerGlobalShortcut } from '@tauri-apps/plugin-global-shortcut';
-import { klog } from '../core/logger';
 import type { ScreenRegion, UserAnnotation, VisualTarget } from '../core/types';
 import type { TutorTurnInput } from '../core/orchestrator';
 import type { NotchAnnotationTool } from '../notch/annotationActions';
 import type { NotchPayload } from '../notch/types';
 
 export type NativeInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
-export type NativeShortcutEvent = {
-  state: string;
-  shortcut: string;
-};
-export type NativeShortcutRegistrar = (
-  shortcut: string,
-  handler: (event: NativeShortcutEvent) => void | Promise<void>
-) => Promise<void>;
-export type NativeWindowController = {
-  show(): Promise<void>;
-  setFocus(): Promise<void>;
-};
 
 export type NativeSource = 'native' | 'web-fallback';
 
@@ -147,7 +133,6 @@ export type NativeBridge = {
   requestRequiredPermissions(): Promise<NativePermissionStatus>;
   openPermissionSettings(permission: NativePermissionKey): Promise<void>;
   restartApp(): Promise<void>;
-  debugLog(message: string): Promise<void>;
   captureScreen(): Promise<NativeScreenCapture>;
   getDisplayBounds(): Promise<NativeOverlayDisplayBounds>;
   showOverlay(payload: NativeOverlayPayload): Promise<void>;
@@ -198,24 +183,10 @@ export type NativeBridge = {
     input: NativeSynthesizeSpeechInput,
     onChunk: Channel<NativeTtsStreamMsg>
   ): Promise<void>;
-  registerActivationShortcut(onActivated: () => void | Promise<void>): Promise<NativeShortcutRegistration>;
   // Debug-only: persist the exact composited JPEG (base64, no data: prefix) sent to
   // fable and return its path. Gated by gestureConfig.debugImages; null on failure.
   saveGestureDebugImage(base64: string): Promise<string | null>;
 };
-
-export type NativeShortcutRegistration = {
-  registered: boolean;
-  shortcut: string;
-  reason?: string;
-};
-
-export type NativeBridgeDependencies = {
-  registerShortcut?: NativeShortcutRegistrar;
-  windowController?: NativeWindowController;
-};
-
-export const KAIRO_DEFAULT_ACTIVATION_SHORTCUT = 'CommandOrControl+Shift+Space';
 
 function fallbackActiveApp(): NativeActiveApp {
   return {
@@ -287,20 +258,8 @@ async function requestBrowserMicrophonePermission(): Promise<NativePermissionSta
   }
 }
 
-function fallbackShortcutRegistration(reason: string): NativeShortcutRegistration {
-  return {
-    registered: false,
-    shortcut: KAIRO_DEFAULT_ACTIVATION_SHORTCUT,
-    reason
-  };
-}
-
-export function createNativeBridge(
-  invokeCommand?: NativeInvoke,
-  dependencies: NativeBridgeDependencies = {}
-): NativeBridge {
+export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
   const invoke = invokeCommand ?? tauriInvoke;
-  const registerShortcut = dependencies.registerShortcut ?? registerGlobalShortcut;
 
   return {
     async getActiveApp() {
@@ -381,12 +340,6 @@ export function createNativeBridge(
       } catch {
         // Browser previews cannot restart the native app.
       }
-    },
-
-    async debugLog(message) {
-      // Route through the unified batched logger so bridge diagnostics land in the
-      // same Kairo log file as everything else.
-      klog('bridge', 'info', message);
     },
 
     async showOverlay(payload) {
@@ -597,27 +550,6 @@ export function createNativeBridge(
 
     async synthesizeSpeechStream(input, onChunk) {
       await invoke<void>('synthesize_speech_stream', { input, onChunk });
-    },
-
-    async registerActivationShortcut(onActivated) {
-      try {
-        await registerShortcut(KAIRO_DEFAULT_ACTIVATION_SHORTCUT, async (event) => {
-          if (event.state !== 'Pressed') {
-            return;
-          }
-
-          await onActivated();
-        });
-
-        return {
-          registered: true,
-          shortcut: KAIRO_DEFAULT_ACTIVATION_SHORTCUT
-        };
-      } catch (error) {
-        return fallbackShortcutRegistration(
-          error instanceof Error ? error.message : 'Global shortcut registration failed.'
-        );
-      }
     },
 
     async saveGestureDebugImage(base64) {

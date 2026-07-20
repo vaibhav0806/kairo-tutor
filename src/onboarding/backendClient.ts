@@ -1,4 +1,3 @@
-import type { MeResponse } from '@kairo/shared';
 import { KAIRO_BACKEND_URL } from './config';
 
 /** Speak a scripted onboarding line. Returns base64 WAV audio, or null if unavailable. */
@@ -74,15 +73,5 @@ export async function saveOnboarding(jwt: string, displayName: string, source: s
     return res.ok;
   } catch {
     return false;
-  }
-}
-
-export async function fetchMe(jwt: string): Promise<MeResponse | null> {
-  try {
-    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/me`, { headers: { authorization: `Bearer ${jwt}` } });
-    if (!res.ok) return null;
-    return (await res.json()) as MeResponse;
-  } catch {
-    return null;
   }
 }

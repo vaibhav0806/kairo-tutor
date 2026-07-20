@@ -17,9 +17,6 @@ export const DRAW_APPROACH_MS = 200;
 // this value is only the DRAW portion; the glow + dimming ignite in the tail *after*
 // the outline lands (see styles.css @keyframes kairo-box-draw, clip completes at 72%).
 export const DRAW_DURATION_MS = 650;
-// Multi-step: the same box slides to the next target over this window.
-export const GLIDE_MS = 480;
-
 // Cubic-bezier control points. MUST equal the cubic-bezier() literals in
 // styles.css for the cursor tip to track the box's growing corner.
 export const DRAW_EASE = [0.22, 1, 0.36, 1] as const; // draw diagonal (ease-out, smooth settle)

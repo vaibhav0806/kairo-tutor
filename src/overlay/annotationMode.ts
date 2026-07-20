@@ -1,8 +1,6 @@
 import {
-  createAnnotationFromDrag,
   createAnnotationFromPoints,
-  type AnnotationPoint,
-  type DragAnnotationTool
+  type AnnotationPoint
 } from '../annotations/annotationTools';
 import type { UserAnnotation } from '../core/types';
 import type { DisplayBounds } from './coordinates';
@@ -14,27 +12,6 @@ export function toScreenPoint(point: AnnotationPoint, displayBounds: DisplayBoun
     x: (displayBounds.x + point.x) * scaleFactor,
     y: (displayBounds.y + point.y) * scaleFactor
   };
-}
-
-export function createAnnotationFromDisplayDrag({
-  id,
-  type,
-  displayBounds,
-  start,
-  end
-}: {
-  id: string;
-  type: DragAnnotationTool;
-  displayBounds: DisplayBounds;
-  start: AnnotationPoint;
-  end: AnnotationPoint;
-}): UserAnnotation {
-  return createAnnotationFromDrag({
-    id,
-    type,
-    start: toScreenPoint(start, displayBounds),
-    end: toScreenPoint(end, displayBounds)
-  });
 }
 
 export function createPenAnnotationFromDisplayPoints({

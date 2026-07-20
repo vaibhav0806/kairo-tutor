@@ -2,9 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import {
   createAnnotationOverlayBounds,
   createNativeBridge,
-  type NativeInvoke,
-  type NativeShortcutRegistrar,
-  type NativeWindowController
+  type NativeInvoke
 } from '../src/native/nativeBridge';
 
 describe('createNativeBridge', () => {
@@ -382,41 +380,5 @@ describe('createNativeBridge', () => {
     const bridge = createNativeBridge(invoke);
 
     await expect(bridge.runTutorTurn(input)).rejects.toThrow('OPENROUTER_API_KEY');
-  });
-
-  test('registers activation shortcut without foregrounding the desktop debug window', async () => {
-    let shortcutHandler: ((event: { state: string; shortcut: string }) => void) | undefined;
-    const callOrder: string[] = [];
-    const registerShortcut = vi.fn(async (_shortcut: string, handler) => {
-      shortcutHandler = handler;
-    }) as NativeShortcutRegistrar;
-    const windowController: NativeWindowController = {
-      show: vi.fn(async () => {
-        callOrder.push('show');
-      }),
-      setFocus: vi.fn(async () => {
-        callOrder.push('focus');
-      })
-    };
-    const onActivated = vi.fn(async () => {
-      callOrder.push('activate');
-    });
-    const bridge = createNativeBridge(undefined, {
-      registerShortcut,
-      windowController
-    });
-
-    const registration = await bridge.registerActivationShortcut(onActivated);
-    await shortcutHandler?.({ state: 'Pressed', shortcut: 'CommandOrControl+Shift+Space' });
-
-    expect(registration.registered).toBe(true);
-    expect(registerShortcut).toHaveBeenCalledWith(
-      'CommandOrControl+Shift+Space',
-      expect.any(Function)
-    );
-    expect(windowController.show).not.toHaveBeenCalled();
-    expect(windowController.setFocus).not.toHaveBeenCalled();
-    expect(onActivated).toHaveBeenCalled();
-    expect(callOrder).toEqual(['activate']);
   });
 });

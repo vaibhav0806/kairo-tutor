@@ -33,15 +33,6 @@ export async function getBackendJwt(): Promise<string | null> {
   }
 }
 
-export async function signOut(): Promise<void> {
-  if (!hasNativeBridge) return;
-  try {
-    await invoke('sign_out');
-  } catch {
-    /* ignore */
-  }
-}
-
 /** Subscribe to `auth:changed` (Rust emits it after the deep-link exchange). Returns unlisten. */
 export async function onAuthChanged(cb: (signedIn: boolean) => void): Promise<() => void> {
   if (!hasNativeBridge) return () => {};
