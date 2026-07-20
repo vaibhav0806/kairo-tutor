@@ -143,3 +143,12 @@ export function playSound(name: SoundName): void {
     klog('notch', 'warn', 'sound play failed', { name, err: String(err) });
   }
 }
+
+/**
+ * The two push-to-talk recording cues, in ONE place so the edge→sound mapping isn't
+ * duplicated: a feeble "boop" the instant a hold starts recording, a "toing" on release.
+ * Shared by the notch (real product) and the onboarding practice steps.
+ */
+export function playRecordingCue(recording: boolean): void {
+  playSound(recording ? 'stt-start' : 'stt-end');
+}

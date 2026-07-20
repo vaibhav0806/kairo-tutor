@@ -8,6 +8,7 @@ import { permissionSpeech, STEPS, type StepId } from './copy';
 import { getAuthStatus, getBackendJwt, onAuthChanged, startGoogleAuth } from './authClient';
 import { extractField, onboardingStt, saveOnboarding } from './backendClient';
 import { runCircleTurn, runPointTurn, runTalkTurn } from './demoController';
+import { playRecordingCue } from '../core/sound';
 import { createNativeBridge } from '../native/nativeBridge';
 import type { TimedPoint } from '../notch/gestureSegmenter';
 import { useVoice } from './useVoice';
@@ -336,6 +337,8 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     void listen<{ active?: boolean }>('onboarding:ptt', (e) => {
       const active = Boolean(e.payload?.active);
       recordingRef.current = active;
+      // Same "boop"/"toing" cues as the real product (shared helper).
+      playRecordingCue(active);
       if (active) {
         setDemoState('listening');
         gestureBufferRef.current = [];

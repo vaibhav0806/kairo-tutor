@@ -3,7 +3,7 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { activationStateToNotchPayload } from '../activation/activationState';
 import { loadBrowserEnv } from '../config/env';
 import { klog, type LogFields, type LogLevel } from '../core/logger';
-import { playSound } from '../core/sound';
+import { playSound, playRecordingCue } from '../core/sound';
 import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
 import {
   createNativeBridge,
@@ -1727,7 +1727,7 @@ export function NotchApp() {
       gestureRecordingRef.current = active;
       klog('notch', 'debug', 'ptt recording', { active });
       // Feeble STT cues: a "boop" as recording starts, a "toing" on release.
-      playSound(active ? 'stt-start' : 'stt-end');
+      playRecordingCue(active);
       if (active) {
         // New hold → cancel any pending hide, fresh buffer, show the gesture overlay.
         if (gestureHideTimerRef.current != null) {

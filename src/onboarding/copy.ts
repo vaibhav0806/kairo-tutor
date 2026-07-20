@@ -32,14 +32,14 @@ export const STEPS: StepDef[] = [
       {
         cacheKey: 'welcome',
         text: () =>
-          "Hey, I'm Kairo. I live on your screen, and help you get things done, one step at a time. Give me a minute, and I'll show you how.",
+          "Hey, I'm Kairo. I live on your screen, and help you get things done, one step at a time.",
       },
     ],
   },
   {
     id: 'name',
     title: () => 'What should I call you?',
-    speech: [{ cacheKey: 'name', text: () => 'What can we call you? You can talk, or type it out below. Your call!' }],
+    speech: [{ cacheKey: 'name', text: () => 'What can we call you? You can either talk, or type it out below.' }],
   },
   {
     id: 'signin',
@@ -69,7 +69,7 @@ export const STEPS: StepDef[] = [
       {
         cacheKey: 'learn_talk',
         text: () =>
-          "Now you try. Hold Option and Control together, say something like 'hey Kairo, what's up', then let go. I'm listening.",
+          "Let's get you using Kairo for the first time. Hold Option and Control together, say something like 'hey Kairo, what's up', then let go. I'm listening.",
       },
     ],
   },
