@@ -21,10 +21,13 @@ export const gestureConfig = {
   strokeColor: '#8b5cf6', // same blue/violet as fable's target boxes (--box-rgb 139 92 246)
   strokeWidthCssPx: 9, // on-screen stroke width (CSS px)
 
-  // Composite (image sent to fable) --------------------------------------
-  compositeWidthPx: 8, // stroke width in physical px (~2x css for retina), scaled to encoded
-  alphaConfident: 0.45, // translucent so fable sees THROUGH the marks (not opaque)
-  alphaBorderline: 0.3,
+  // Composite (image sent to the vision model) ---------------------------
+  // Bolder + more opaque than the cosmetic on-screen stroke: gpt-5.6-sol was MISSING
+  // faint circles (returning no box → "you didn't circle anything"). Still translucent
+  // enough to read the content underneath, but now unmistakable to the model.
+  compositeWidthPx: 12, // stroke width in physical px (~2x css for retina), scaled to encoded
+  alphaConfident: 0.62, // opaque enough for the model to reliably see the mark
+  alphaBorderline: 0.45,
   labelRadiusPx: 7, // multi-mark number badge radius in encoded px — small but readable by fable
   labelAlpha: 0.7, // badge fill translucency
   jpegQuality: 0.9,
