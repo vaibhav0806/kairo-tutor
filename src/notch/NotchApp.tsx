@@ -28,11 +28,7 @@ import type { AskTutorResult } from './notchTutor';
 import { subscribeToNotchPayload } from './notchEvents';
 import { askTutorFromNotch } from './notchTutor';
 import { routeVisualTargets, type RevealTransition } from '../overlay/targetRouting';
-import {
-  getNotchInteractionState,
-  isNotchDismissKey,
-  waitForNotchPaint
-} from './prompt';
+import { isNotchDismissKey, waitForNotchPaint } from './prompt';
 import type { NotchPayload } from './types';
 import {
   VOICE_SILENCE_THRESHOLD,
@@ -173,62 +169,11 @@ function NotchIcon({ children, size = 18 }: { children: ReactNode; size?: number
   );
 }
 
-const PenIcon = () => (
-  <NotchIcon>
-    <path d="M15.5 5.5l3 3" />
-    <path d="M5 19l1-4L16.5 4.5a1.8 1.8 0 0 1 2.6 0l.4.4a1.8 1.8 0 0 1 0 2.6L9 18l-4 1z" />
-  </NotchIcon>
-);
-const UndoIcon = () => (
-  <NotchIcon>
-    <path d="M9 7L4.5 11.5 9 16" />
-    <path d="M4.5 11.5H15a4.5 4.5 0 0 1 0 9h-1.5" />
-  </NotchIcon>
-);
-const ClearIcon = () => (
-  <NotchIcon>
-    <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
-  </NotchIcon>
-);
-const DoneIcon = () => (
-  <NotchIcon>
-    <path d="M5 12.5l4.5 4.5L19 7.5" />
-  </NotchIcon>
-);
 const CloseIcon = () => (
   <NotchIcon size={16}>
     <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
   </NotchIcon>
 );
-const MicIcon = () => (
-  <NotchIcon>
-    <rect x="9" y="3" width="6" height="11" rx="3" />
-    <path d="M5.5 11a6.5 6.5 0 0 0 13 0" />
-    <path d="M12 17.5V21" />
-    <path d="M8.5 21h7" />
-  </NotchIcon>
-);
-const StopIcon = () => (
-  <svg aria-hidden="true" className="notch-icon" fill="currentColor" height="15" viewBox="0 0 24 24" width="15">
-    <rect x="6.5" y="6.5" width="11" height="11" rx="3" />
-  </svg>
-);
-
-const annotationTools: Array<{ label: string; icon: ReactNode; tool: NotchAnnotationTool }> = [
-  { label: 'Pen', icon: <PenIcon />, tool: 'pen' }
-];
-
-function promptPlaceholder(payload: NotchPayload) {
-  return payload.state === 'showing_step' ? 'Ask a follow-up' : 'Ask about this screen';
-}
-
-function annotationCountText(count: number) {
-  if (count === 0) {
-    return '';
-  }
-
-  return `${count} annotation${count === 1 ? '' : 's'}`;
-}
 
 export function NotchApp() {
   const [payload, setPayload] = useState<NotchPayload>(defaultPayload);
@@ -304,9 +249,6 @@ export function NotchApp() {
   const audioChunksRef = useRef<Blob[]>([]);
   const voiceCancelledRef = useRef(false);
   const voiceHeardSpeechRef = useRef(false);
-  // Call the latest startVoiceCapture without making it an effect dependency
-  // (otherwise the payload subscription re-subscribes on every render and loops).
-  const startVoiceCaptureRef = useRef<() => void>(() => {});
   // True while a push-to-talk (⌥⌃ hold) capture is in flight, so the monitor keeps
   // recording until release instead of auto-stopping on silence.
   const pttModeRef = useRef(false);
@@ -416,16 +358,6 @@ export function NotchApp() {
       }
     });
   }
-  const interaction = getNotchInteractionState({
-    payload,
-    voiceState: voiceCaptureState,
-    isSubmitting
-  });
-  const canSubmitCurrent =
-    interaction.submitMode === 'voice'
-      ? interaction.canUseVoice
-      : interaction.canSubmitText && query.trim().length > 0;
-
   const stopVoiceTracks = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
@@ -2194,19 +2126,6 @@ export function NotchApp() {
     submitQuery,
     updateVoiceCaptureState
   ]);
-
-  startVoiceCaptureRef.current = () => {
-    void startVoiceCapture();
-  };
-
-  const toggleVoiceCapture = useCallback(() => {
-    if (voiceCaptureStateRef.current === 'recording') {
-      stopActiveRecording(false);
-      return;
-    }
-
-    void startVoiceCapture();
-  }, [startVoiceCapture, stopActiveRecording]);
 
   useEffect(() => {
     document.documentElement.classList.add('notch-document');
