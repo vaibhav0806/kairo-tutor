@@ -28,6 +28,13 @@ pub(crate) fn classify_press(held: Duration, tap_max_ms: u64) -> PttOutcome {
 }
 
 const KAIRO_BUNDLE_ID: &str = "com.kairo.tutor";
+
+/// When set, the ⌥⌃ push-to-talk press is owned by the onboarding demo, not the notch:
+/// the recording edges + captured audio route to the "onboarding" webview and the notch
+/// stays fully inert (no global `ptt:recording`, no notch capsule). The pet-cursor status
+/// FX (`cursor:listening` / `cursor:thinking`) still fire so the practice steps feel like
+/// the real product. Toggled by the `set_onboarding_ptt` command.
+pub(crate) static ONBOARDING_PTT: AtomicBool = AtomicBool::new(false);
 // Ignore activity for the first moment after arming so the reveal itself (or the
 // click/key that triggered the ask) never counts as "the user moved on".
 const CONTEXT_SETTLE_MS: u64 = 500;
@@ -336,6 +343,13 @@ fn recv_until(rx: &Receiver<PttEvent>, deadline: Instant) -> Option<Wake> {
 fn ptt_promote(app: &tauri::AppHandle) {
     crate::klog!(ptt, info, "hold confirmed → listening");
     let _ = app.emit("cursor:listening", ());
+    // Onboarding owns this press: tell the onboarding window only, keep the notch inert.
+    if ONBOARDING_PTT.load(Ordering::SeqCst) {
+        if let Some(win) = app.get_webview_window("onboarding") {
+            let _ = win.emit("onboarding:ptt", serde_json::json!({ "active": true }));
+        }
+        return;
+    }
     let _ = app.emit("ptt:recording", serde_json::json!({ "active": true }));
     let app_main = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -349,9 +363,24 @@ fn ptt_promote(app: &tauri::AppHandle) {
 }
 
 fn ptt_commit(app: &tauri::AppHandle, held: Duration) {
-    let _ = app.emit("ptt:recording", serde_json::json!({ "active": false }));
+    let onboarding = ONBOARDING_PTT.load(Ordering::SeqCst);
+    if onboarding {
+        if let Some(win) = app.get_webview_window("onboarding") {
+            let _ = win.emit("onboarding:ptt", serde_json::json!({ "active": false }));
+        }
+    } else {
+        let _ = app.emit("ptt:recording", serde_json::json!({ "active": false }));
+    }
     match classify_press(held, constants::PTT_TAP_MAX_MS) {
         PttOutcome::Tap => {
+            // During onboarding a tap isn't a "type" action — the practice steps ask the
+            // user to HOLD. Discard the too-short press (no audio) so they can retry.
+            if onboarding {
+                crate::klog!(ptt, info, ms = held.as_millis(), "onboarding tap → discard");
+                send_audio_command(app, AudioCommand::Cancel);
+                let _ = app.emit("cursor:idle", ());
+                return;
+            }
             crate::klog!(ptt, info, ms = held.as_millis(), "tap → typing");
             send_audio_command(app, AudioCommand::Cancel);
             let _ = app.emit("cursor:idle", ());

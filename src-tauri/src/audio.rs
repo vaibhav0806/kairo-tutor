@@ -359,7 +359,14 @@ pub(crate) fn spawn_audio_capture(
                     let wav = encode_wav_mono(&captured, current_rate);
                     use base64::Engine;
                     let audio_base64 = base64::engine::general_purpose::STANDARD.encode(&wav);
-                    if let Some(window) = app.get_webview_window("notch") {
+                    // While the onboarding demo owns push-to-talk, its window transcribes
+                    // + drives the practice turn instead of the notch.
+                    let target = if crate::input::ONBOARDING_PTT.load(Ordering::SeqCst) {
+                        "onboarding"
+                    } else {
+                        "notch"
+                    };
+                    if let Some(window) = app.get_webview_window(target) {
                         let _ = window.emit(
                             "ptt:audio",
                             json!({ "audioBase64": audio_base64, "mimeType": "audio/wav" }),
