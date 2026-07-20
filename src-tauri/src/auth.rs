@@ -1,41 +1,54 @@
 //! Google-only desktop auth. Opens the system browser at the backend's `/auth/start`, receives the
 //! `kairo://auth-callback?code=…` deep link, exchanges the one-time code over HTTPS for a durable
-//! session token stored in the macOS Keychain, and mints short-lived JWTs for proxied calls.
+//! session token, and mints short-lived JWTs for proxied calls.
 //!
-//! The AI points, the user acts — and the app never handles the Google secret: the backend owns the
-//! whole OAuth dance; only a single-use code ever travels through the `kairo://` URL.
+//! The session token is stored as a 0600 file in the app's Application Support dir (NOT the macOS
+//! Keychain). A session token is a revocable bearer token, and file storage avoids the Keychain ACL
+//! password prompt that fires on every self-signed rebuild. If we ever ship a Developer-ID-signed +
+//! notarized build, revisit the Keychain + a `keychain-access-groups` entitlement (prompt-free then).
+
+use std::path::PathBuf;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::constants;
 
-const KEYCHAIN_SERVICE: &str = "com.kairo.tutor";
-const SESSION_ITEM: &str = "session";
-
-fn entry(item: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, item).map_err(|e| format!("keychain entry: {e}"))
+fn session_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("session.token"))
 }
 
-pub(crate) fn store_session(token: &str) -> Result<(), String> {
-    entry(SESSION_ITEM)?
-        .set_password(token)
-        .map_err(|e| format!("keychain set: {e}"))
+pub(crate) fn store_session(app: &AppHandle, token: &str) -> Result<(), String> {
+    let path = session_path(app).ok_or("no config dir")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("mkdir: {e}"))?;
+    }
+    std::fs::write(&path, token).map_err(|e| format!("write: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
-pub(crate) fn read_session() -> Option<String> {
-    entry(SESSION_ITEM).ok()?.get_password().ok()
-}
-
-pub(crate) fn clear_session() -> Result<(), String> {
-    match entry(SESSION_ITEM)?.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("keychain delete: {e}")),
+pub(crate) fn read_session(app: &AppHandle) -> Option<String> {
+    let token = std::fs::read_to_string(session_path(app)?).ok()?;
+    let token = token.trim();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
     }
 }
 
-/// Open the system browser at the backend's Google start route (reuses the `open` pattern).
+pub(crate) fn clear_session(app: &AppHandle) {
+    if let Some(path) = session_path(app) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Open the system browser at the backend's Google start route.
 #[tauri::command]
 pub fn start_google_auth() -> Result<(), String> {
     let url = format!("{}/auth/start", constants::KAIRO_BACKEND_URL);
@@ -53,17 +66,17 @@ pub struct AuthStatus {
 }
 
 #[tauri::command]
-pub fn get_auth_status() -> AuthStatus {
+pub fn get_auth_status(app: AppHandle) -> AuthStatus {
     AuthStatus {
-        signed_in: read_session().is_some(),
+        signed_in: read_session(&app).is_some(),
     }
 }
 
 #[tauri::command]
 pub fn sign_out(app: AppHandle) -> Result<(), String> {
-    clear_session()?;
+    clear_session(&app);
     let _ = app.emit("auth:changed", false);
-    klog!(auth, info, "signed out (keychain cleared)");
+    klog!(auth, info, "signed out (session file cleared)");
     Ok(())
 }
 
@@ -81,7 +94,7 @@ pub(crate) async fn exchange_code(app: &AppHandle, code: &str) {
     match res {
         Ok(r) if r.status().is_success() => match r.json::<serde_json::Value>().await {
             Ok(v) => match v.get("sessionToken").and_then(|t| t.as_str()) {
-                Some(token) => match store_session(token) {
+                Some(token) => match store_session(app, token) {
                     Ok(()) => {
                         let _ = app.emit("auth:changed", true);
                         klog!(auth, info, "session stored; sign-in complete");
@@ -99,13 +112,13 @@ pub(crate) async fn exchange_code(app: &AppHandle, code: &str) {
 
 /// Command: hand the webview a short-lived JWT for authed backend calls (/v1/me, /v1/onboarding).
 #[tauri::command]
-pub async fn get_backend_jwt() -> Option<String> {
-    fetch_jwt().await
+pub async fn get_backend_jwt(app: AppHandle) -> Option<String> {
+    fetch_jwt(&app).await
 }
 
 /// Fetch a short-lived JWT from the backend using the stored session token (for the proxy path).
-pub(crate) async fn fetch_jwt() -> Option<String> {
-    let session = read_session()?;
+pub(crate) async fn fetch_jwt(app: &AppHandle) -> Option<String> {
+    let session = read_session(app)?;
     let url = format!("{}/api/auth/token", constants::KAIRO_BACKEND_URL);
     let res = reqwest::Client::new()
         .get(&url)
