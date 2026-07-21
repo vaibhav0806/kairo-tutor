@@ -71,13 +71,14 @@ export async function runTalkTurn(
   audioBase64: string,
   name: string,
   cb: DemoCallbacks = {},
-): Promise<void> {
+): Promise<{ transcriptLen: number }> {
   cb.onThinking?.();
   const { text } = await bridge.transcribeAudio({ audioBase64, mimeType: WAV });
   const transcript = (text ?? '').trim();
   klog('onboarding', 'info', 'talk turn', { transcript_len: transcript.length });
   const reply = (await onboardingChat(transcript, name)) || "I hear you! Let's keep going.";
   await speak(bridge, reply, cb.onSpeaking);
+  return { transcriptLen: transcript.length };
 }
 
 // learn_point: the user asks Kairo to point at something on their real screen. Runs the
