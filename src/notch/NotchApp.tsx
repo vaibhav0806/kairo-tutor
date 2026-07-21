@@ -165,6 +165,24 @@ export function NotchApp() {
     });
     return () => un();
   }, [nativeBridge]);
+
+  // Sequoia periodically resets Screen Recording. When native detects it (marker-but-now-denied),
+  // show a FRIENDLY coach line in the real notch — never an error tone, never blocks a turn (§6).
+  useEffect(() => {
+    let un = () => {};
+    void listen('permissions:screen-recording-reset', () => {
+      klog('notch', 'info', 'screen-recording reset heads-up shown');
+      void nativeBridge.showNotch({
+        state: 'coach',
+        layout: 'compact',
+        title: 'macOS turned off my screen access',
+        detail: 'It does this every so often — turn Screen Recording back on for me in Settings.'
+      });
+    }).then((u) => {
+      un = u;
+    });
+    return () => un();
+  }, [nativeBridge]);
   const env = loadBrowserEnv();
   // All answer/filler/step/follow audio playback lives in this hook (owns the clip refs +
   // playback epoch + narration/filler done-signals); the turn machine just calls it.
