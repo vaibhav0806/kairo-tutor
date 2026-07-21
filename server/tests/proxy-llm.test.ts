@@ -8,7 +8,7 @@ vi.mock('../src/proxy/forward', () => ({
 import { sql } from 'drizzle-orm';
 import { buildApp } from '../src/app';
 import { db, pool } from '../src/db/client';
-import { ensureUserRows } from '../src/usage/service';
+import { ensureUserRows, ONBOARDING_VISION_CAP } from '../src/usage/service';
 import { mintCode } from '../src/auth/codes';
 
 const uid = 'test-user-proxy';
@@ -20,13 +20,17 @@ beforeAll(async () => {
     VALUES (${uid}, 'Px', 'px@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await db.execute(sql`DELETE FROM usage_event WHERE user_id = ${uid}`);
   await ensureUserRows(uid);
-  await db.execute(sql`UPDATE usage_counter SET used_free = 0, plan = 'free', free_limit = 1 WHERE user_id = ${uid}`);
+  await db.execute(sql`UPDATE usage_counter SET used_free = 0, onboarding_used = 0, plan = 'free', free_limit = 1 WHERE user_id = ${uid}`);
+  // Mark onboarding complete so /v1/vision/tutor exercises the METERED path (not the tutorial budget).
+  await db.execute(sql`INSERT INTO profile (user_id, onboarding_completed_at, waitlisted)
+    VALUES (${uid}, now(), false) ON CONFLICT (user_id) DO UPDATE SET onboarding_completed_at = now()`);
 });
 
 afterAll(async () => {
   await db.execute(sql`DELETE FROM usage_event WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM session WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM oauth_code WHERE user_id = ${uid}`);
+  await db.execute(sql`DELETE FROM profile WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM usage_counter WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM subscription WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM "user" WHERE id = ${uid}`);
@@ -72,6 +76,28 @@ describe('proxy /v1/vision/tutor metering', () => {
     });
     expect(second.statusCode).toBe(402);
     expect(second.json().code).toBe('quota_exceeded');
+  });
+});
+
+describe('proxy /v1/vision/tutor tutorial budget (onboarding)', () => {
+  it('does not bill used_free during onboarding, and caps the tutorial', async () => {
+    // Look like a user still in onboarding (no completed profile), with the 10-free limit at 1.
+    await db.execute(sql`DELETE FROM profile WHERE user_id = ${uid}`);
+    await db.execute(sql`UPDATE usage_counter SET used_free = 0, onboarding_used = 0, free_limit = 1 WHERE user_id = ${uid}`);
+    const headers = { authorization: `Bearer ${await freshJwt()}` };
+
+    // free_limit is 1, yet tutorial turns draw the SEPARATE capped budget: CAP turns all allowed.
+    for (let i = 0; i < ONBOARDING_VISION_CAP; i += 1) {
+      const res = await app.inject({ method: 'POST', url: '/v1/vision/tutor', headers, payload: {} });
+      expect(res.statusCode).toBe(200);
+    }
+    const row = await db.execute(sql`SELECT used_free, onboarding_used FROM usage_counter WHERE user_id = ${uid}`);
+    expect(Number(row.rows[0].used_free)).toBe(0); // tutorial NOT billed against the 10 free
+    expect(Number(row.rows[0].onboarding_used)).toBe(ONBOARDING_VISION_CAP);
+
+    // Over the tutorial cap → 402 (can't loop the tutorial for unlimited free vision).
+    const over = await app.inject({ method: 'POST', url: '/v1/vision/tutor', headers, payload: {} });
+    expect(over.statusCode).toBe(402);
   });
 });
 

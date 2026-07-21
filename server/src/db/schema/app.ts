@@ -24,6 +24,9 @@ export const usageCounter = pgTable('usage_counter', {
   plan: planT('plan').notNull().default('free'),
   usedFree: integer('used_free').notNull().default(0),
   freeLimit: integer('free_limit').notNull().default(10),
+  // Separate, capped budget for onboarding "tutorial" vision turns — NOT billed against the
+  // 10 free requests, but bounded so the tutorial can't be looped for unlimited free vision.
+  onboardingUsed: integer('onboarding_used').notNull().default(0),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

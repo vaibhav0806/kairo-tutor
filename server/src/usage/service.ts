@@ -28,18 +28,60 @@ export async function reserve(userId: string, askId: string): Promise<boolean> {
   });
 }
 
+// Cap on onboarding "tutorial" vision turns (separate from the 10 free). The onboarding demo
+// makes ~2 vision calls; this leaves headroom for retries but bounds the tutorial so it can't
+// be looped for unlimited free vision.
+export const ONBOARDING_VISION_CAP = 6;
+
+/** True while the user is still in onboarding (no profile row yet, or completed_at unset). */
+export async function isOnboarding(userId: string): Promise<boolean> {
+  const r = await db.execute(
+    sql`SELECT onboarding_completed_at FROM profile WHERE user_id = ${userId}`,
+  );
+  const row = r.rows[0] as { onboarding_completed_at?: unknown } | undefined;
+  return !row || row.onboarding_completed_at == null;
+}
+
 /**
- * Fast paywall check (no reserve): true when the user is out of free requests and not pro.
- * A missing counter row (shouldn't happen — seeded on signup) reads as NOT paywalled so a
- * setup hiccup never blocks a legit user; the atomic reserve() on the metered route is the
- * real ceiling regardless.
+ * Fast paywall check (no reserve): true when the user is out of their CURRENT budget and not
+ * pro — the tutorial cap while onboarding, else the 10-free limit. A missing counter row reads
+ * as NOT paywalled so a setup hiccup never blocks a legit user; the atomic reserves on the
+ * vision route are the real ceilings regardless.
  */
 export async function isPaywalled(userId: string): Promise<boolean> {
+  const r = await db.execute(sql`
+    SELECT uc.plan, uc.used_free, uc.free_limit, uc.onboarding_used,
+           (p.onboarding_completed_at IS NULL) AS onboarding
+    FROM usage_counter uc
+    LEFT JOIN profile p ON p.user_id = uc.user_id
+    WHERE uc.user_id = ${userId}`);
+  const row = r.rows[0] as
+    | { plan: string; used_free: number; free_limit: number; onboarding_used: number; onboarding: boolean }
+    | undefined;
+  if (!row || row.plan === 'pro') return false;
+  return row.onboarding
+    ? Number(row.onboarding_used) >= ONBOARDING_VISION_CAP
+    : Number(row.used_free) >= Number(row.free_limit);
+}
+
+/**
+ * Atomic reserve for a tutorial (onboarding) vision turn: capped + NOT billed against the 10
+ * free. Returns true if under the tutorial cap, false if the tutorial budget is spent.
+ */
+export async function reserveOnboarding(userId: string): Promise<boolean> {
   const r = await db.execute(
-    sql`SELECT (plan <> 'pro' AND used_free >= free_limit) AS paywalled
-        FROM usage_counter WHERE user_id = ${userId}`,
+    sql`UPDATE usage_counter SET onboarding_used = onboarding_used + 1, updated_at = now()
+        WHERE user_id = ${userId} AND onboarding_used < ${ONBOARDING_VISION_CAP}
+        RETURNING onboarding_used`,
   );
-  return r.rows[0]?.paywalled === true;
+  return r.rows.length > 0;
+}
+
+/** Compensating refund for a failed tutorial turn (never underflows). */
+export async function refundOnboarding(userId: string) {
+  await db.execute(
+    sql`UPDATE usage_counter SET onboarding_used = GREATEST(onboarding_used - 1, 0) WHERE user_id = ${userId}`,
+  );
 }
 
 /** Compensating refund (failure path). Idempotent per `askId`, never underflows. */

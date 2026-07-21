@@ -1,0 +1,1 @@
+ALTER TABLE "usage_counter" ADD COLUMN "onboarding_used" integer DEFAULT 0 NOT NULL;

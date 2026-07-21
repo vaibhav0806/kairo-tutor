@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireAuth } from '../plugins/auth-verify';
 import { requireCredits } from '../plugins/require-credits';
 import { forwardJson } from './forward';
-import { reserve, refund } from '../usage/service';
+import { reserve, refund, isOnboarding, reserveOnboarding, refundOnboarding } from '../usage/service';
 import { QuotaExceededError } from '../plugins/error-handler';
 
 /** Drop the `_provider` routing hint before forwarding the body to the provider. */
@@ -31,6 +31,20 @@ export async function llmRoutes(app: FastifyInstance) {
     const askId = randomUUID();
     const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
     const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
+
+    // Onboarding "tutorial" turns draw a SEPARATE capped budget — NOT billed against the 10
+    // free, but bounded. Server-decided by onboarding state (profile.onboarding_completed_at),
+    // so a modified client can't fake "this is a tutorial" to dodge metering.
+    if (await isOnboarding(req.userId!)) {
+      if (!(await reserveOnboarding(req.userId!))) throw new QuotaExceededError('tutorial limit reached');
+      try {
+        const { json } = await forwardJson(provider, path, stripMeta(req.body));
+        return json;
+      } catch (e) {
+        await refundOnboarding(req.userId!);
+        throw e;
+      }
+    }
 
     const allowed = await reserve(req.userId!, askId);
     if (!allowed) throw new QuotaExceededError('free limit reached');
