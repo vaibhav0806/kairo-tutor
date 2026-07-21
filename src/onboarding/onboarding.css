@@ -1,3 +1,15 @@
+/* Full-screen transparent orchestrator. pointer-events:none so only the temp panel is a click
+   target within the webview; window-level click-through is controlled natively (Rust). */
+.ob-orchestrator {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+.ob-temp-panel { pointer-events: auto; }
+
 /* Onboarding — "meeting Kairo". A single floating surface (the window IS the card), warm
    near-black cinematic ground, a living Kairo presence orb, Instrument Serif voice. */
 

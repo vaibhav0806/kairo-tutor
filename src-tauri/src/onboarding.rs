@@ -3,7 +3,7 @@
 //! onboarding WebView invokes.
 
 use std::sync::atomic::Ordering;
-use tauri::Manager;
+use tauri::{LogicalPosition, LogicalSize, Manager};
 
 fn onboarded_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join("onboarded"))
@@ -72,8 +72,11 @@ pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
     });
 }
 
-/// Create + show the borderless, transparent onboarding window — its own floating surface with no
-/// title bar and no chrome. The caller sets Regular activation policy so it can take keyboard focus.
+/// Create + show the full-screen, transparent, click-through onboarding orchestrator — it covers the
+/// whole monitor and renders nothing most of the time (the desktop / pet / overlay show through). The
+/// frontend flips it interactive (native `set_onboarding_click_through`) only while a temporary panel
+/// (color wheel in Act 1, Google sign-in in Act 5) is mounted. The caller sets Regular activation
+/// policy so it can take keyboard focus.
 pub(crate) fn show_onboarding_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("onboarding") {
         let _ = win.show();
@@ -86,17 +89,51 @@ pub(crate) fn show_onboarding_window(app: &tauri::AppHandle) {
         tauri::WebviewUrl::App("index.html#/onboarding".into()),
     )
     .title("Welcome to Kairo")
-    .inner_size(480.0, 660.0)
+    .inner_size(1440.0, 900.0) // resized to the monitor below
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    .shadow(true) // macOS casts a clean rounded shadow from the opaque content
-    .center()
+    .shadow(false) // full-screen surface: no drop shadow
+    .always_on_top(true) // float above the desktop; the pet/overlay NSPanels sit even higher
+    .skip_taskbar(true)
     .focused(true)
     .build();
     match built {
-        Ok(_) => crate::klog!(app, info, "onboarding window created"),
+        Ok(win) => {
+            fit_onboarding_to_screen(&win);
+            // Default click-through: the desktop / pet / overlay show through and stay
+            // interactive. The frontend flips it interactive while a temp panel is mounted.
+            #[cfg(target_os = "macos")]
+            let _ = win.set_ignore_cursor_events(true);
+            crate::klog!(app, info, "onboarding window created (full-screen transparent)");
+        }
         Err(error) => crate::klog!(app, error, "failed to create onboarding window: {error}"),
+    }
+}
+
+/// Size + position the onboarding window to fully cover its monitor.
+fn fit_onboarding_to_screen(win: &tauri::WebviewWindow) {
+    match win.current_monitor() {
+        Ok(Some(monitor)) => {
+            let scale = monitor.scale_factor();
+            let size = monitor.size().to_logical::<f64>(scale);
+            let pos = monitor.position().to_logical::<f64>(scale);
+            let _ = win.set_position(LogicalPosition::new(pos.x, pos.y));
+            let _ = win.set_size(LogicalSize::new(size.width, size.height));
+        }
+        _ => crate::klog!(app, warn, "onboarding: no monitor found for full-screen fit"),
+    }
+}
+
+/// Toggle whether the full-screen onboarding orchestrator catches clicks. Click-through by default
+/// (desktop / pet / overlay stay interactive); the frontend flips it OFF while a temporary panel
+/// (color wheel in Act 1, Google sign-in in Act 5) is mounted so that panel's controls are clickable.
+#[tauri::command]
+pub(crate) fn set_onboarding_click_through(app: tauri::AppHandle, click_through: bool) {
+    if let Some(win) = app.get_webview_window("onboarding") {
+        #[cfg(target_os = "macos")]
+        let _ = win.set_ignore_cursor_events(click_through);
+        crate::klog!(app, info, click_through = click_through, "onboarding click-through set");
     }
 }
 
