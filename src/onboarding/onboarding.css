@@ -804,3 +804,15 @@ body.onboarding-document {
     animation: none;
   }
 }
+
+/* ---- Phase 7: reduced-motion audit of the new act/panel/vignette surfaces -------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .ob-temp-panel,
+  .ob-color-panel,
+  .ob-color-scrim,
+  .ob-vignette,
+  .ob-bridge {
+    transition: none !important;
+    animation: none !important;
+  }
+}
