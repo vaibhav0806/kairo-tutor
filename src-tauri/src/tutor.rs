@@ -283,14 +283,6 @@ fn quota_gate_response() -> String {
     json!({ "needsScreen": false, "voiceText": FREE_LIMIT_MESSAGE, "skillSlug": "" }).to_string()
 }
 
-/// Parse the gate JSON's `needsScreen` flag — a screen turn is the metered one.
-fn gate_needs_screen(gate_json: &str) -> bool {
-    serde_json::from_str::<Value>(gate_json)
-        .ok()
-        .and_then(|v| v.get("needsScreen").and_then(Value::as_bool))
-        .unwrap_or(false)
-}
-
 #[tauri::command]
 pub(crate) async fn run_tutor_turn(
     app: tauri::AppHandle,
@@ -691,13 +683,15 @@ pub(crate) async fn run_gate_turn(
     let gate_call =
         openrouter_text_chat(&app_handle, &system, &user_message, &model, timeout, true);
     let (gate_result, paywalled) = tokio::join!(gate_call, quota_check);
+    // Out of free requests → answer ANY ask with the upgrade prompt (no gate answer, no
+    // filler, no vision). Checked in parallel with the gate so it adds no latency.
+    if paywalled {
+        crate::klog!(gate, info, "over free limit; upgrade prompt (no answer/vision)");
+        return Ok(quota_gate_response());
+    }
     match gate_result {
         Ok(content) => {
             let repaired = repair_gate_skill(&content, &app, &bundle, &title);
-            if paywalled && gate_needs_screen(&repaired) {
-                crate::klog!(gate, info, "over free limit; upgrade prompt from the gate (no vision)");
-                return Ok(quota_gate_response());
-            }
             crate::klog!(
                 gate,
                 debug,
