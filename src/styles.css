@@ -1770,6 +1770,44 @@ input {
   letter-spacing: -0.005em;
   text-wrap: pretty;
 }
+/* "Preparing" pulse — three dots in the USER'S accent, shown while the voice synthesizes so the
+   caption text never appears before the audio. */
+.kairo-capsule-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 4px;
+}
+.kairo-capsule-loading i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 9px rgb(var(--accent-rgb) / 0.75);
+  animation: kairo-coach-load 1.15s ease-in-out infinite;
+}
+.kairo-capsule-loading i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.kairo-capsule-loading i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+@keyframes kairo-coach-load {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kairo-capsule-loading i {
+    animation: none;
+  }
+}
 .kairo-capsule-chip {
   align-self: flex-start;
   margin-left: 16px;

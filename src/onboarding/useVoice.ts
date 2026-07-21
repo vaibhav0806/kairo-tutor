@@ -40,40 +40,53 @@ export function useVoice() {
 
   const audioEl = () => (audioRef.current ??= new Audio());
 
-  const playUrl = (url: string) =>
+  const playUrl = (url: string, onStart?: () => void) =>
     new Promise<boolean>((resolve) => {
       const el = audioEl();
       el.src = url;
+      // Fires the instant real audio begins — the caller reveals the caption text HERE so words
+      // never precede the voice.
+      el.onplaying = onStart ? () => onStart() : null;
       el.onended = () => resolve(true);
       el.onerror = () => resolve(true);
       el.play().catch(() => resolve(false)); // rejected => autoplay blocked
     });
 
-  const speak = useCallback(async (segments: Segment[], name: string) => {
-    const gen = ++genRef.current;
-    audioEl().pause();
-    setSpeaking(true);
-    for (const seg of segments) {
-      if (genRef.current !== gen) return;
-      const text = seg.text(name).trim();
-      if (!text) continue;
-      let url: string | null = seg.cacheKey ? CACHED[seg.cacheKey] ?? null : null;
-      if (!url) {
-        const b64 = await onboardingTts(text);
-        url = b64 ? `data:audio/wav;base64,${b64}` : null;
+  // `onStart` fires once, when the FIRST segment's audio actually starts playing.
+  const speak = useCallback(
+    async (segments: Segment[], name: string, onStart?: () => void) => {
+      const gen = ++genRef.current;
+      audioEl().pause();
+      setSpeaking(true);
+      let started = false;
+      const fireStart = () => {
+        if (started) return;
+        started = true;
+        onStart?.();
+      };
+      for (const seg of segments) {
+        if (genRef.current !== gen) return;
+        const text = seg.text(name).trim();
+        if (!text) continue;
+        let url: string | null = seg.cacheKey ? CACHED[seg.cacheKey] ?? null : null;
+        if (!url) {
+          const b64 = await onboardingTts(text);
+          url = b64 ? `data:audio/wav;base64,${b64}` : null;
+        }
+        if (!url || genRef.current !== gen) continue;
+        const played = await playUrl(url, fireStart);
+        if (!played && !unlockedRef.current) {
+          // Autoplay blocked — replay this whole line after the first user gesture.
+          pendingRef.current = () => void speak(segments, name, onStart);
+          setSpeaking(false);
+          return;
+        }
+        unlockedRef.current = true;
       }
-      if (!url || genRef.current !== gen) continue;
-      const played = await playUrl(url);
-      if (!played && !unlockedRef.current) {
-        // Autoplay blocked — replay this whole line after the first user gesture.
-        pendingRef.current = () => void speak(segments, name);
-        setSpeaking(false);
-        return;
-      }
-      unlockedRef.current = true;
-    }
-    if (genRef.current === gen) setSpeaking(false);
-  }, []);
+      if (genRef.current === gen) setSpeaking(false);
+    },
+    [],
+  );
 
   // First user gesture unlocks audio + replays any line that was blocked.
   useEffect(() => {

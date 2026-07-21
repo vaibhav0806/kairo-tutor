@@ -27,23 +27,35 @@ export async function clearCoachCaption(bridge: NativeBridge): Promise<void> {
   await bridge.hideNotch();
 }
 
+export type CoachSpeak = (
+  segments: Segment[],
+  name: string,
+  onStart?: () => void
+) => Promise<void>;
+
 /**
- * Speak a scripted line via the passed `speak` (useVoice.speak) AND mirror it as the notch caption,
- * so the words the user hears are the words on screen. Resolves when speech ends; the caption stays
- * up (sticky) until the next set/clear.
+ * Speak a scripted line via the passed `speak` (useVoice.speak) AND mirror it as the notch caption.
+ * MANDATE: the words never appear before the voice. So we first show a loading pulse in the notch
+ * (empty caption), synth the audio, and reveal the caption text at the exact moment audio starts
+ * (`onStart`). `opts.onReady` also fires then — callers use it to reveal a panel in perfect sync.
+ * Resolves when speech ends; the caption stays up (sticky) until the next set/clear.
  */
 export async function coachSay(
   bridge: NativeBridge,
-  speak: (segments: Segment[], name: string) => Promise<void>,
+  speak: CoachSpeak,
   segments: Segment[],
   name: string,
-  opts: { title: string; chip?: string }
+  opts: { title: string; chip?: string; onReady?: () => void }
 ): Promise<void> {
   const detail = segments
     .map((s) => s.text(name))
     .join(' ')
     .trim();
-  // Fire the caption AND the speech together so the words appear WITH the voice, not before it.
-  // (setCoachCaption is near-instant; speak carries the TTS synth latency — this closes the gap.)
-  await Promise.all([setCoachCaption(bridge, { title: opts.title, detail, chip: opts.chip }), speak(segments, name)]);
+  // Loading state first (empty detail → the notch renders an accent loading pulse, no text).
+  await setCoachCaption(bridge, { title: opts.title, detail: '' });
+  await speak(segments, name, () => {
+    // Audio just started → NOW show the words + any synced surface.
+    void setCoachCaption(bridge, { title: opts.title, detail, chip: opts.chip });
+    opts.onReady?.();
+  });
 }

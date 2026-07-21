@@ -36,13 +36,25 @@ type NotchCapsuleProps = {
 // inside while the layers cross-fade.
 function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
   if (mode === 'coach') {
+    // Empty detail = the "preparing" state: an accent loading pulse holds the moment while the
+    // voice synthesizes, so the words never appear before the audio.
     return (
       <div className="kairo-capsule-coach" role="status">
-        <span className="kairo-capsule-caption-row">
-          <span className="kairo-capsule-dot" aria-hidden />
-          <span className="kairo-capsule-caption">{props.detail || props.title}</span>
-        </span>
-        {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}
+        {props.detail ? (
+          <>
+            <span className="kairo-capsule-caption-row">
+              <span className="kairo-capsule-dot" aria-hidden />
+              <span className="kairo-capsule-caption">{props.detail}</span>
+            </span>
+            {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}
+          </>
+        ) : (
+          <span className="kairo-capsule-loading" aria-label="Kairo is preparing" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
       </div>
     );
   }
