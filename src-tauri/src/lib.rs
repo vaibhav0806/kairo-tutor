@@ -756,6 +756,8 @@ pub fn run() {
             onboarding::get_onboarding_step,
             onboarding::set_onboarding_ptt,
             onboarding::set_onboarding_click_through,
+            onboarding::set_user_name,
+            onboarding::get_user_name,
             accent::get_accent,
             accent::set_accent,
             auth::start_google_auth,

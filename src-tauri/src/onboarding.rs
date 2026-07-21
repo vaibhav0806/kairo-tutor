@@ -33,6 +33,40 @@ pub(crate) fn set_onboarding_step(app: tauri::AppHandle, step: String) {
     }
 }
 
+fn user_name_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("user_name"))
+}
+
+/// Cache the user's display name (from their account) so every WebView can read it at launch
+/// and inject it into tutor/gate prompts — no per-turn network round-trip. Written after sign-in
+/// and backfilled from `/v1/me` for returning users. An empty name clears the cache.
+#[tauri::command]
+pub(crate) fn set_user_name(app: tauri::AppHandle, name: String) {
+    let Some(path) = user_name_marker(&app) else {
+        return;
+    };
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        crate::klog!(app, info, "user name cache cleared");
+        return;
+    }
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&path, trimmed.as_bytes());
+    crate::klog!(app, info, name_len = trimmed.len(), "user name cached");
+}
+
+/// The cached user display name (empty string if none / cleared).
+#[tauri::command]
+pub(crate) fn get_user_name(app: tauri::AppHandle) -> String {
+    user_name_marker(&app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
+}
+
 /// The saved onboarding step id (empty string if none / cleared).
 #[tauri::command]
 pub(crate) fn get_onboarding_step(app: tauri::AppHandle) -> String {
