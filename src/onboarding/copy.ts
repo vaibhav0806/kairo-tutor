@@ -3,12 +3,10 @@
 // at runtime). Dynamic segments (with the user's name) are synthesized live.
 
 export type StepId =
-  | 'welcome'
   | 'name'
   | 'signin'
   | 'source'
   | 'permissions'
-  | 'learn_talk'
   | 'learn_point'
   | 'circle'
   | 'done';
@@ -25,17 +23,6 @@ export interface StepDef {
 }
 
 export const STEPS: StepDef[] = [
-  {
-    id: 'welcome',
-    title: () => "Hey, I'm Kairo!",
-    speech: [
-      {
-        cacheKey: 'welcome',
-        text: () =>
-          "Hey, I'm Kairo. I live on your screen, and help you get things done, one step at a time.",
-      },
-    ],
-  },
   {
     id: 'name',
     title: () => 'What should I call you?',
@@ -60,18 +47,6 @@ export const STEPS: StepDef[] = [
     id: 'permissions',
     title: () => 'A couple of permissions',
     speech: [{ text: () => PERMISSION_LINES.perm_both }],
-  },
-  {
-    // Interactive: the user holds ⌥⌃ and actually talks; Kairo replies for real (dynamic chat).
-    id: 'learn_talk',
-    title: () => 'Talk to me',
-    speech: [
-      {
-        cacheKey: 'learn_talk',
-        text: () =>
-          "Let's get you using Kairo for the first time. Hold Option and Control together, say something like 'hey Kairo, what's up', then let go. I'm listening.",
-      },
-    ],
   },
   {
     // Interactive: the user asks Kairo to point at something on their real screen (gate → vision).
@@ -107,6 +82,28 @@ export const STEPS: StepDef[] = [
   },
 ];
 
+/** Coach-surface lines for the redesigned acts (Phase 3). Static → pre-generated + cached WAV,
+ *  falling back to live Sarvam TTS if the WAV isn't shipped yet (useVoice handles the fallback). */
+export const ACT_LINES: Record<string, Segment> = {
+  act1_wake: { cacheKey: 'act1_wake', text: () => "Hey — I'm Kairo. I live up here, on your screen." },
+  act1_color: { cacheKey: 'act1_color', text: () => 'First — pick my color. This is me, from now on.' },
+  act2_primer: {
+    cacheKey: 'act2_primer',
+    text: () =>
+      "To hear you, I'll need your mic — and permission to notice when you hold two keys. Quick and painless."
+  },
+  act2_drill: {
+    cacheKey: 'act2_drill',
+    text: () =>
+      "This is how you talk to me. Hold Option and Control together, say hi, then let go — I'm listening the whole time you hold them."
+  },
+  act2_short: { cacheKey: 'act2_short', text: () => 'Hold them a beat longer.' },
+  act2_empty: { cacheKey: 'act2_empty', text: () => "Didn't quite catch that — try again." }
+} satisfies Record<string, Segment>;
+
+/** The seeded-prompt chip shown during the Act 2 say-hi drill (master spec §8). */
+export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
+
 /** The permissions line spoken depends on what's already granted — only mention what's missing. */
 export const PERMISSION_LINES: Record<'perm_both' | 'perm_screen' | 'perm_access', string> = {
   perm_both:
@@ -131,4 +128,6 @@ export const CACHED_LINES: { key: string; text: string }[] = [
     .map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
   // The permission variants aren't reachable via STEPS.speech (spoken dynamically), so add them.
   ...Object.entries(PERMISSION_LINES).map(([key, text]) => ({ key, text })),
+  // Act 1-2 coach lines (Phase 3).
+  ...Object.values(ACT_LINES).map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
 ];

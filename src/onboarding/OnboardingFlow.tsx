@@ -21,7 +21,6 @@ type Perms = { screenRecording: string; accessibility: string };
 // The interactive practice steps that run the real Kairo pipeline (see demoController).
 type DemoMode = 'talk' | 'point' | 'circle';
 const DEMO_MODES: Partial<Record<StepId, DemoMode>> = {
-  learn_talk: 'talk',
   learn_point: 'point',
   circle: 'circle',
 };
@@ -432,8 +431,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
             })}
           </div>
         );
-      case 'learn_talk':
-        return renderDemo('talk');
       case 'learn_point':
         return renderDemo('point');
       case 'circle':
@@ -445,12 +442,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
 
   const renderPrimary = () => {
     switch (step.id) {
-      case 'welcome':
-        return (
-          <button type="button" className="ob-cta" onClick={() => go(1)}>
-            Let&apos;s go
-          </button>
-        );
       case 'name':
         return (
           <button type="button" className="ob-cta" disabled={!typed.trim()} onClick={commitName}>
@@ -483,7 +474,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
             {permsOk ? 'Continue' : 'Continue anyway'}
           </button>
         );
-      case 'learn_talk':
       case 'learn_point':
       case 'circle':
         // No button — the user must actually do the practice; it auto-advances when Kairo
