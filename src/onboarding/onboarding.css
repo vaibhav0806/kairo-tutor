@@ -738,3 +738,69 @@ body.onboarding-document {
     transition: none;
   }
 }
+
+/* ---- Act 3: guided-arrow permission bridge (Phase 4) ------------------------------------------ */
+.ob-bridge {
+  position: fixed;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  width: min(360px, 80vw);
+  padding: 20px 22px;
+  border-radius: 18px;
+  background: rgba(20, 20, 24, 0.92);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  color: #f4f4f6;
+  pointer-events: none; /* visual guide only — the click-through window lets Settings show through */
+}
+.ob-bridge-arrow {
+  color: var(--ob-accent, #7c3aed);
+  animation: ob-bridge-bob 1.4s ease-in-out infinite;
+}
+@keyframes ob-bridge-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(6px);
+  }
+}
+.ob-bridge-title {
+  margin: 8px 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.ob-bridge-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+.ob-bridge-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ob-bridge-open {
+  background: var(--ob-accent, #7c3aed);
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ob-bridge-restart {
+  background: transparent;
+  color: #c9c9cf;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-bridge-arrow {
+    animation: none;
+  }
+}
