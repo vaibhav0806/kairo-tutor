@@ -8,7 +8,27 @@
   display: grid;
   place-items: center;
 }
-.ob-temp-panel { pointer-events: auto; }
+/* The temp panel is a bounded, floating card centered over the transparent desktop — NOT the
+   full window. Keeps the old 480×660 footprint so the card doesn't stretch to full-screen height
+   now that the orchestrator window covers the whole monitor. macOS no longer casts the window
+   shadow (shadow:false), so the card carries its own. */
+.ob-temp-panel {
+  pointer-events: auto;
+  width: 480px;
+  height: 660px;
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: 26px;
+  box-shadow:
+    0 30px 80px -20px rgba(0, 0, 0, 0.62),
+    0 8px 24px -10px rgba(0, 0, 0, 0.5);
+}
+/* Inside the orchestrator the card fills the bounded temp panel, not the viewport (the base
+   `.ob` rule uses 100vh, which would stretch full-screen here). */
+.ob-orchestrator .ob {
+  height: 100%;
+  width: 100%;
+}
 
 /* Onboarding — "meeting Kairo". A single floating surface (the window IS the card), warm
    near-black cinematic ground, a living Kairo presence orb, Instrument Serif voice. */
