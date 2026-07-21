@@ -7,6 +7,7 @@ import {
 } from '../annotations/annotationTools';
 import type { ScreenDimensions, UserAnnotation, VisualTarget } from '../core/types';
 import { createNativeBridge } from '../native/nativeBridge';
+import { useTauriListeners } from '../core/useTauriListeners';
 import { createPenAnnotationFromDisplayPoints, toScreenPoint } from './annotationMode';
 import { subscribeToOverlayPayload } from './overlayEvents';
 import { GestureLayer } from './GestureLayer';
@@ -104,50 +105,25 @@ function AnnotationOverlay({
     annotationsRef.current = annotations;
   }, [annotations]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const unlisteners: Array<() => void> = [];
-
-    void Promise.all([
-      listen('annotation:finish', () => {
-        if (!isMounted) {
-          return;
-        }
-
-        onDone(annotationsRef.current);
-      }),
-      listen('annotation:undo', () => {
-        if (!isMounted) {
-          return;
-        }
-
-        setAnnotations((current) => {
-          const nextAnnotations = current.slice(0, -1);
-          void emit('annotation:sync', nextAnnotations);
-          return nextAnnotations;
-        });
-      }),
-      listen('annotation:clear', () => {
-        if (!isMounted) {
-          return;
-        }
-
-        setAnnotations([]);
-        void emit('annotation:sync', []);
-      })
-    ])
-      .then((nextUnlisteners) => {
-        unlisteners.push(...nextUnlisteners);
-      })
-      .catch(() => {
-        // Browser preview and tests run without the Tauri event bus.
-      });
-
-    return () => {
-      isMounted = false;
-      unlisteners.forEach((unlisten) => unlisten());
-    };
-  }, [onDone]);
+  useTauriListeners(
+    [
+      () => listen('annotation:finish', () => onDone(annotationsRef.current)),
+      () =>
+        listen('annotation:undo', () => {
+          setAnnotations((current) => {
+            const nextAnnotations = current.slice(0, -1);
+            void emit('annotation:sync', nextAnnotations);
+            return nextAnnotations;
+          });
+        }),
+      () =>
+        listen('annotation:clear', () => {
+          setAnnotations([]);
+          void emit('annotation:sync', []);
+        })
+    ],
+    [onDone]
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
