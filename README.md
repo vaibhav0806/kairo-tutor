@@ -41,19 +41,13 @@ Provider utilities
   - Local provider smoke test
 ```
 
-There is no separate deployed backend yet.
-
-The current `src/server/` folder is not a running backend service. It contains server-side/provider-safe code that should not be shipped as browser-only logic. The current provider smoke test runs locally from Node.
-
-The likely production backend shape is a small proxy service, probably Cloudflare Worker or similar, that stores provider secrets and exposes narrow routes for:
-
-- OpenRouter chat/vision planning
-- Sarvam speech-to-text
-- Sarvam text-to-speech
-- ElevenLabs speech-to-text
-- ElevenLabs text-to-speech
-
-Until that backend exists, do not put provider secrets into browser-exposed env variables. Real provider adapters live under [src/server/providers](./src/server/providers) and are designed to be called from a server-side or native-secret context, then passed into the existing tutor orchestrator.
+The backend is the **`server/`** package — a self-hosted **Fastify** service (Google
+auth + AI-provider proxy + usage metering + Dodo billing) that holds the real provider
+keys and exposes narrow routes; see [`server/AGENTS.md`](./server/AGENTS.md). The desktop
+bundle never ships provider secrets: all provider round-trips (OpenRouter chat/vision,
+Sarvam STT/TTS, ElevenLabs) go through that proxy, and the frontend tutor orchestrator
+(`src/core/`) reaches it via native commands. There is no `src/server/` folder — the old
+provider adapters were removed; `tutorPlanner` now lives at `src/core/tutorPlanner.ts`.
 
 ## Product Scope
 

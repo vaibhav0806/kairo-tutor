@@ -109,8 +109,8 @@ src/                         Frontend (React 19 + Vite). One entry (main.tsx) ro
   overlay/                   full-screen annotation + visual-target overlay
   cursor/                    companion pet cursor (own click-through panel, #/cursor)
   activation/                activation state machine
-  core/                      orchestrator, runtimePlanner, skills, types, logger.ts
-  server/providers/          provider-side code (elevenLabs, openRouter, sarvam, tutorPlanner)
+  core/                      orchestrator, runtimePlanner, tutorPlanner, skills, types, logger.ts
+                             (provider proxying is the separate `server/` package, not src/)
   native/nativeBridge.ts     typed wrapper over Tauri `invoke` (+ browser fallbacks)
   config/env.ts              KAIRO_* public env parsing (zod)
 
