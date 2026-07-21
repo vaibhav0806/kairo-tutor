@@ -30,8 +30,8 @@ mod permissions;
 use permissions::ensure_input_monitoring_access;
 use permissions::{
     get_input_monitoring_status, get_permission_status, open_permission_settings,
-    request_input_monitoring, request_microphone, request_required_permissions,
-    should_show_setup_window,
+    request_accessibility, request_input_monitoring, request_microphone,
+    request_required_permissions, request_screen_recording, should_show_setup_window,
 };
 
 mod capture;
@@ -713,6 +713,8 @@ pub fn run() {
             get_active_app,
             get_permission_status,
             request_required_permissions,
+            request_screen_recording,
+            request_accessibility,
             open_permission_settings,
             request_microphone,
             request_input_monitoring,

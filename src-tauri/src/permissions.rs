@@ -181,6 +181,40 @@ pub(crate) fn request_required_permissions(app: tauri::AppHandle) -> PermissionS
     }
 }
 
+/// Fire ONLY the Screen Recording OS prompt (Act 3a). Registers Kairo in the Screen Recording list
+/// and shows the system dialog. macOS forces a quit+reopen once granted — the onboarding resume
+/// marker lands us back in Act 3 on relaunch. Screen-capture auth is cached per-process, so
+/// `get_permission_status` may keep reading NotDetermined in THIS process until that relaunch.
+#[tauri::command]
+pub(crate) fn request_screen_recording() -> PermissionState {
+    #[cfg(target_os = "macos")]
+    {
+        let state = request_screen_recording_permission();
+        crate::klog!(app, info, state = ?state, "act3: requested screen recording");
+        return state;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        PermissionState::Unknown
+    }
+}
+
+/// Fire ONLY the Accessibility OS prompt (Act 3b). Crucially this ALSO registers Kairo in the
+/// Accessibility list, so there is a toggle for the pet to point at.
+#[tauri::command]
+pub(crate) fn request_accessibility() -> PermissionState {
+    #[cfg(target_os = "macos")]
+    {
+        let state = request_accessibility_permission();
+        crate::klog!(app, info, state = ?state, "act3: requested accessibility");
+        return state;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        PermissionState::Unknown
+    }
+}
+
 #[tauri::command]
 pub(crate) fn open_permission_settings(permission: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]

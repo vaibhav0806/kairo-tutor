@@ -138,6 +138,9 @@ export type NativeBridge = {
   requestMicrophone(): Promise<NativePermissionStatus>;
   requestInputMonitoring(): Promise<void>;
   getInputMonitoringStatus(): Promise<NativePermissionState>;
+  // Act 3 — fire ONE OS prompt at a time (Screen Recording, then Accessibility; never batched).
+  requestScreenRecording(): Promise<NativePermissionState>;
+  requestAccessibility(): Promise<NativePermissionState>;
   restartApp(): Promise<void>;
   // True when the signed-in user is out of free requests (proxy mode). The notch calls this
   // on push-to-talk release BEFORE transcribing, to skip STT/gate/vision + play the cached
@@ -359,6 +362,22 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
         await invoke<void>('request_input_monitoring');
       } catch {
         // Browser previews have no input-monitoring grant.
+      }
+    },
+
+    async requestScreenRecording() {
+      try {
+        return await invoke<NativePermissionState>('request_screen_recording');
+      } catch {
+        return 'unknown';
+      }
+    },
+
+    async requestAccessibility() {
+      try {
+        return await invoke<NativePermissionState>('request_accessibility');
+      } catch {
+        return 'unknown';
       }
     },
 
