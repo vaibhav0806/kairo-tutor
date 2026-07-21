@@ -14,6 +14,7 @@ import { gestureConfig } from '../config/gesture';
 import { releaseVisualTargets, type RevealTransition } from '../overlay/targetRouting';
 import { onboardingChat } from './backendClient';
 import { klog } from '../core/logger';
+import { playSound } from '../core/sound';
 import type { NativeBridge } from '../native/nativeBridge';
 import type { TutorStep } from '../core/types';
 
@@ -29,6 +30,10 @@ export type DemoCallbacks = {
   // The reply's first audio is playing (drop the "thinking" state, show "speaking").
   onSpeaking?: () => void;
 };
+
+// Outcome of one practice turn: `ok` → advance; otherwise show a retry nudge and let the user hold
+// the chord again (chord-is-the-only-Next stays intact). `reason` picks the retry caption.
+export type DemoResult = { ok: boolean; reason?: 'empty' | 'no_target' };
 
 // Speak one line via streaming Sarvam TTS, driving the companion cursor's speaking pulse.
 // Resolves when playback ends. `onStart` fires the instant the first audio sample plays.
@@ -87,13 +92,14 @@ export async function runPointTurn(
   bridge: NativeBridge,
   audioBase64: string,
   cb: DemoCallbacks = {},
-): Promise<void> {
+): Promise<DemoResult> {
   cb.onThinking?.();
   const [{ text }, capture] = await Promise.all([
     bridge.transcribeAudio({ audioBase64, mimeType: WAV }),
     bridge.captureScreen(),
   ]);
-  const query = (text ?? '').trim() || 'What can you point out on my screen?';
+  const query = (text ?? '').trim();
+  if (!query) return { ok: false, reason: 'empty' }; // held the chord but said nothing → retry
   const active = capture.activeApp ?? (await bridge.getActiveApp());
 
   // Gate: decide whether to look + get a spoken filler that echoes the ask.
@@ -119,7 +125,7 @@ export async function runPointTurn(
   if (!needsScreen) {
     // Direct answer (greeting / general question) — speak the gate's reply, no overlay.
     await speak(bridge, filler || 'Got it!', cb.onSpeaking);
-    return;
+    return { ok: true };
   }
 
   // Vision: run the tutor turn while the filler plays, then reveal + narrate the answer.
@@ -133,9 +139,23 @@ export async function runPointTurn(
   });
   if (filler) await speak(bridge, filler, cb.onSpeaking);
   const result = await visionPromise;
-  await playSteps(bridge, result.steps, result.revealStep, filler ? undefined : cb.onSpeaking);
+  // THE PEAK (§9): the instant the first box/pointer lands on the real target, fire the pet
+  // celebration + the arrival cue — once, and only when there's an actual target.
+  let peaked = false;
+  const revealWithPeak = async (step: TutorStep, transition?: RevealTransition) => {
+    await result.revealStep(step, transition);
+    if (!peaked && step.visualTargets.length > 0) {
+      peaked = true;
+      void emit('cursor:celebrate');
+      playSound('arrive');
+      klog('onboarding', 'info', 'point peak', {});
+    }
+  };
+  await playSteps(bridge, result.steps, revealWithPeak, filler ? undefined : cb.onSpeaking);
   await new Promise((r) => setTimeout(r, HIGHLIGHT_DWELL_MS));
   await releaseVisualTargets(bridge);
+  const hasTarget = result.steps.some((s) => s.visualTargets.length > 0);
+  return { ok: hasTarget, reason: hasTarget ? undefined : 'no_target' };
 }
 
 // circle: the user draws around something; Kairo describes it. Gesture strokes are
@@ -146,7 +166,7 @@ export async function runCircleTurn(
   audioBase64: string,
   points: TimedPoint[],
   cb: DemoCallbacks = {},
-): Promise<void> {
+): Promise<DemoResult> {
   cb.onThinking?.();
   const [{ text }, rawCapture] = await Promise.all([
     bridge.transcribeAudio({ audioBase64, mimeType: WAV }),
@@ -171,6 +191,9 @@ export async function runCircleTurn(
   await playSteps(bridge, result.steps, result.revealStep);
   await new Promise((r) => setTimeout(r, HIGHLIGHT_DWELL_MS));
   await releaseVisualTargets(bridge);
+  // The gesture carries the intent, so an empty transcript is fine — only a no-target answer retries.
+  const hasTarget = result.steps.some((s) => s.visualTargets.length > 0);
+  return { ok: hasTarget, reason: hasTarget ? undefined : 'no_target' };
 }
 
 // Act 3b — the signature move. With Screen Recording granted, Kairo uses its OWN vision pipeline
