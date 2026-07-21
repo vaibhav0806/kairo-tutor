@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { activationStateToNotchPayload } from '../activation/activationState';
 import { loadBrowserEnv } from '../config/env';
 import { klog, type LogFields, type LogLevel } from '../core/logger';
 import { playSound, playRecordingCue } from '../core/sound';
-import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
+import type { UserAnnotation, VisualTarget } from '../core/types';
 import {
   createNativeBridge,
   type NativeContextBaseline,
@@ -12,8 +12,6 @@ import {
   type NativeScreenCapture
 } from '../native/nativeBridge';
 import { type NotchAnnotationTool } from './annotationActions';
-import { buildAudioDataUrl } from './audioPlayback';
-import { createBufferedClip, createStreamingClip, type SpeechClip } from './streamingTts';
 import { createPointerWatch, type PointerWatch } from './pointerWatch';
 import {
   asFollowButton,
@@ -47,17 +45,15 @@ import { compositeMarks } from './compositeMarks';
 import { gestureConfig } from '../config/gesture';
 import {
   defaultPayload,
-  FILLER_FALLBACK,
   FREE_LIMIT_TEXT,
   NOTCH_IDLE_CLOSE_MS,
   pickFiller,
   pickNudge,
-  STEP_GAP_MS,
-  STEP_SYNTH_TIMEOUT_MS,
   VOICE_ERROR_VISIBLE_MS,
   type QuerySource
 } from './notchConstants';
 import { useTurnHistory } from './useTurnHistory';
+import { useTTSPlayback } from './useTTSPlayback';
 import { NotchCapsule, type NotchCapsuleMode } from './NotchCapsule';
 import upgradeAudioUrl from './audio/upgrade.wav?url';
 
@@ -67,9 +63,6 @@ export function NotchApp() {
   // The answer body is held back until TTS playback actually starts, so the notch
   // never shows the answer text before it is spoken.
   const [detailHidden, setDetailHidden] = useState(false);
-  // True while the answer is actually being spoken (TTS playing) — drives the
-  // "Speaking" state of the status capsule.
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [query, setQuery] = useState('');
   const [annotations, setAnnotations] = useState<UserAnnotation[]>([]);
   const [activeAnnotationTool, setActiveAnnotationTool] = useState<NotchAnnotationTool | null>(null);
@@ -79,28 +72,8 @@ export function NotchApp() {
   const voiceCaptureStateRef = useRef<VoiceCaptureState>('idle');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const answerAudioRef = useRef<SpeechClip | null>(null);
   // The status capsule element, for writing the live mic level (--mic-level).
   const capsuleRef = useRef<HTMLDivElement | null>(null);
-  // Set true when the real answer supersedes the gate's "let me look" filler, so a
-  // slow filler synth doesn't play over the answer.
-  const fillerCancelRef = useRef(false);
-  // Pre-synthesized filler audio (data URLs), used only as a fallback line.
-  const fillerAudioUrlsRef = useRef<string[]>([]);
-  // The currently-playing filler clip, kept separate from the answer so the answer
-  // can QUEUE behind it (wait for it to finish) instead of cutting it off.
-  const fillerAudioRef = useRef<SpeechClip | null>(null);
-  // Resolves when the current filler finishes (or is cancelled); the answer awaits it.
-  const fillerDoneRef = useRef<Promise<void> | null>(null);
-  const fillerResolveRef = useRef<(() => void) | null>(null);
-  // Resolves when the CURRENTLY-playing narration (playSteps / playAnswerAudio) finishes,
-  // whether it ends naturally or is cut. A click-turn captures this so its next-step audio
-  // can queue BEHIND the current line instead of cutting it (no-cut UX). Starts resolved.
-  const narrationDoneRef = useRef<Promise<void>>(Promise.resolve());
-  const narrationDoneResolveRef = useRef<() => void>(() => {});
-  // Bumped on every stopAnswerPlayback so a queued answer can detect it was
-  // superseded by a newer turn while waiting for the filler, and not play stale.
-  const playbackEpochRef = useRef(0);
   // Opened on every new turn (voice re-engage OR typed submit): abort the previous
   // turn's controller and install a fresh one. A turn captures its AbortSignal and bails
   // after each await once a newer turn supersedes it (aborts the old controller), so a
@@ -123,8 +96,6 @@ export function NotchApp() {
   const lastNotchActivityAt = useRef(0);
   const pointerInsideNotchRef = useRef(false);
   const lastNotchPointerAt = useRef(0);
-  // Backstop so the answer always "settles" even if the audio 'ended' event misfires.
-  const settleFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Session memory: rolling turn-triples for continuity (last N → tutor/gate).
   const { recordTriple, buildRecentContext, buildGateHistory } = useTurnHistory();
   // The skill pack chosen for the current task. Set by the gate (voice path); reused
@@ -178,9 +149,6 @@ export function NotchApp() {
   // `pending` to still tell the gate "a guide pointer was on screen". Consumed + reset
   // by runGate; only ever SET true (so the 2nd resetPreviousTurn can't clobber it).
   const pointerWasPendingRef = useRef(false);
-  // A DEDICATED clip slot for the mid-guide ack ("nice, one sec") so it never
-  // collides with the turn's filler/answer clip. Cut by stopAnswerPlayback.
-  const followClipRef = useRef<SpeechClip | null>(null);
   // First pointer of a fresh voice/typed turn is DRAWN; a click-turn's next pointer
   // GLIDES (mirrors playSteps). Reset to true at the top of submitQuery.
   const followFirstPointerRef = useRef(true);
@@ -196,6 +164,20 @@ export function NotchApp() {
   const lastNudgeAtRef = useRef(Number.NEGATIVE_INFINITY);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
   const env = loadBrowserEnv();
+  // All answer/filler/step/follow audio playback lives in this hook (owns the clip refs +
+  // playback epoch + narration/filler done-signals); the turn machine just calls it.
+  const tts = useTTSPlayback(nativeBridge);
+  const {
+    stopAnswerPlayback,
+    playAnswerAudio,
+    playSteps,
+    speakFiller,
+    speakFollowClip,
+    speakFollowClipDone,
+    playBufferedAnswer,
+    getNarrationDone,
+    openFillerGate
+  } = tts;
 
   // Coerce a raw wait string (from await_click) to a known FollowWait bucket.
   const asFollowWait = (w: string): FollowWait =>
@@ -267,63 +249,6 @@ export function NotchApp() {
   const stopPcmCapture = useCallback(() => {
     pcmCaptureCleanupRef.current?.();
     pcmCaptureCleanupRef.current = null;
-  }, []);
-
-  const stopAnswerPlayback = useCallback(() => {
-    setIsSpeaking(false);
-    // Any new playback supersedes a pending gate filler.
-    fillerCancelRef.current = true;
-    // Supersede anything queued behind the filler (see playAnswerAudio).
-    playbackEpochRef.current += 1;
-    // Also stop any in-flight follow-along step speech so a new turn's audio never
-    // overlaps it. No-op (ref null) outside an active follow-along.
-    if (followClipRef.current) {
-      try {
-        followClipRef.current.pause();
-      } catch {
-        // ignore
-      }
-      followClipRef.current = null;
-    }
-    // Stop the filler clip + unblock any answer waiting on it.
-    if (fillerAudioRef.current) {
-      try {
-        fillerAudioRef.current.pause();
-      } catch {
-        // ignore
-      }
-      fillerAudioRef.current = null;
-    }
-    if (fillerResolveRef.current) {
-      fillerResolveRef.current();
-      fillerResolveRef.current = null;
-    }
-    if (settleFallbackRef.current) {
-      clearTimeout(settleFallbackRef.current);
-      settleFallbackRef.current = null;
-    }
-    if (!answerAudioRef.current) {
-      return;
-    }
-
-    answerAudioRef.current.pause();
-    answerAudioRef.current.src = '';
-    answerAudioRef.current = null;
-  }, []);
-
-  // Narration lifecycle: playSteps/playAnswerAudio call beginNarration when they start
-  // speaking and endNarration when they finish (naturally or cut). narrationDoneRef then
-  // always reflects the currently-playing line — a click-turn awaits it to queue behind.
-  const beginNarration = useCallback(() => {
-    let resolve: () => void = () => {};
-    narrationDoneRef.current = new Promise<void>((r) => {
-      resolve = r;
-    });
-    narrationDoneResolveRef.current = resolve;
-  }, []);
-  const endNarration = useCallback(() => {
-    narrationDoneResolveRef.current();
-    narrationDoneResolveRef.current = () => {};
   }, []);
 
   const noteNotchActivity = useCallback(() => {
@@ -499,327 +424,6 @@ export function NotchApp() {
       };
     },
     [stopVoiceMonitor]
-  );
-
-  const playAnswerAudio = useCallback(
-    // `onSpeechStart` fires when playback actually begins (reveal the text +
-    // visuals then); `onSettled` fires when playback ends, or immediately when
-    // there is nothing to play, so the notch auto-close countdown can begin.
-    async (text: string, onSpeechStart?: () => void, onSettled?: () => void) => {
-      beginNarration();
-      const trimmedText = text.trim();
-      if (!trimmedText) {
-        stopAnswerPlayback();
-        // Nothing to speak: reveal immediately so the answer isn't left hidden.
-        onSpeechStart?.();
-        onSettled?.();
-        endNarration();
-        return;
-      }
-
-      // Start STREAMING the answer NOW, while the "let me look" filler is still
-      // playing, so Sarvam is already synthesizing and first audio is ready the
-      // moment the filler ends (no silent gap). The clip plays progressively.
-      const clip = createStreamingClip(nativeBridge, trimmedText);
-
-      // QUEUE behind the filler: wait for it to finish rather than cutting it off.
-      // Guarded by a timeout so a stuck filler can't wedge the answer forever.
-      const epoch = playbackEpochRef.current;
-      const pendingFiller = fillerDoneRef.current;
-      fillerDoneRef.current = null;
-      if (pendingFiller) {
-        await Promise.race([
-          pendingFiller,
-          new Promise<void>((resolve) => setTimeout(resolve, 12000))
-        ]);
-      }
-      // A newer turn superseded this one while we waited → don't play a stale answer.
-      if (playbackEpochRef.current !== epoch) {
-        clip.pause();
-        endNarration();
-        return;
-      }
-
-      stopAnswerPlayback();
-
-      answerAudioRef.current = clip;
-      const audio = clip;
-      // Reveal the answer text + teaching visuals the instant speech begins.
-      audio.onplay = () => {
-        setIsSpeaking(true);
-        onSpeechStart?.();
-        // Cursor shows a calm speaking pulse (survives the fly-to-target).
-        void emit('cursor:speaking', {});
-        // Backstop: guarantee the answer settles (so auto-close can run) even if
-        // 'ended' never fires. Cleared by 'ended' or a new turn (stopAnswerPlayback).
-        if (settleFallbackRef.current) {
-          clearTimeout(settleFallbackRef.current);
-        }
-        settleFallbackRef.current = setTimeout(() => onSettled?.(), 60000);
-      };
-      audio.onended = () => {
-        setIsSpeaking(false);
-        void emit('cursor:idle', {});
-        if (settleFallbackRef.current) {
-          clearTimeout(settleFallbackRef.current);
-          settleFallbackRef.current = null;
-        }
-        onSettled?.();
-        endNarration();
-      };
-      // Cut mid-play (barge-in via stopAnswerPlayback) → unblock any click-turn waiting.
-      audio.onpause = () => {
-        setIsSpeaking(false);
-        endNarration();
-      };
-      try {
-        await audio.play();
-      } catch {
-        // Playback is best-effort; reveal + settle so nothing is left hidden.
-        onSpeechStart?.();
-        onSettled?.();
-        endNarration();
-      }
-    },
-    [nativeBridge, stopAnswerPlayback, beginNarration, endNarration]
-  );
-
-  // Play a multi-step answer: speak each step's `say` in order while revealing that
-  // step's box/cursor, with a breathing gap between. All step audio is synthesized
-  // in PARALLEL up front, so the next clip is ready before the current ends — the
-  // only pause between steps is the intentional STEP_GAP_MS. Interruptible: a new
-  // turn bumps playbackEpoch (via stopAnswerPlayback) and every await bails.
-  const playSteps = useCallback(
-    async (
-      steps: TutorStep[],
-      revealStep: (step: TutorStep, transition?: RevealTransition) => Promise<void>,
-      onFirstSpeechStart?: () => void,
-      onSettled?: () => void,
-      onStepStart?: (index: number, step: TutorStep) => void
-    ) => {
-      beginNarration();
-      if (steps.length === 0) {
-        onFirstSpeechStart?.();
-        onSettled?.();
-        endNarration();
-        return;
-      }
-
-      // Each step is a STREAMING clip: constructing it kicks off synthesis right away
-      // (so it's effectively prefetched) and playback begins at first byte. A clip's
-      // own buffered fallback covers a failed stream, so no step is left silent.
-      // null = empty text (nothing to speak).
-      const clips: Array<SpeechClip | null | undefined> = new Array(steps.length);
-      // Called only at superseded/cut exits (always followed by return) — so it also
-      // ends the narration, unblocking a click-turn queued behind this line.
-      const stopClips = () => {
-        for (const clip of clips) {
-          if (clip) {
-            try {
-              clip.pause();
-            } catch {
-              // ignore
-            }
-          }
-        }
-        endNarration();
-      };
-
-      // Prefetch window: keep at most 2 synths in flight. Sarvam's bulbul:v3 stalls
-      // several simultaneous requests, so we DON'T create all N at once — we create
-      // step i+1 and i+2 as each step starts playing, spreading requests across
-      // playback (also keeps us well under the per-minute rate).
-      const prefetch = (index: number) => {
-        if (index < steps.length && clips[index] === undefined) {
-          const say = steps[index].say.trim();
-          clips[index] = say ? createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS) : null;
-        }
-      };
-      prefetch(0);
-      prefetch(1);
-
-      // Queue behind the "let me look" filler (mirror playAnswerAudio).
-      const epoch = playbackEpochRef.current;
-      const pendingFiller = fillerDoneRef.current;
-      fillerDoneRef.current = null;
-      if (pendingFiller) {
-        await Promise.race([pendingFiller, new Promise<void>((resolve) => setTimeout(resolve, 12000))]);
-      }
-      if (playbackEpochRef.current !== epoch) {
-        stopClips();
-        return;
-      }
-
-      // stopAnswerPlayback() bumps playbackEpoch, so capture the epoch to check the
-      // loop against AFTER it — otherwise the first iteration sees epoch+1 and bails
-      // immediately (nothing ever plays). A genuinely newer turn bumps it again,
-      // which still makes every await below bail correctly.
-      stopAnswerPlayback();
-      const playEpoch = playbackEpochRef.current;
-
-      let firstSpoken = false;
-      // The first box a walkthrough shows is drawn; once it's on screen, later
-      // steps glide the same box to the next target instead of re-popping it.
-      let boxOnScreen = false;
-      const startStep = (index: number) => {
-        const step = steps[index];
-        onStepStart?.(index, step);
-        if (!firstSpoken) {
-          firstSpoken = true;
-          onFirstSpeechStart?.();
-        }
-        const hasBox = step.visualTargets.some((target) => target.kind === 'highlight_box');
-        const transition: RevealTransition = hasBox && boxOnScreen ? 'glide' : 'draw';
-        boxOnScreen = hasBox;
-        void revealStep(step, transition);
-        // Keep 2 steps ahead prefetched (fires i+2 as i starts; i+1 already in flight).
-        prefetch(index + 1);
-        prefetch(index + 2);
-      };
-
-      for (let i = 0; i < steps.length; i += 1) {
-        if (playbackEpochRef.current !== playEpoch) {
-          stopClips();
-          return; // superseded → stop
-        }
-        prefetch(i); // safety: ensure this step's clip was created
-        const clip = clips[i] ?? null;
-
-        if (!clip) {
-          // No audio (empty step): still reveal the step briefly.
-          startStep(i);
-          await new Promise<void>((resolve) => setTimeout(resolve, 900));
-        } else {
-          await new Promise<void>((resolve) => {
-            answerAudioRef.current = clip;
-            let done = false;
-            const finish = () => {
-              if (!done) {
-                done = true;
-                resolve();
-              }
-            };
-            clip.onplay = () => {
-              setIsSpeaking(true);
-              startStep(i);
-              void emit('cursor:speaking', {});
-            };
-            clip.onended = () => {
-              setIsSpeaking(false);
-              finish();
-            };
-            // stopAnswerPlayback (a new turn / interruption) pauses the clip, which
-            // fires 'pause' — unblock the loop so the epoch check below bails.
-            clip.onpause = finish;
-            clip.onerror = finish;
-            void clip.play().catch(finish);
-          });
-        }
-
-        if (playbackEpochRef.current !== playEpoch) {
-          stopClips();
-          return;
-        }
-        // Breathing gap between steps (not after the last).
-        if (i < steps.length - 1) {
-          await new Promise<void>((resolve) => setTimeout(resolve, STEP_GAP_MS));
-        }
-      }
-
-      if (playbackEpochRef.current !== playEpoch) {
-        stopClips();
-        return;
-      }
-      setIsSpeaking(false);
-      void emit('cursor:idle', {});
-      onSettled?.();
-      endNarration();
-    },
-    [nativeBridge, stopAnswerPlayback, beginNarration, endNarration]
-  );
-
-  // Speak the mid-guide ack ("nice, one sec") on the DEDICATED follow clip slot so it
-  // never collides with the turn's filler/answer clip. A new line cuts the prior one;
-  // stopAnswerPlayback (a new turn / the answer starting) also cuts it. Drives the
-  // speaking status exactly like the normal path.
-  const speakFollowClip = useCallback(
-    async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) {
-        return;
-      }
-      if (followClipRef.current) {
-        try {
-          followClipRef.current.pause();
-        } catch {
-          // ignore
-        }
-        followClipRef.current = null;
-      }
-      const clip = createStreamingClip(nativeBridge, trimmed, STEP_SYNTH_TIMEOUT_MS);
-      followClipRef.current = clip;
-      const clearSpeaking = () => setIsSpeaking(false);
-      clip.onplay = () => {
-        setIsSpeaking(true);
-        void emit('cursor:speaking', {});
-      };
-      clip.onended = clearSpeaking;
-      clip.onpause = clearSpeaking;
-      clip.onerror = clearSpeaking;
-      try {
-        await clip.play();
-      } catch {
-        setIsSpeaking(false);
-      } finally {
-        if (followClipRef.current === clip) {
-          followClipRef.current = null;
-        }
-      }
-    },
-    [nativeBridge]
-  );
-
-  // Like speakFollowClip, but resolves only when the ack clip FINISHES (ends, is cut, or
-  // errors) — used by the click-turn so the next answer can queue BEHIND the ack. Plays
-  // on the same follow-clip slot, so a voice barge-in (stopAnswerPlayback) cuts it.
-  const speakFollowClipDone = useCallback(
-    async (text: string, signal: AbortSignal) => {
-      const trimmed = text.trim();
-      if (!trimmed || signal.aborted) {
-        return;
-      }
-      if (followClipRef.current) {
-        try {
-          followClipRef.current.pause();
-        } catch {
-          // ignore
-        }
-        followClipRef.current = null;
-      }
-      const clip = createStreamingClip(nativeBridge, trimmed, STEP_SYNTH_TIMEOUT_MS);
-      followClipRef.current = clip;
-      await new Promise<void>((resolve) => {
-        let done = false;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          setIsSpeaking(false);
-          if (followClipRef.current === clip) {
-            followClipRef.current = null;
-          }
-          resolve();
-        };
-        clip.onplay = () => {
-          setIsSpeaking(true);
-          void emit('cursor:speaking', {});
-        };
-        clip.onended = finish;
-        clip.onpause = finish; // a barge-in cut resolves it too
-        clip.onerror = finish;
-        void clip.play().catch(finish);
-      });
-    },
-    [nativeBridge]
   );
 
   // Settle after a click: a plain per-bucket sleep, no pixel matching. Fable emits the
@@ -1064,64 +668,6 @@ export function NotchApp() {
     [nativeBridge, buildGateHistory]
   );
 
-  // Speak the gate's "let me look" filler while the vision turn runs. Guarded so a
-  // slow synth never plays over the real answer.
-  const speakFiller = useCallback(
-    async (text: string, signal: AbortSignal) => {
-      fillerCancelRef.current = false;
-      // Set up the "filler finished" signal the answer will queue behind.
-      let resolveDone: () => void = () => {};
-      fillerDoneRef.current = new Promise<void>((resolve) => {
-        resolveDone = resolve;
-      });
-      fillerResolveRef.current = resolveDone;
-      const finishFiller = () => {
-        fillerAudioRef.current = null;
-        fillerResolveRef.current?.();
-        fillerResolveRef.current = null;
-      };
-      const startClip = (audio: SpeechClip) => {
-        fillerAudioRef.current = audio;
-        audio.onended = finishFiller;
-        audio.onerror = finishFiller;
-        // A barge-in (stopAnswerPlayback) pauses the clip → unblock the answer.
-        audio.onpause = finishFiller;
-      };
-
-      const trimmed = text.trim();
-      // Preferred: speak the gate's OWN contextual filler (references the question,
-      // e.g. "let me look at that button"). STREAMED so it starts at first byte.
-      if (trimmed) {
-        // Supersede check up front — streaming plays as it arrives, so unlike the old
-        // buffered path there's no synth window to become stale within.
-        if (fillerCancelRef.current || signal.aborted) {
-          finishFiller();
-          return;
-        }
-        try {
-          const clip = createStreamingClip(nativeBridge, trimmed);
-          startClip(clip);
-          await clip.play();
-          return;
-        } catch {
-          // fall through to the generic cached fallback
-        }
-      }
-      // Fallback: a generic pre-synthesized line (gate returned no text / synth failed).
-      const cached = fillerAudioUrlsRef.current;
-      if (cached.length > 0 && !fillerCancelRef.current && !signal.aborted) {
-        const url = cached[Math.floor(Math.random() * cached.length)];
-        const audio = createBufferedClip(url);
-        startClip(audio);
-        void audio.play().catch(finishFiller);
-        return;
-      }
-      // Nothing played → unblock the answer immediately.
-      finishFiller();
-    },
-    [nativeBridge]
-  );
-
   const submitQuery = useCallback(
     async (
       nextQuery: string,
@@ -1315,7 +861,7 @@ export function NotchApp() {
       // NO-CUT UX: do NOT stop the current step's speech. Let the line the user clicked
       // through finish naturally; the next turn's audio queues BEHIND it. Capture the
       // current narration's done-signal so the answer can wait for it.
-      const currentSpeechDone = narrationDoneRef.current;
+      const currentSpeechDone = getNarrationDone();
       let speechEnded = false;
       // Tell Fable which button was used — a right-click means a context menu is now
       // open, so its next step should point at a menu item (a normal left-click).
@@ -1349,17 +895,14 @@ export function NotchApp() {
 
       const recentContext = buildRecentContext();
 
-      // 2. Ack filler + the no-cut queue. The answer (playResponseAndArm) waits on
-      //    fillerDoneRef; we resolve it only once the current line — and the ack, IF we
+      // 2. Ack filler + the no-cut queue. The answer (playResponseAndArm) waits on the
+      //    filler gate; we resolve it only once the current line — and the ack, IF we
       //    play it — has finished, so the answer never cuts the current line. Ack rule
       //    (user's): if the ack is ready BEFORE the current line ends, skip it (things
       //    are already moving); if it's ready only AFTER, play it so the wait isn't silent.
-      fillerCancelRef.current = false;
-      let resolveGate: () => void = () => {};
-      fillerDoneRef.current = new Promise<void>((r) => {
-        resolveGate = r;
-      });
-      fillerResolveRef.current = resolveGate; // a voice barge-in (stopAnswerPlayback) unblocks it too
+      //    openFillerGate arms the gate WITHOUT playing a clip; a voice barge-in
+      //    (stopAnswerPlayback) also resolves it.
+      const resolveGate = openFillerGate();
       const gateCap = (p: Promise<void>) =>
         Promise.race([p, new Promise<void>((r) => setTimeout(r, 12000))]);
 
@@ -1423,6 +966,8 @@ export function NotchApp() {
       buildRecentContext,
       settleAfterClick,
       speakFollowClipDone,
+      getNarrationDone,
+      openFillerGate,
       playResponseAndArm,
       markAnswerSettled
     ]
@@ -1760,27 +1305,10 @@ export function NotchApp() {
       updateVoiceCaptureState('idle');
       setDetailHidden(false);
       setPayload({ state: 'showing_step', layout: 'answer', title: 'Kairo', detail: FREE_LIMIT_TEXT });
-      const clip = createBufferedClip(upgradeAudioUrl);
-      answerAudioRef.current = clip;
-      clip.onplay = () => {
-        if (signal.aborted) return;
-        setIsSpeaking(true);
-        void emit('cursor:speaking');
-      };
-      const settle = () => {
-        setIsSpeaking(false);
-        void emit('cursor:idle');
-        noteNotchActivity();
-      };
-      clip.onended = settle;
-      clip.onerror = settle;
-      try {
-        await clip.play();
-      } catch {
-        settle();
-      }
+      // Play the bundled upgrade.wav AS the answer; the notch idle-close begins on settle.
+      await playBufferedAnswer(upgradeAudioUrl, signal, () => noteNotchActivity());
     },
-    [noteNotchActivity, stopAnswerPlayback, updateVoiceCaptureState]
+    [noteNotchActivity, playBufferedAnswer, stopAnswerPlayback, updateVoiceCaptureState]
   );
 
   const processCapturedAudio = useCallback(
@@ -2063,28 +1591,7 @@ export function NotchApp() {
   // recording. A WebView getUserMedia warm-up here kept the macOS mic indicator lit
   // for the whole session (WebKit doesn't drop it after track.stop()), so it's gone.
 
-  // Pre-synthesize the fallback fillers once at launch (used only if the gate's own
-  // contextual filler can't be synthesized).
-  // when the gate flags a screen question (no per-question TTS latency).
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      for (const line of FILLER_FALLBACK) {
-        try {
-          const result = await nativeBridge.synthesizeSpeech({ text: line });
-          const url = buildAudioDataUrl(result);
-          if (!cancelled && url) {
-            fillerAudioUrlsRef.current.push(url);
-          }
-        } catch {
-          // Best-effort; speakFiller falls back to on-demand synth.
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [nativeBridge]);
+  // (The fallback-filler pre-synth at launch now lives in useTTSPlayback.)
 
   useEffect(() => {
     let isMounted = true;
@@ -2242,15 +1749,15 @@ export function NotchApp() {
   const capsuleMode: NotchCapsuleMode =
     payload.state === 'listening'
       ? 'listening'
-      : !isSpeaking && voiceCaptureState === 'error'
+      : !tts.isSpeaking && voiceCaptureState === 'error'
         ? 'error'
-        : !isSpeaking &&
+        : !tts.isSpeaking &&
             (isSubmitting ||
               payload.state === 'thinking' ||
               voiceCaptureState === 'transcribing' ||
               detailHidden)
           ? 'thinking'
-          : !isSpeaking && payload.layout === 'prompt'
+          : !tts.isSpeaking && payload.layout === 'prompt'
             ? 'typing'
             : 'idle';
 
