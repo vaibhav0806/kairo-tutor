@@ -4,10 +4,10 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { ONBOARDING_SOURCES } from '@kairo/shared';
 import { klog } from '../core/logger';
-import { permissionSpeech, STEPS, type StepId } from './copy';
+import { permissionSpeech, pickSeededPrompt, STEPS, type StepId } from './copy';
 import { getAuthStatus, getBackendJwt, onAuthChanged, startGoogleAuth } from './authClient';
 import { extractField, onboardingStt, saveOnboarding } from './backendClient';
-import { runCircleTurn, runPointTurn, runTalkTurn } from './demoController';
+import { runCircleTurn, runPointTurn, type DemoResult } from './demoController';
 import { playRecordingCue } from '../core/sound';
 import { createNativeBridge } from '../native/nativeBridge';
 import type { TimedPoint } from '../notch/gestureSegmenter';
@@ -46,6 +46,8 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [demoState, setDemoState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
   const [demoDone, setDemoDone] = useState(false);
   const [demoLevel, setDemoLevel] = useState(0);
+  const [demoRetry, setDemoRetry] = useState<null | 'empty' | 'no_target'>(null);
+  const promptSeedRef = useRef(0);
   const voice = useVoice();
   const step = STEPS[index];
   const nameRef = useRef(name);
@@ -230,30 +232,35 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   // (voice chat); `point`/`circle` drew on the real screen, so restore the window first.
   const runDemoTurn = useCallback(
     async (mode: DemoMode, audioBase64: string) => {
-      if (demoDoneRef.current) return; // one turn per step
+      if (demoDoneRef.current) return; // stop once the step is satisfied
       setDemoLevel(0);
+      setDemoRetry(null);
       const cb = {
         onThinking: () => setDemoState('thinking'),
         onSpeaking: () => setDemoState('speaking'),
       };
+      // Only point/circle reach here (talk is Act 2 now). Both report success so the flow can
+      // retry a miss instead of advancing — the chord stays the only Next.
+      let result: DemoResult = { ok: false, reason: 'empty' };
       try {
-        if (mode === 'talk') await runTalkTurn(nativeBridge, audioBase64, nameRef.current, cb);
-        else if (mode === 'point') await runPointTurn(nativeBridge, audioBase64, cb);
-        else await runCircleTurn(nativeBridge, audioBase64, gestureBufferRef.current, cb);
+        if (mode === 'point') result = await runPointTurn(nativeBridge, audioBase64, cb);
+        else result = await runCircleTurn(nativeBridge, audioBase64, gestureBufferRef.current, cb);
       } catch (error) {
         klog('onboarding', 'error', 'demo turn failed', { mode, error: String(error) });
       } finally {
         setDemoState('idle');
-        demoDoneRef.current = true;
-        setDemoDone(true);
-        if (mode !== 'talk') {
-          await nativeBridge.hideOverlay();
-          await showSelf();
+        await nativeBridge.hideOverlay();
+        await showSelf();
+        if (result.ok) {
+          demoDoneRef.current = true;
+          setDemoDone(true);
+          setDemoRetry(null);
+          if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+          advanceTimerRef.current = setTimeout(() => go(1), 1200);
+        } else {
+          // Not satisfied — keep the step open so the next ⌥⌃ hold retries.
+          setDemoRetry(result.reason ?? 'empty');
         }
-        // Auto-advance, but let a manual Skip (which unmounts the step + clears this
-        // timer in the effect cleanup) win so we never double-advance and skip a step.
-        if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-        advanceTimerRef.current = setTimeout(() => go(1), 1200);
       }
     },
     [nativeBridge, go, showSelf],
@@ -264,10 +271,12 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   useEffect(() => {
     const mode = DEMO_MODES[step.id];
     if (!mode) return;
+    promptSeedRef.current += 1; // rotate the seeded chip once per mount
     let disposed = false;
     const unlisteners: Array<() => void> = [];
     setDemoState('idle');
     setDemoDone(false);
+    setDemoRetry(null);
     setDemoLevel(0);
     demoDoneRef.current = false;
     gestureBufferRef.current = [];
@@ -358,7 +367,11 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
             ? 'speaking…'
             : demoDone
               ? 'nice — you’ve got it!'
-              : 'ready when you are';
+              : demoRetry === 'no_target'
+                ? 'hmm, I couldn’t find that — try again'
+                : demoRetry === 'empty'
+                  ? 'didn’t quite catch that — try again'
+                  : 'ready when you are';
     return (
       <div className="ob-demo">
         <div className="ob-demo-keys">
@@ -367,7 +380,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           <kbd>⌃</kbd>
           <span className="ob-demo-action">{action}</span>
         </div>
-        {mode === 'talk' && <div className="ob-demo-hint">try: “hey Kairo, what’s up?”</div>}
+        <div className="ob-demo-hint">try: “{pickSeededPrompt(mode, promptSeedRef.current)}”</div>
         <div className={`ob-demo-status is-${demoState}`}>{status}</div>
       </div>
     );
