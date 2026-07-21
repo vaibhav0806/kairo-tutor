@@ -259,7 +259,11 @@ osascript -e 'tell application "Kairo Tutor" to quit'; sleep 1
 tccutil reset ScreenCapture com.kairo.tutor
 tccutil reset Accessibility com.kairo.tutor
 tccutil reset Microphone com.kairo.tutor
-tccutil reset ListenEvent com.kairo.tutor
+# Input Monitoring (ListenEvent) is keyed by the EXECUTABLE (`kairo-tutor`), NOT the bundle id — so
+# a bundle-scoped `tccutil reset ListenEvent com.kairo.tutor` does NOT clear it and the grant sticks
+# (Act 2's mic/keystroke primer then behaves like a returning user). Reset it for ALL apps to be sure
+# it's actually cleared (dev machine — you may have to re-grant other apps' Input Monitoring once):
+tccutil reset ListenEvent
 # App state markers (all live in the app config dir):
 CFG="$HOME/Library/Application Support/com.kairo.tutor"
 rm -f "$CFG/onboarded" "$CFG/onboarding_step" "$CFG/user_name" "$CFG/accent" \
