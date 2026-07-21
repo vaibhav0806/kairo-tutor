@@ -138,6 +138,8 @@ export type NativeBridge = {
   requestMicrophone(): Promise<NativePermissionStatus>;
   requestInputMonitoring(): Promise<void>;
   getInputMonitoringStatus(): Promise<NativePermissionState>;
+  // Start the ⌥⌃ tap on demand (Act 2, after priming) so the Keystroke prompt fires here, not at launch.
+  startPtt(): Promise<void>;
   // Act 3 — fire ONE OS prompt at a time (Screen Recording, then Accessibility; never batched).
   requestScreenRecording(): Promise<NativePermissionState>;
   requestAccessibility(): Promise<NativePermissionState>;
@@ -391,6 +393,14 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
         return s === 'granted' ? 'granted' : s === 'unknown' ? 'unknown' : 'not_determined';
       } catch {
         return 'unknown';
+      }
+    },
+
+    async startPtt() {
+      try {
+        await invoke('start_ptt');
+      } catch {
+        // Browser previews have no native PTT tap.
       }
     },
 

@@ -63,10 +63,13 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
   useEffect(() => {
     if (phase !== 'primer') return;
     let cancelled = false;
+    let openedSettings = false; // deep-link the IM pane at most ONCE (never spam it every poll)
+    let guided = false;
     void (async () => {
       await coachSay(bridge, voice.speak, [ACT_LINES.act2_primer], name, { title: 'Kairo' });
       const mic = await bridge.requestMicrophone(); // mic-only OS prompt
       await bridge.requestInputMonitoring(); // input-monitoring prompt + Settings listing
+      await bridge.startPtt(); // creates the ⌥⌃ tap NOW (prompt appears here, not at launch)
       klog('onboarding', 'info', 'act2 primer', { mic: mic.microphone });
       // The Input-Monitoring prompt offers a restart — skippable (the ⌥⌃ tap retries live).
       await coachSay(bridge, voice.speak, [ACT_LINES.act2_im_skip], name, { title: 'Kairo' });
@@ -81,9 +84,20 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
         if (status.microphone === 'granted' && im === 'granted') {
           clearInterval(iv);
           setPhase('drill');
-        } else if (im !== 'granted') {
-          // Input Monitoring usually needs a manual toggle — bridge the user to the pane.
+          return;
+        }
+        // Still waiting on Input Monitoring — guide the user ONCE (open the pane + a clear caption),
+        // never re-open Settings on every tick (that was the jarring spam).
+        if (im !== 'granted' && !openedSettings) {
+          openedSettings = true;
           void invoke('open_permission_settings', { permission: 'inputMonitoring' }).catch(() => {});
+        }
+        if (im !== 'granted' && !guided) {
+          guided = true;
+          void setCoachCaption(bridge, {
+            title: 'One quick toggle',
+            detail: 'Flip on Kairo Tutor under Input Monitoring — then we roll.'
+          });
         }
       })();
     }, 1500);
