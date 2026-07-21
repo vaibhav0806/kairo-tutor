@@ -655,3 +655,86 @@ body.onboarding-document {
     animation: none !important;
   }
 }
+
+/* ---- Act 1: arrival + color wheel (Phase 3) ---------------------------------------------------
+   Live theming reads --kairo-accent (set by Phase 0's applyAccent + accent:changed). */
+
+/* Subtle desktop vignette (dim during scripted beats) tinted by the chosen accent. Sits over the
+   transparent onboarding window; never eats clicks. */
+.ob-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 8%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 10%, transparent) 0%, transparent 55%),
+    radial-gradient(140% 120% at 50% 120%, rgba(0, 0, 0, 0.42) 0%, transparent 60%);
+  transition: background 200ms ease;
+}
+
+/* Temp panel (color-wheel host) — the one interactive region in Act 1. */
+.ob-color-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.ob-color-panel {
+  pointer-events: auto;
+  animation: ob-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  background: radial-gradient(135% 95% at 50% -12%, #271b40 0%, #150f21 44%, #0b0810 100%);
+  border: 1px solid color-mix(in srgb, var(--kairo-accent, #7c3aed) 22%, rgba(255, 255, 255, 0.07));
+  border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 26px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.ob-wheel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.ob-wheel-disc {
+  border-radius: 50%;
+  cursor: crosshair;
+  touch-action: none;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 40px color-mix(in srgb, var(--kairo-accent, #7c3aed) 40%, transparent);
+}
+.ob-wheel-slider {
+  width: 200px;
+  accent-color: var(--kairo-accent, #7c3aed);
+}
+.ob-wheel-swatch {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.1),
+    0 0 22px color-mix(in srgb, var(--kairo-accent, #7c3aed) 60%, transparent);
+}
+.ob-wheel-confirm {
+  border: none;
+  border-radius: 12px;
+  padding: 10px 22px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+  background: var(--kairo-accent, #7c3aed);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-color-panel {
+    animation: none;
+  }
+  .ob-vignette {
+    transition: none;
+  }
+}
