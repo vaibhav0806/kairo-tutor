@@ -49,14 +49,6 @@ export function soundsEnabled(): boolean {
   }
 }
 
-/** Persist the on/off preference (shared across WebViews via same-origin localStorage). */
-export function setSoundsEnabled(on: boolean): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, on ? 'true' : 'false');
-  } catch {
-    // no storage (tests / preview) → ignore
-  }
-}
 
 // Decoded on first real play (into the already-healthy shared context), then cached.
 // NEVER decoded at import — that would call getAudioContext() at page load, creating a

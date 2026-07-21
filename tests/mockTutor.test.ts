@@ -2,16 +2,6 @@ import { describe, expect, test } from 'vitest';
 import { createMockTutorPlanner } from '../src/core/mockTutor';
 
 describe('createMockTutorPlanner', () => {
-  test('returns an idle response without visual targets before the user asks', () => {
-    const planner = createMockTutorPlanner();
-
-    const response = planner.createIdleResponse('blender');
-
-    expect(response.mode).toBe('idle');
-    expect(response.visualTargets).toEqual([]);
-    expect(response.screenText).toContain('Ready');
-  });
-
   test('returns the first Blender animation step with voice and visual target', () => {
     const planner = createMockTutorPlanner();
     const response = planner.planNextStep({

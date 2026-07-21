@@ -4,28 +4,11 @@ import {
   encodeWavFromFloat32Chunks,
   rmsFromTimeDomainData,
   shouldStopVoiceCapture,
-  selectAudioMimeType,
   voiceFilenameForMimeType,
   voiceStatusCopy
 } from '../src/notch/voiceRecorder';
 
 describe('voiceRecorder helpers', () => {
-  test('selects the first supported audio MIME type', () => {
-    const recorder = {
-      isTypeSupported: (mimeType: string) => mimeType === 'audio/webm'
-    };
-
-    expect(selectAudioMimeType(recorder)).toBe('audio/webm');
-  });
-
-  test('falls back to browser default when no candidate is supported', () => {
-    const recorder = {
-      isTypeSupported: () => false
-    };
-
-    expect(selectAudioMimeType(recorder)).toBe('');
-  });
-
   test('creates a recorder with the first supported MIME type', () => {
     class FakeRecorder {
       static isTypeSupported(mimeType: string) {

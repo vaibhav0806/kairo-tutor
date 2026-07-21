@@ -4,17 +4,6 @@ import type { TutorRequest, TutorResponse } from './types';
 // it just echoes a fixed slug so the UI has something to render without a backend.
 export function createMockTutorPlanner() {
   return {
-    createIdleResponse(skillSlug = 'general'): TutorResponse {
-      return {
-        mode: 'idle',
-        skillSlug,
-        voiceText: 'Kairo is ready. Press the shortcut, capture your screen, then ask for help.',
-        screenText: 'Ready when you are.',
-        visualTargets: [],
-        expectedNextState: 'user_asks_question'
-      };
-    },
-
     planNextStep(request: TutorRequest): TutorResponse {
       const skillSlug = 'general';
       const normalizedQuery = request.userQuery.toLowerCase();

@@ -21,16 +21,6 @@ type MediaRecorderConstructorLike = {
   isTypeSupported?: (mimeType: string) => boolean;
 };
 
-export function selectAudioMimeType(
-  mediaRecorder: Pick<typeof MediaRecorder, 'isTypeSupported'> | undefined = globalThis.MediaRecorder
-) {
-  if (!mediaRecorder?.isTypeSupported) {
-    return '';
-  }
-
-  return preferredAudioMimeTypes.find((mimeType) => mediaRecorder.isTypeSupported(mimeType)) ?? '';
-}
-
 export function createVoiceRecorder(
   stream: MediaStream,
   MediaRecorderConstructor: MediaRecorderConstructorLike | undefined = globalThis.MediaRecorder
