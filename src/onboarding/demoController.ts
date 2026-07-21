@@ -172,3 +172,35 @@ export async function runCircleTurn(
   await new Promise((r) => setTimeout(r, HIGHLIGHT_DWELL_MS));
   await releaseVisualTargets(bridge);
 }
+
+// Act 3b — the signature move. With Screen Recording granted, Kairo uses its OWN vision pipeline
+// to find the Accessibility ON/OFF switch for "Kairo Tutor" and points the pet at it.
+// `located=false` when the model can't place a box (small system toggle) → the caller falls back to
+// the guided arrow. Reveals silently; narration is the Act 3 scripted reframe line, spoken separately.
+const ACCESSIBILITY_POINT_QUERY =
+  'On this macOS Accessibility settings screen, point at the ON/OFF toggle switch in the row labelled "Kairo Tutor".';
+
+export async function pointAtAccessibilityToggle(
+  bridge: NativeBridge,
+  cb: DemoCallbacks = {},
+): Promise<{ located: boolean }> {
+  cb.onThinking?.();
+  const capture = await bridge.captureScreen();
+  if (!capture.captured) {
+    klog('onboarding', 'warn', 'act3 point: capture failed', { reason: capture.reason ?? '' });
+    return { located: false };
+  }
+  const result = await askTutorFromNotch({
+    query: ACCESSIBILITY_POINT_QUERY,
+    nativeBridge: bridge,
+    aiProvider: AI_PROVIDER,
+    skillSlug: '',
+    screenCapture: capture,
+  });
+  const step = result.steps.find((s) => s.visualTargets.length > 0);
+  klog('onboarding', 'info', 'act3 point', { located: Boolean(step), steps: result.steps.length });
+  if (!step) return { located: false };
+  // Draw the box + fly the pet to the toggle. No TTS — the reframe line is spoken separately.
+  await result.revealStep(step, 'draw');
+  return { located: true };
+}
