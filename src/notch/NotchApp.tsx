@@ -29,13 +29,6 @@ import { routeVisualTargets, type RevealTransition } from '../overlay/targetRout
 import { isNotchDismissKey, waitForNotchPaint } from './prompt';
 import type { NotchPayload } from './types';
 import {
-  VOICE_SILENCE_THRESHOLD,
-  blobToBase64,
-  acquireMicrophoneStream,
-  createVoiceRecorder,
-  encodeWavFromFloat32Chunks,
-  rmsFromTimeDomainData,
-  shouldStopVoiceCapture,
   voiceFilenameForMimeType,
   voiceStatusCopy,
   type VoiceCaptureState
@@ -70,8 +63,6 @@ export function NotchApp() {
   const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState>('idle');
   const isSubmittingRef = useRef(false);
   const voiceCaptureStateRef = useRef<VoiceCaptureState>('idle');
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
   // The status capsule element, for writing the live mic level (--mic-level).
   const capsuleRef = useRef<HTMLDivElement | null>(null);
   // Opened on every new turn (voice re-engage OR typed submit): abort the previous
@@ -104,16 +95,6 @@ export function NotchApp() {
   // Mirrors the prompt text so the idle check can tell "typing a follow-up" (block
   // close) from a merely focused-but-empty prompt (the autoFocus default).
   const queryRef = useRef('');
-  const voiceMonitorCleanupRef = useRef<(() => void) | null>(null);
-  const pcmCaptureCleanupRef = useRef<(() => void) | null>(null);
-  const pcmChunksRef = useRef<Float32Array[]>([]);
-  const pcmSampleRateRef = useRef<number>(24_000);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const voiceCancelledRef = useRef(false);
-  const voiceHeardSpeechRef = useRef(false);
-  // True while a push-to-talk (⌥⌃ hold) capture is in flight, so the monitor keeps
-  // recording until release instead of auto-stopping on silence.
-  const pttModeRef = useRef(false);
   // Native recording truth from the ⌥⌃ tap (`ptt:recording` event): true from the
   // moment a hold is confirmed (~250ms) until release. The idle-close timer reads this
   // so the listening capsule can never auto-close mid-hold.
@@ -231,24 +212,9 @@ export function NotchApp() {
       }
     });
   }
-  const stopVoiceTracks = useCallback(() => {
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-    mediaStreamRef.current = null;
-  }, []);
-
   const updateVoiceCaptureState = useCallback((state: VoiceCaptureState) => {
     voiceCaptureStateRef.current = state;
     setVoiceCaptureState(state);
-  }, []);
-
-  const stopVoiceMonitor = useCallback(() => {
-    voiceMonitorCleanupRef.current?.();
-    voiceMonitorCleanupRef.current = null;
-  }, []);
-
-  const stopPcmCapture = useCallback(() => {
-    pcmCaptureCleanupRef.current?.();
-    pcmCaptureCleanupRef.current = null;
   }, []);
 
   const noteNotchActivity = useCallback(() => {
@@ -322,109 +288,6 @@ export function NotchApp() {
     // Fresh activity so the idle-close timer can't fire immediately after re-engage.
     lastNotchActivityAt.current = performance.now();
   }, [stopAnswerPlayback, nativeBridge]);
-
-  const stopActiveRecording = useCallback(
-    (cancelled = false) => {
-      voiceCancelledRef.current = cancelled;
-      const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== 'inactive') {
-        recorder.stop();
-        return true;
-      }
-
-      stopVoiceMonitor();
-      stopPcmCapture();
-      stopVoiceTracks();
-      updateVoiceCaptureState('idle');
-      return false;
-    },
-    [stopPcmCapture, stopVoiceMonitor, stopVoiceTracks, updateVoiceCaptureState]
-  );
-
-  const startVoiceMonitor = useCallback(
-    // autoStop=false for push-to-talk: keep recording (and feeding the cursor halo)
-    // until the user releases the keys, instead of stopping on detected silence.
-    (stream: MediaStream, recorder: MediaRecorder, autoStop = true) => {
-      stopVoiceMonitor();
-
-      const AudioContextConstructor = globalThis.AudioContext;
-      if (!AudioContextConstructor || !globalThis.requestAnimationFrame) {
-        voiceHeardSpeechRef.current = true;
-        const timeout = window.setTimeout(() => {
-          if (recorder.state !== 'inactive') {
-            recorder.stop();
-          }
-        }, 18_000);
-        voiceMonitorCleanupRef.current = () => window.clearTimeout(timeout);
-        return;
-      }
-
-      const audioContext = new AudioContextConstructor();
-      void audioContext.resume().catch(() => {});
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 1024;
-      const data = new Uint8Array(analyser.fftSize);
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-
-      let heardSpeech = false;
-      let silenceStartedAt: number | null = null;
-      const startedAt = performance.now();
-      let frame = 0;
-      let lastLevelEmit = 0;
-      const maxTimeout = window.setTimeout(() => {
-        if (recorder.state !== 'inactive') {
-          recorder.stop();
-        }
-      }, 18_000);
-
-      const tick = (now: number) => {
-        if (recorder.state === 'inactive') {
-          return;
-        }
-
-        analyser.getByteTimeDomainData(data);
-        const rms = rmsFromTimeDomainData(data);
-        // Feed the cursor's listening halo with the live mic level (throttled ~15fps).
-        if (now - lastLevelEmit >= 66) {
-          lastLevelEmit = now;
-          void emit('cursor:level', { level: Math.min(1, rms / 0.15) });
-        }
-        if (rms >= VOICE_SILENCE_THRESHOLD) {
-          heardSpeech = true;
-          voiceHeardSpeechRef.current = true;
-          silenceStartedAt = null;
-        } else if (heardSpeech && silenceStartedAt === null) {
-          silenceStartedAt = now;
-        }
-
-        const silenceMs = silenceStartedAt === null ? 0 : now - silenceStartedAt;
-        if (
-          autoStop &&
-          shouldStopVoiceCapture({
-            elapsedMs: now - startedAt,
-            heardSpeech,
-            silenceMs,
-            rms
-          })
-        ) {
-          recorder.stop();
-          return;
-        }
-
-        frame = requestAnimationFrame(tick);
-      };
-
-      frame = requestAnimationFrame(tick);
-      voiceMonitorCleanupRef.current = () => {
-        cancelAnimationFrame(frame);
-        window.clearTimeout(maxTimeout);
-        source.disconnect();
-        void audioContext.close();
-      };
-    },
-    [stopVoiceMonitor]
-  );
 
   // Settle after a click: a plain per-bucket sleep, no pixel matching. Fable emits the
   // `wait` bucket (its guess of how long the screen takes to settle after the click);
@@ -1003,12 +866,6 @@ export function NotchApp() {
     answerSettledRef.current = false;
     pointerInsideNotchRef.current = false;
     void nativeBridge.disarmContextWatch();
-    voiceCancelledRef.current = true;
-    stopActiveRecording(true);
-    mediaRecorderRef.current = null;
-    stopPcmCapture();
-    stopVoiceMonitor();
-    stopVoiceTracks();
     capturedScreenRef.current = null;
     isSubmittingRef.current = false;
     setIsSubmitting(false);
@@ -1021,15 +878,7 @@ export function NotchApp() {
     void nativeBridge.hideOverlay();
     void nativeBridge.cursorRelease();
     void nativeBridge.hideNotch();
-  }, [
-    nativeBridge,
-    stopActiveRecording,
-    stopAnswerPlayback,
-    stopPcmCapture,
-    stopVoiceMonitor,
-    stopVoiceTracks,
-    updateVoiceCaptureState
-  ]);
+  }, [nativeBridge, stopAnswerPlayback, updateVoiceCaptureState]);
 
   // Periodic idle-close: closes only after the answer has finished speaking AND the
   // notch has sat untouched for NOTCH_IDLE_CLOSE_MS. Hovering (pointer inside, with a
@@ -1420,162 +1269,6 @@ export function NotchApp() {
     ]
   );
 
-  const startVoiceCapture = useCallback(async () => {
-    stopAnswerPlayback();
-    if (!globalThis.navigator?.mediaDevices?.getUserMedia || !globalThis.MediaRecorder) {
-      showVoiceError('Microphone recording is unavailable in this runtime.');
-      return;
-    }
-
-    // Capture the screen exactly when voice capture starts — async so it never
-    // blocks recording. The tutor turn reuses this instead of re-capturing.
-    capturedScreenRef.current = null;
-    void nativeBridge
-      .captureScreen()
-      .then((result) => {
-        capturedScreenRef.current = result;
-      })
-      .catch(() => {});
-
-    try {
-      const stream = await acquireMicrophoneStream();
-      const { recorder, mimeType } = createVoiceRecorder(stream);
-      const AudioContextConstructor = globalThis.AudioContext;
-      voiceCancelledRef.current = false;
-      voiceHeardSpeechRef.current = false;
-      mediaStreamRef.current = stream;
-      mediaRecorderRef.current = recorder;
-      audioChunksRef.current = [];
-      pcmChunksRef.current = [];
-
-      if (AudioContextConstructor) {
-        const audioContext = new AudioContextConstructor();
-        const source = audioContext.createMediaStreamSource(stream);
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
-        const sink = audioContext.createGain();
-        sink.gain.value = 0;
-
-        pcmSampleRateRef.current = audioContext.sampleRate;
-        processor.onaudioprocess = (event) => {
-          if (voiceCaptureStateRef.current !== 'recording') {
-            return;
-          }
-
-          const channel = event.inputBuffer.getChannelData(0);
-          pcmChunksRef.current.push(new Float32Array(channel));
-        };
-
-        source.connect(processor);
-        processor.connect(sink);
-        sink.connect(audioContext.destination);
-        void audioContext.resume().catch(() => {});
-
-        pcmCaptureCleanupRef.current = () => {
-          processor.onaudioprocess = null;
-          source.disconnect();
-          processor.disconnect();
-          sink.disconnect();
-          void audioContext.close().catch(() => {});
-        };
-      }
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        stopVoiceMonitor();
-        stopPcmCapture();
-        const wasCancelled = voiceCancelledRef.current;
-        const chunks = audioChunksRef.current;
-        const pcmChunks = pcmChunksRef.current;
-        const pcmSampleRate = pcmSampleRateRef.current;
-        const recordingMimeType = recorder.mimeType || mimeType || 'audio/webm';
-        mediaRecorderRef.current = null;
-        stopVoiceTracks();
-        audioChunksRef.current = [];
-        pcmChunksRef.current = [];
-
-        if (wasCancelled) {
-          updateVoiceCaptureState('idle');
-          void emit('cursor:idle', {});
-          return;
-        }
-
-        void (async () => {
-          if (chunks.length === 0) {
-            showVoiceError('No speech was captured. Try again and speak after the shortcut.');
-            return;
-          }
-
-          // Note: we intentionally do NOT gate on the local VAD (voiceHeardSpeech)
-          // here. The VAD uses an AudioContext that browsers keep suspended until
-          // a user gesture, so an auto-started capture (from the shortcut, no
-          // gesture) sees silence even though MediaRecorder captured real audio.
-          // Always transcribe; an empty transcript below is the real "no speech".
-          updateVoiceCaptureState('transcribing');
-          setVoicePayload('transcribing');
-          // Cursor switches from listening halo to a thinking swirl while we work.
-          void emit('cursor:thinking', {});
-          try {
-            const uploadBlob =
-              pcmChunks.length > 0
-                ? encodeWavFromFloat32Chunks(pcmChunks, pcmSampleRate)
-                : new Blob(chunks, { type: recordingMimeType });
-            const uploadMimeType = pcmChunks.length > 0 ? 'audio/wav' : recordingMimeType;
-            const audioBase64 = await blobToBase64(uploadBlob);
-            const result = await nativeBridge.transcribeAudio({
-              audioBase64,
-              mimeType: uploadMimeType,
-              filename: voiceFilenameForMimeType(uploadMimeType)
-            });
-            const transcript = result.text.trim();
-            if (!transcript) {
-              showVoiceError('No speech was detected. Try again and speak a little louder.');
-              return;
-            }
-
-            setQuery(transcript);
-            await submitQuery(transcript, 'voice');
-          } catch (error) {
-            const detail =
-              error instanceof Error && error.message.trim()
-                ? error.message.trim()
-                : 'Voice transcription failed. Try again.';
-            showVoiceError(detail);
-          }
-        })();
-      };
-
-      recorder.start(250);
-      startVoiceMonitor(stream, recorder, !pttModeRef.current);
-      updateVoiceCaptureState('recording');
-      setVoicePayload('recording');
-      // Cursor shows the listening state (voice-reactive halo + live core color).
-      void emit('cursor:listening', {});
-    } catch (error) {
-      stopVoiceTracks();
-      const detail =
-        error instanceof Error && error.message.trim()
-          ? error.message.trim()
-          : 'Check microphone access and try again.';
-      showVoiceError(detail);
-    }
-  }, [
-    nativeBridge,
-    setVoicePayload,
-    showVoiceError,
-    startVoiceMonitor,
-    stopAnswerPlayback,
-    stopPcmCapture,
-    stopVoiceTracks,
-    stopVoiceMonitor,
-    submitQuery,
-    updateVoiceCaptureState
-  ]);
-
   useEffect(() => {
     document.documentElement.classList.add('notch-document');
     document.body.classList.add('notch-document');
@@ -1604,7 +1297,7 @@ export function NotchApp() {
         if (!isMounted) {
           return;
         }
-        if (nextPayload.state === 'captured' && !mediaRecorderRef.current) {
+        if (nextPayload.state === 'captured') {
           isSubmittingRef.current = false;
           setQuery('');
           setIsSubmitting(false);
@@ -1616,7 +1309,7 @@ export function NotchApp() {
           resetPreviousTurn();
           void nativeBridge.cursorRelease();
         }
-        if (nextPayload.state === 'listening' && !mediaRecorderRef.current) {
+        if (nextPayload.state === 'listening') {
           isSubmittingRef.current = false;
           setIsSubmitting(false);
           updateVoiceCaptureState('idle');
@@ -1686,18 +1379,6 @@ export function NotchApp() {
         setPayload(capturedPayload);
         setIsSubmitting(false);
         void nativeBridge.showNotch(capturedPayload);
-      }),
-      listen('voice:start', () => {
-        if (!isMounted || isSubmittingRef.current) {
-          return;
-        }
-
-        if (voiceCaptureStateRef.current === 'recording') {
-          stopActiveRecording(false);
-          return;
-        }
-
-        void startVoiceCapture();
       })
     ])
       .then((nextUnlisteners) => {
@@ -1711,7 +1392,7 @@ export function NotchApp() {
       isMounted = false;
       unlisteners.forEach((unlisten) => unlisten());
     };
-  }, [nativeBridge, startVoiceCapture, stopActiveRecording]);
+  }, [nativeBridge]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
