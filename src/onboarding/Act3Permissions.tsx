@@ -5,7 +5,13 @@ import { createNativeBridge } from '../native/nativeBridge';
 import { DEFAULT_ACCENT, getAccent } from '../core/accent';
 import { useVoice } from './useVoice';
 import type { Segment } from './copy';
-import { ACT3_COACH, act3ScreenLine, act3AccessLine, act3AccessFillerLine } from './copy';
+import {
+  ACT3_COACH,
+  act3ScreenLine,
+  act3ScreenRestartLine,
+  act3AccessLine,
+  act3AccessFillerLine
+} from './copy';
 import { setCoachCaption } from './coachSurface';
 import { nextPermissionStep, type Act3SubStep } from './act3SubStep';
 import { findAccessibilityToggle } from './demoController';
@@ -97,7 +103,10 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
         }
         await bridge.requestScreenRecording(); // one OS prompt, screen only
         await bridge.openPermissionSettings('screenRecording');
-        if (!cancelled) setShowBridge('screen'); // arrow + Open + Restart
+        if (cancelled) return;
+        setShowBridge('screen'); // top-center guide card
+        // Frame the (unavoidable) relaunch as planned, not a crash — resume lands them right back.
+        void speak(act3ScreenRestartLine);
       } else {
         // Register Kairo in the AX list (so a toggle exists) + open the pane.
         await bridge.requestAccessibility();

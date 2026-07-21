@@ -74,7 +74,13 @@ export const ACT_LINES: Record<string, Segment> = {
       "Here's how we talk. Hold Option and Control together, say hey, then let go. I'm listening the whole time you're holding them."
   },
   act2_short: { cacheKey: 'act2_short', text: () => 'Hold them a touch longer for me.' },
-  act2_empty: { cacheKey: 'act2_empty', text: () => "Hmm, didn't catch that — give it another go." }
+  act2_empty: { cacheKey: 'act2_empty', text: () => "Hmm, didn't catch that — give it another go." },
+  // Reassurance: the macOS Input-Monitoring prompt offers a "restart" — but the ⌥⌃ tap picks up the
+  // grant live (it retries), so the user can skip it. Keeps Act 2 reopen-free.
+  act2_im_skip: {
+    cacheKey: 'act2_im_skip',
+    text: () => "Oh — if macOS asks to restart me, just skip it. I'm already listening."
+  }
 } satisfies Record<string, Segment>;
 
 /** The seeded-prompt chip shown during the Act 2 say-hi drill (master spec §8). */
@@ -96,12 +102,16 @@ export const PERMISSION_LINES: Record<'perm_both' | 'perm_screen' | 'perm_access
  * "steer the pointer", never "control your Mac".
  */
 export const ACT3_LINES: Record<
-  'act3_screen' | 'act3_access' | 'act3_access_fallback' | 'act3_access_filler',
+  'act3_screen' | 'act3_screen_restart' | 'act3_access' | 'act3_access_fallback' | 'act3_access_filler',
   string
 > = {
   act3_screen:
     'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
     "and I never save it. I look, help, forget. Flip on Screen Recording and we're set.",
+  // This grant genuinely needs a relaunch (macOS caches screen access per process). Frame it as
+  // planned, not a crash — resume lands the user straight back here.
+  act3_screen_restart:
+    "Heads up — the second you flip it on, macOS bounces me real quick. Totally normal. I'll pick right up where we left off.",
   act3_access:
     "One more — Accessibility. It's just how I move that little pointer to what I'm showing you. " +
     "Not to control your Mac, promise. Watch — I'll point right at the switch.",
@@ -113,6 +123,9 @@ export const ACT3_LINES: Record<
 
 export const act3ScreenLine: Segment[] = [
   { cacheKey: 'act3_screen', text: () => ACT3_LINES.act3_screen }
+];
+export const act3ScreenRestartLine: Segment[] = [
+  { cacheKey: 'act3_screen_restart', text: () => ACT3_LINES.act3_screen_restart }
 ];
 export const act3AccessLine: Segment[] = [
   { cacheKey: 'act3_access', text: () => ACT3_LINES.act3_access }

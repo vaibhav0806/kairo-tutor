@@ -68,6 +68,8 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
       const mic = await bridge.requestMicrophone(); // mic-only OS prompt
       await bridge.requestInputMonitoring(); // input-monitoring prompt + Settings listing
       klog('onboarding', 'info', 'act2 primer', { mic: mic.microphone });
+      // The Input-Monitoring prompt offers a restart — skippable (the ⌥⌃ tap retries live).
+      await coachSay(bridge, voice.speak, [ACT_LINES.act2_im_skip], name, { title: 'Kairo' });
     })();
     const iv = setInterval(() => {
       void (async () => {
