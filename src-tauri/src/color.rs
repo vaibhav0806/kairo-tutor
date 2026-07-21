@@ -15,6 +15,57 @@ fn parse_hex(hex: &str) -> Option<(f64, f64, f64)> {
     ))
 }
 
+fn srgb_channel(c: f64) -> f64 {
+    let s = c / 255.0;
+    if s <= 0.03928 {
+        s / 12.92
+    } else {
+        ((s + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// WCAG relative luminance (0..1) of an sRGB triple.
+fn relative_luminance(r: f64, g: f64, b: f64) -> f64 {
+    0.2126 * srgb_channel(r) + 0.7152 * srgb_channel(g) + 0.0722 * srgb_channel(b)
+}
+
+/// WCAG contrast ratio (1..21) between two sRGB triples.
+fn contrast_ratio(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
+    let la = relative_luminance(a.0, a.1, a.2);
+    let lb = relative_luminance(b.0, b.1, b.2);
+    let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+/// Keep the user's HUE but nudge lightness (up if the bg is dark, down if light) until the accent
+/// clears `min_ratio` contrast against the sampled background — so the user's color can never
+/// become invisible on the pixels behind a box. Best-effort if the floor can't be reached.
+pub(crate) fn ensure_contrast(
+    accent_hex: &str,
+    bg_r: f64,
+    bg_g: f64,
+    bg_b: f64,
+    min_ratio: f64,
+) -> String {
+    let Some((ar, ag, ab)) = parse_hex(accent_hex) else {
+        return accent_hex.to_string();
+    };
+    let (h, s, mut l) = rgb_to_hsl(ar, ag, ab);
+    let bg = (bg_r, bg_g, bg_b);
+    let bg_l = relative_luminance(bg_r, bg_g, bg_b);
+    // Push lightness away from the background's: darker bg → brighten accent, and vice versa.
+    let step = if bg_l < 0.5 { 0.04 } else { -0.04 };
+    for _ in 0..12 {
+        let (r, g, b) = hsl_to_rgb(h, s, l);
+        if contrast_ratio((r as f64, g as f64, b as f64), bg) >= min_ratio {
+            return format!("#{r:02x}{g:02x}{b:02x}");
+        }
+        l = (l + step).clamp(0.12, 0.88);
+    }
+    let (r, g, b) = hsl_to_rgb(h, s, l);
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
 // How close (in HSL lightness) the accent may sit to the background before we treat it as
 // invisible and push its lightness to the opposite end.
 const ACCENT_MIN_L_CONTRAST: f64 = 0.22;
@@ -166,5 +217,21 @@ mod tests {
     fn falls_back_to_default_on_bad_accent() {
         let out = vibrant_accent("not-a-hex", 30.0, 30.0, 30.0);
         assert!(out.starts_with('#') && out.len() == 7);
+    }
+
+    #[test]
+    fn ensure_contrast_brightens_on_dark_bg() {
+        // Near-black accent on a black background must brighten to clear the floor.
+        let out = super::ensure_contrast("#050505", 8.0, 8.0, 8.0, 3.0);
+        let (r, _g, _b) = parse_hex(&out).unwrap();
+        assert!(r > 5.0, "expected brightened accent, got {out}");
+    }
+
+    #[test]
+    fn ensure_contrast_preserves_hue() {
+        // A blue stays blue (B channel dominant) after adjustment.
+        let out = super::ensure_contrast("#1020c0", 250.0, 250.0, 250.0, 3.0);
+        let (r, _g, b) = parse_hex(&out).unwrap();
+        assert!(b > r, "expected blue-dominant, got {out}");
     }
 }

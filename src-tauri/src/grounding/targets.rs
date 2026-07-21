@@ -259,7 +259,8 @@ fn decode_rgb(image_base64: &str) -> Option<image::RgbImage> {
 fn sample_accent(rgb: &Option<image::RgbImage>, [nx1, ny1, nx2, ny2]: [f64; 4]) -> String {
     let accent = crate::accent::current();
     let Some(rgb) = rgb else {
-        return vibrant_accent(&accent, 90.0, 90.0, 90.0);
+        // 3:1 = WCAG AA floor for large text / UI components (a stroke/box/pointer).
+        return crate::color::ensure_contrast(&vibrant_accent(&accent, 90.0, 90.0, 90.0), 90.0, 90.0, 90.0, 3.0);
     };
     let (w, h) = (rgb.width() as f64, rgb.height() as f64);
     let (ar, ag, ab) = sample_background(
@@ -269,7 +270,9 @@ fn sample_accent(rgb: &Option<image::RgbImage>, [nx1, ny1, nx2, ny2]: [f64; 4]) 
         (nx2 * w) as u32,
         (ny2 * h) as u32,
     );
-    vibrant_accent(&accent, ar, ag, ab)
+    // Blend toward the user accent, then guarantee a legible contrast floor against the pixels.
+    let blended = vibrant_accent(&accent, ar, ag, ab);
+    crate::color::ensure_contrast(&blended, ar, ag, ab, 3.0)
 }
 
 // One normalized box → a pointer (companion cursor at the raw center) + a padded
