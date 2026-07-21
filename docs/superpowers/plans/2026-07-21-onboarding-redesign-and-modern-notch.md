@@ -85,6 +85,35 @@ Optional low background music with a mute toggle (Clicky has this; nice-to-have,
 
 ---
 
+## 3B. Shared Contracts (names every phase depends on — keep these EXACT)
+
+New cross-cutting APIs/events/states introduced by Phase 0 and reused everywhere. Phase plans
+must reference these by these exact names so they stay consistent.
+
+- **Accent preference (native):**
+  - `get_accent() -> string` (hex `#rrggbb`; returns the user's chosen accent or the brand default).
+  - `set_accent(hex: string)` — persist (app config + account at sign-in).
+  - Event `accent:changed { hex }` — app-global; pet/overlay/notch/onboarding recolor live.
+  - Frontend helper (e.g. `src/core/accent.ts`): `getAccent()`, `onAccentChanged(cb)`, `applyAccent(hex)`.
+  - **Interaction with `color.rs::vibrant_accent`:** today the box/pointer color is auto-picked
+    per-target for contrast against the pixels. Decision: the **user accent is the base/default
+    tint**; keep a contrast safety-adjust (or a subtle shift) only when the accent would be
+    invisible against the target. Do NOT silently override the user's hue everywhere. Phase 0
+    defines the exact blend rule; other phases just consume `getAccent()`.
+- **Notch coach state:** `NotchPayload.state` gains `'coach'` (caption for onboarding). Onboarding
+  pushes it via `show_notch({ state:'coach', title, detail, chip? })`. The modern notch renders it
+  as a caption line + optional seeded-prompt chip.
+- **Onboarding orchestrator window:** the onboarding webview becomes full-screen, transparent,
+  click-through except the temp-panel region. Add native helpers as needed (e.g. reuse the existing
+  onboarding window builder; add a click-through toggle if required).
+- **Name-in-prompt:** tutor/gate turn input gains an optional `userName?: string`; `prompts.rs`
+  appends `The user's name is {name}.` in the NON-cached section only. Frontend reads the name from
+  `/v1/me` (or a cached value) and passes it per turn.
+- **Onboarding demo paywall exemption:** onboarding practice turns MUST NOT be metered or blocked by
+  the paywall (they run pre-sign-in, value-first). Add an explicit exemption flag on the onboarding
+  turn path (e.g. `onboarding: true` on the gate/tutor input, or gate the credit check on
+  `!ONBOARDING_PTT`). Verify against the backend-authoritative credit check.
+
 ## 4. The 6-Act Flow (shot-by-shot)
 
 Legend per beat: **On-screen / Pet / Voice (draft copy) / Interaction / Permission / Transition /
@@ -352,6 +381,35 @@ accent color.
 
 ---
 
+## 11B. Pet Cursor Refresh
+
+The pet is the **star** of the new onboarding (character + pointer + status surface) and the third
+surface alongside the notch + overlay. It must feel cohesive with the modern notch.
+
+**Scope = visual + motion + personality refresh. NOT a behavior/logic rewrite.** Keep the existing
+engine semantics (spring, fly-to-target, comet trail, listening halo, thinking swirl, speaking pulse,
+drag-to-draw box) in `useCursorEngine.ts`; refresh the *look* and add a few expressive beats.
+
+- **Accent-threaded.** Replace the hard-coded `#7c3aed` defaults (`cursorConstants.ts`
+  `DEFAULT_TRAIL`, `DEFAULT_ARROW_FILL`, `RECORDING_FILL`, `CursorApp.tsx` gradient) with the user
+  accent via `getAccent()` + live `accent:changed`. Recording/thinking/speaking FX derive from the
+  accent (with sensible tints), not a fixed purple.
+- **Motion cohesion (Raycast tightness + Arc fluidity).** Match the notch's spring/easing vocabulary
+  so the pet and notch feel like one system. Refine the arrowhead/glyph + trail for a crisper,
+  more characterful look.
+- **New expressive beats (for onboarding, reusable in-product):**
+  - **Signature entrance** (Act 1 wake-up) — the pet "comes to life" from the notch/center.
+  - **Peak celebration** (Act 4a) — a distinct, delightful reaction on the first successful point.
+  - Optional: a subtle idle "aliveness" so it never reads as a dead dot.
+- **Status legibility** — keep the listening halo / thinking swirl / speaking pulse but re-skin them
+  in the accent, tighter and more legible.
+- **Respect `prefers-reduced-motion`** (dampen the springs/celebration).
+
+**Implementation notes:** lives in `src/cursor/` (`CursorApp.tsx`, `useCursorEngine.ts`,
+`cursorConstants.ts`, `spring.ts`). Add accent wiring + two new event-driven beats (e.g.
+`cursor:entrance`, `cursor:celebrate`) that onboarding triggers. Ships independently of onboarding
+(the accent + re-skin land first; the new beats are additive).
+
 ## 12. User's Name in the Prompt (non-cached)
 
 - After onboarding, Kairo should know the user's name in the real product.
@@ -393,10 +451,18 @@ accent color.
   `ensure_input_monitoring_access`, `restart_app`.
 - **Resume:** `set_onboarding_step` / `get_onboarding_step`.
 - **Auth:** `start_google_auth`, deep-link handler + focus fix, `saveOnboarding` (extend with color).
-- **Notch:** `show_notch` + payload model (`activationState.ts`), `panels.rs` sizing.
-- **New pieces to add:** accent pref (`get/set_accent` + `accent:changed`), `coach-caption` notch state,
-  color-wheel panel, "Replay intro" entry point, name-in-prompt plumbing, the full-screen transparent
-  onboarding orchestrator window.
+- **Notch (post-refactor):** `NotchApp.tsx` (~1500 lines, orchestration) + **`NotchCapsule.tsx`**
+  (presentational — the redesign's main surface) + `NotchIcons.tsx`, `notchConstants.ts`,
+  `useTTSPlayback.ts`, `useTurnHistory.ts`; payload model in `activation/activationState.ts`;
+  `panels.rs` sizing (`notch_window_size`); AbortController-per-turn (not epoch).
+- **Cursor (post-refactor):** `CursorApp.tsx` (thin) + **`useCursorEngine.ts`** (engine) +
+  `cursorConstants.ts` + `spring.ts` + `geometry.ts`.
+- **Paywall (NEW — must account for):** credits are checked on PTT release in `NotchApp.tsx` (plays
+  bundled `upgrade.wav`); the AI proxy is backend-authoritative. Tutorial turns use a separate capped
+  budget. **Onboarding demos must be exempt** (see §3B).
+- **New pieces to add:** accent pref system (§3B), `'coach'` notch state, color-wheel panel, "Replay
+  intro" entry point, name-in-prompt plumbing, the full-screen transparent onboarding orchestrator,
+  the pet-cursor refresh (§11B), the two new cursor beats (`cursor:entrance`, `cursor:celebrate`).
 
 ---
 
@@ -417,33 +483,46 @@ accent color.
 2. **Screen-Recording quit+reopen mid-onboarding** — the resume must be flawless; test it explicitly.
 3. **Vision-pointing at the Accessibility toggle** — reliability depends on the model locating a small
    system toggle; keep the guided-arrow fallback wired.
-4. **Value-before-sign-in** means the demo turns run pre-account. Confirm they don't require auth (they
-   currently use native providers / the unauth onboarding chat) and aren't metered against the 10 free.
-5. **Accent contrast** — enforce readable text regardless of the chosen hue.
-6. **Parallel refactor** — re-read the current file layout before implementing; names/paths may move.
-7. **Background music** — off by default; confirm the user wants it at all (nice-to-have).
+4. **Paywall vs. value-before-sign-in (HIGH).** A backend-authoritative paywall now checks credits on
+   PTT release + caps tutorial turns. The onboarding demos run pre-sign-in and MUST be exempt (§3B) —
+   verify the exact path (native-direct vs. backend proxy) and add the exemption, or the first "whoa"
+   turns into an upgrade wall. Test explicitly.
+5. **Accent vs. `vibrant_accent` (MEDIUM).** The box/pointer color is auto-picked per-target today; the
+   user accent must become the base without breaking contrast. Phase 0 owns the blend rule; enforce
+   readable text on any chosen hue.
+6. **Full-screen transparent orchestrator window** — z-order/click-through with the pet/overlay/notch
+   panels (the class of bug that bit the annotation overlay). Validate carefully.
+7. **Screen-Recording quit+reopen mid-onboarding** — resume must be flawless; test it.
+8. **Vision-pointing at the Accessibility toggle** — keep the guided-arrow fallback wired.
+9. **Background music** — off by default; confirm the user wants it at all (nice-to-have).
 
 ---
 
 ## 17. Phased Implementation Plan
 
-Build in dependency order; each phase should leave the app runnable.
+Build in dependency order; each phase leaves the app runnable. Each phase gets its own bite-sized
+implementation plan (`docs/superpowers/plans/2026-07-21-onboarding-phaseN-*.md`).
 
-- **Phase 0 — Foundations:** accent preference (native get/set + `accent:changed`), thread it through
-  pet/overlay/notch/product accent. `coach-caption` notch state. Full-screen transparent onboarding
-  orchestrator shell (renders nothing + a temp-panel slot).
-- **Phase 1 — Modern notch:** the state-morphing, accent-threaded, Raycast-tight/Arc-fluid redesign
-  (visual + transitions only; preserve logic). Ships independently of onboarding.
-- **Phase 2 — Coach surface + Acts 1-2:** notch-as-caption; Arrival + color wheel + live theming;
-  "can you hear me" (Mic/Input-Monitoring primer + say-hi drill, chord-only-Next, first wow).
-- **Phase 3 — Permissions (Act 3):** two-moment priming; Screen-Recording bridge + relaunch/resume;
+- **Phase 0 — Foundations & Shared Contracts:** accent preference system (§3B: native get/set +
+  `accent:changed` + `src/core/accent.ts`), the `vibrant_accent` blend rule, the `'coach'` notch
+  state, the full-screen transparent onboarding orchestrator shell, and the name-in-prompt plumbing
+  (input field + `prompts.rs` non-cached append). Everything else depends on this.
+- **Phase 1 — Modern notch:** state-morphing, accent-threaded, Raycast-tight/Arc-fluid redesign of
+  `NotchCapsule.tsx` (visual + transitions only; preserve logic). Ships independently.
+- **Phase 2 — Pet cursor refresh (§11B):** accent-thread `useCursorEngine`/`cursorConstants`, re-skin
+  the FX + glyph/trail to match the notch, add `cursor:entrance` + `cursor:celebrate` beats. Ships
+  independently.
+- **Phase 3 — Coach surface + Acts 1-2:** notch-as-caption; Arrival + color wheel + live theming;
+  "can you hear me" (Mic/Input-Monitoring primer + say-hi drill, chord-only-Next, first wow); pet
+  entrance beat.
+- **Phase 4 — Permissions (Act 3):** two-moment priming; Screen-Recording bridge + relaunch/resume;
   Accessibility with the real pet-points-via-vision (+ arrow fallback).
-- **Phase 4 — The magic (Act 4):** point (peak) + circle on the real screen; seeded prompts.
-- **Phase 5 — Housekeeping + ending (Acts 5-6):** deferred sign-in (pull name + persist color) +
-  source; warm ending; `finish_onboarding`.
-- **Phase 6 — Name-in-prompt:** plumb the name into the non-cached tutor/gate prompt section.
+- **Phase 5 — The magic (Act 4):** point (peak + celebration beat) + circle on the real screen;
+  seeded prompts; **onboarding paywall exemption** (§3B).
+- **Phase 6 — Housekeeping + ending (Acts 5-6) + finalize name-in-prompt:** deferred sign-in (pull
+  name + persist color) + source; warm ending; `finish_onboarding`; wire the name into live turns.
 - **Phase 7 — Re-runnable + polish:** "Replay intro" entry point; reduced-motion; contrast clamps;
-  music toggle (if kept); QA the Sequoia reset heads-up.
+  music toggle (if kept); QA the Screen-Recording resume + Sequoia reset heads-up.
 
 ---
 
