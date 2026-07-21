@@ -3,8 +3,19 @@ import type { OnboardingBody } from '@kairo/shared';
 import { requireAuth } from '../plugins/auth-verify';
 import { providers } from '../config/providers';
 import { forwardJson } from '../proxy/forward';
+import { streamPassthrough } from '../proxy/stream';
 import { rateLimit } from '../lib/ratelimit';
 import { saveProfile } from './service';
+
+/** Drop the `_provider` routing hint before forwarding to the vision provider. */
+function dropProviderHint(body: unknown): unknown {
+  if (body && typeof body === 'object') {
+    const clone = { ...(body as Record<string, unknown>) };
+    delete clone._provider;
+    return clone;
+  }
+  return body;
+}
 
 export async function onboardingRoutes(app: FastifyInstance) {
   // Save onboarding answers (authed) — runs after Google sign-in.
@@ -101,8 +112,38 @@ export async function onboardingRoutes(app: FastifyInstance) {
     const buf = await mp.toBuffer();
     const form = new FormData();
     form.append('file', new Blob([buf]), mp.filename || 'audio.wav');
+    const fields = mp.fields as Record<string, { value?: string } | undefined> | undefined;
+    for (const key of ['model', 'mode', 'language_code'] as const) {
+      const value = fields?.[key]?.value;
+      if (value) form.append(key, value);
+    }
     const res = await fetch(`${p.baseUrl}/speech-to-text`, { method: 'POST', headers: { ...p.authHeader(p.key) }, body: form });
     reply.status(res.status);
     return res.status === 204 ? null : await res.json().catch(() => ({}));
+  });
+
+  // Onboarding "point" GATE — the unauthenticated, unmetered sibling of /v1/llm/chat. The demo
+  // point turn runs PRE-sign-in, so it can't use the authed gate route. IP-rate-limited.
+  app.post('/v1/onboarding/gate', async (req, reply) => {
+    if (!rateLimit(`obgate:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    const { json } = await forwardJson('openrouter', '/chat/completions', req.body);
+    return json;
+  });
+
+  // Onboarding VISION (answer + box) — the unauthenticated, unmetered sibling of /v1/vision/tutor.
+  // Vision is the expensive call, so this gets a TIGHT per-IP budget (the demo makes ~1-2 calls;
+  // headroom left for retries). Provider routing mirrors the metered route.
+  app.post('/v1/onboarding/vision', async (req, reply) => {
+    if (!rateLimit(`obvis:${req.ip}`, 12, 10 * 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
+    const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
+    const { json } = await forwardJson(provider, path, dropProviderHint(req.body));
+    return json;
+  });
+
+  // Onboarding streaming TTS — the unauthenticated sibling of /v1/tts/stream (demo voice replies).
+  app.post('/v1/onboarding/tts/stream', async (req, reply) => {
+    if (!rateLimit(`obtts:${req.ip}`, 60, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    await streamPassthrough('sarvam', '/text-to-speech/stream', req.body, reply);
   });
 }
