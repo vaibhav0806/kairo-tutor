@@ -134,6 +134,10 @@ export type NativeBridge = {
   getPermissionStatus(): Promise<NativePermissionStatus>;
   requestRequiredPermissions(): Promise<NativePermissionStatus>;
   openPermissionSettings(permission: NativePermissionKey): Promise<void>;
+  // Act 2 primers — Mic ONLY (never Screen Recording) + Input Monitoring (separate grant).
+  requestMicrophone(): Promise<NativePermissionStatus>;
+  requestInputMonitoring(): Promise<void>;
+  getInputMonitoringStatus(): Promise<NativePermissionState>;
   restartApp(): Promise<void>;
   // True when the signed-in user is out of free requests (proxy mode). The notch calls this
   // on push-to-talk release BEFORE transcribing, to skip STT/gate/vision + play the cached
@@ -339,6 +343,31 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
         await invoke<void>('open_permission_settings', { permission });
       } catch {
         // Browser previews cannot open macOS System Settings.
+      }
+    },
+
+    async requestMicrophone() {
+      try {
+        return await invoke<NativePermissionStatus>('request_microphone');
+      } catch {
+        return { ...fallbackPermissionStatus(), microphone: await requestBrowserMicrophonePermission() };
+      }
+    },
+
+    async requestInputMonitoring() {
+      try {
+        await invoke<void>('request_input_monitoring');
+      } catch {
+        // Browser previews have no input-monitoring grant.
+      }
+    },
+
+    async getInputMonitoringStatus() {
+      try {
+        const s = await invoke<string>('get_input_monitoring_status');
+        return s === 'granted' ? 'granted' : s === 'unknown' ? 'unknown' : 'not_determined';
+      } catch {
+        return 'unknown';
       }
     },
 
