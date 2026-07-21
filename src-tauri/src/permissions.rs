@@ -189,6 +189,7 @@ pub(crate) fn open_permission_settings(permission: String) -> Result<(), String>
             "screenRecording" | "screen_recording" | "screen" => "Privacy_ScreenCapture",
             "accessibility" => "Privacy_Accessibility",
             "microphone" | "mic" => "Privacy_Microphone",
+            "inputMonitoring" | "input_monitoring" => "Privacy_ListenEvent",
             _ => {
                 return Err(format!(
                     "Unsupported permission settings pane: {permission}"
@@ -207,6 +208,54 @@ pub(crate) fn open_permission_settings(permission: String) -> Result<(), String>
     {
         let _ = permission;
         Err("Permission settings are only implemented for macOS.".to_string())
+    }
+}
+
+/// Prompt for Microphone ONLY (Act 2). Deliberately does NOT request Screen Recording — that
+/// grant forces macOS to quit+reopen the app and belongs to Act 3. Returns the full status with
+/// a freshly-requested microphone state.
+#[tauri::command]
+pub(crate) fn request_microphone(app: tauri::AppHandle) -> PermissionStatus {
+    #[cfg(target_os = "macos")]
+    {
+        let microphone = request_microphone_permission(app);
+        crate::klog!(ptt, info, mic = ?microphone, "onboarding mic primer");
+        let base = get_permission_status();
+        return PermissionStatus { microphone, ..base };
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        _permission_status_fallback()
+    }
+}
+
+/// Fire the Input-Monitoring prompt (and register Kairo in the Settings list). The ⌥⌃ tap needs
+/// this SEPARATELY from Accessibility. No-op once granted.
+#[tauri::command]
+pub(crate) fn request_input_monitoring() {
+    #[cfg(target_os = "macos")]
+    {
+        ensure_input_monitoring_access();
+        crate::klog!(ptt, info, "onboarding input-monitoring primer");
+    }
+}
+
+/// "granted" / "not_determined" / "unknown" — lets Act 2 poll the Input-Monitoring grant.
+#[tauri::command]
+pub(crate) fn get_input_monitoring_status() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        return if unsafe { CGPreflightListenEventAccess() } {
+            "granted"
+        } else {
+            "not_determined"
+        }
+        .to_string();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "unknown".to_string()
     }
 }
 

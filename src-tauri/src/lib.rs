@@ -29,7 +29,8 @@ mod permissions;
 #[cfg(target_os = "macos")]
 use permissions::ensure_input_monitoring_access;
 use permissions::{
-    get_permission_status, open_permission_settings, request_required_permissions,
+    get_input_monitoring_status, get_permission_status, open_permission_settings,
+    request_input_monitoring, request_microphone, request_required_permissions,
     should_show_setup_window,
 };
 
@@ -713,6 +714,9 @@ pub fn run() {
             get_permission_status,
             request_required_permissions,
             open_permission_settings,
+            request_microphone,
+            request_input_monitoring,
+            get_input_monitoring_status,
             restart_app,
             debug_log,
             debug_log_batch,
