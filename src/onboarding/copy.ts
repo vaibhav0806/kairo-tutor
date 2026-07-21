@@ -68,6 +68,17 @@ export const ACT_LINES: Record<string, Segment> = {
     text: () =>
       "To actually hear you, I'll need your mic — plus permission to notice when you hold two keys. Give me permission to do so, takes two seconds."
   },
+  // Step 1 of 2 — mic only. Spoken first; we wait for the grant before the second ask.
+  act2_mic: {
+    cacheKey: 'act2_mic',
+    text: () => "First up — I'll need your mic. That's how I hear you. Just hit Allow on the pop-up."
+  },
+  // Step 2 of 2 — input monitoring, ONLY after mic is granted. We open the settings pane for them.
+  act2_im: {
+    cacheKey: 'act2_im',
+    text: () =>
+      "Nice! One more — let me notice when you hold two keys. I just opened the settings for you; flip me on in that list."
+  },
   act2_drill: {
     cacheKey: 'act2_drill',
     text: () =>

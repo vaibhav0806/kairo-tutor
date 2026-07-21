@@ -58,73 +58,64 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
     [bridge, name, voice.speak, onAdvance]
   );
 
-  // 2a — primer: benefit copy in Kairo's voice, then fire Mic + Input-Monitoring (NOT Screen
-  // Recording — that's Act 3). Poll both; if already granted (returning user), skip to the drill.
+  // 2a — primer, ONE permission at a time (spec: mic FIRST, wait until it's actually granted, THEN
+  // open Input Monitoring + ask). Reliable step detection = poll the live grant, never advance until
+  // it's really on. Never asks for Screen Recording (that's Act 3).
   useEffect(() => {
     if (phase !== 'primer') return;
     let cancelled = false;
-    let openedSettings = false; // deep-link the IM pane at most ONCE (never spam it every poll)
-    let guided = false;
+    const isCancelled = () => cancelled;
+
+    // Poll a grant predicate until it's true (or we leave the step). ~1s cadence.
+    const waitUntil = (check: () => Promise<boolean>) =>
+      new Promise<void>((resolve) => {
+        const tick = async () => {
+          if (cancelled) return resolve();
+          if (await check()) return resolve();
+          if (!cancelled) setTimeout(() => void tick(), 1000);
+        };
+        void tick();
+      });
+    const micGranted = async () => (await bridge.getPermissionStatus()).microphone === 'granted';
+    const imGranted = async () => (await bridge.getInputMonitoringStatus()) === 'granted';
+
     void (async () => {
-      // Returning user who already granted BOTH → skip the whole primer straight to the drill (no
-      // prompts, no "skip the restart" line). Also ensure the tap is running.
-      const [preStatus, preIm] = await Promise.all([
-        bridge.getPermissionStatus(),
-        bridge.getInputMonitoringStatus()
-      ]);
-      if (cancelled) return;
-      if (preStatus.microphone === 'granted' && preIm === 'granted') {
-        await bridge.startPtt();
-        if (!cancelled) setPhase('drill');
-        return;
+      // STEP 1 — microphone only. Ask, then WAIT until it's genuinely granted before moving on.
+      if (!(await micGranted())) {
+        await coachSay(bridge, voice.speak, [ACT_LINES.act2_mic], name, { title: 'Kairo' });
+        if (isCancelled()) return;
+        await bridge.requestMicrophone(); // mic-only OS prompt
+        await setCoachCaption(bridge, { title: 'Waiting on your mic…', detail: "Hit Allow and we're good." });
+        await waitUntil(micGranted);
+        if (isCancelled()) return;
+        klog('onboarding', 'info', 'act2 mic granted');
       }
 
-      await coachSay(bridge, voice.speak, [ACT_LINES.act2_primer], name, { title: 'Kairo' });
-      if (cancelled) return;
-      const mic = await bridge.requestMicrophone(); // mic-only OS prompt
-      if (cancelled) return;
-      await bridge.requestInputMonitoring(); // input-monitoring prompt + Settings listing
-      await bridge.startPtt(); // creates the ⌥⌃ tap NOW (prompt appears here, not at launch)
-      if (cancelled) return;
-      klog('onboarding', 'info', 'act2 primer', { mic: mic.microphone });
-      // Only reassure about the restart when Input Monitoring is NOT already granted (else the line
-      // is irrelevant + would overwrite the next step). Guard on `cancelled` so a phase advance
-      // (both granted) can't leave this line lingering on top of the drill.
-      const imNow = await bridge.getInputMonitoringStatus();
-      if (!cancelled && imNow !== 'granted') {
-        await coachSay(bridge, voice.speak, [ACT_LINES.act2_im_skip], name, { title: 'Kairo' });
+      // STEP 2 — input monitoring, only AFTER mic is done. Speak, open the pane, request, start the
+      // tap, then wait until it's flipped on.
+      if (!(await imGranted())) {
+        // 'inputMonitoring' isn't a typed NativePermissionKey — raw invoke (native accepts it).
+        await invoke('open_permission_settings', { permission: 'inputMonitoring' }).catch(() => {});
+        await coachSay(bridge, voice.speak, [ACT_LINES.act2_im], name, { title: 'Kairo' }); // …then explain
+        if (isCancelled()) return;
+        await bridge.requestInputMonitoring(); // registers Kairo + shows the keystroke prompt
+        await bridge.startPtt(); // creates the ⌥⌃ tap (retries until granted)
+        await setCoachCaption(bridge, {
+          title: 'One quick toggle',
+          detail: 'Flip on Kairo Tutor in the Input Monitoring list — then we roll.'
+        });
+        await waitUntil(imGranted);
+        if (isCancelled()) return;
+        klog('onboarding', 'info', 'act2 input-monitoring granted');
+      } else {
+        await bridge.startPtt();
       }
+
+      if (!cancelled) setPhase('drill');
     })();
-    const iv = setInterval(() => {
-      void (async () => {
-        const [status, im] = await Promise.all([
-          bridge.getPermissionStatus(),
-          bridge.getInputMonitoringStatus()
-        ]);
-        if (cancelled) return;
-        if (status.microphone === 'granted' && im === 'granted') {
-          clearInterval(iv);
-          setPhase('drill');
-          return;
-        }
-        // Still waiting on Input Monitoring — guide the user ONCE (open the pane + a clear caption),
-        // never re-open Settings on every tick (that was the jarring spam).
-        if (im !== 'granted' && !openedSettings) {
-          openedSettings = true;
-          void invoke('open_permission_settings', { permission: 'inputMonitoring' }).catch(() => {});
-        }
-        if (im !== 'granted' && !guided) {
-          guided = true;
-          void setCoachCaption(bridge, {
-            title: 'One quick toggle',
-            detail: 'Flip on Kairo Tutor under Input Monitoring — then we roll.'
-          });
-        }
-      })();
-    }, 1500);
+
     return () => {
       cancelled = true;
-      clearInterval(iv);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
