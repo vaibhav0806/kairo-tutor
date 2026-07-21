@@ -174,6 +174,10 @@ export type NativeBridge = {
   // click-through everywhere except the capsule. null → whole notch clickable.
   setNotchHitRect(rect: { x: number; y: number; width: number; height: number } | null): Promise<void>;
   hideNotch(): Promise<void>;
+  // The cached user display name ('' when unknown). Read at launch to inject into prompts.
+  getUserName(): Promise<string>;
+  // Cache the user display name (persisted natively; '' clears it).
+  setUserName(name: string): Promise<void>;
   runTutorTurn(input: TutorTurnInput): Promise<string>;
   // Text-only "do I need to look at the screen?" gate. Returns raw JSON
   // { needsScreen: boolean, voiceText: string }.
@@ -573,6 +577,22 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
         await invoke<void>('hide_notch');
       } catch {
         // Browser previews do not have a native notch window.
+      }
+    },
+
+    async getUserName() {
+      try {
+        return await invoke<string>('get_user_name');
+      } catch {
+        return '';
+      }
+    },
+
+    async setUserName(name) {
+      try {
+        await invoke('set_user_name', { name });
+      } catch {
+        // Browser previews have no native name cache.
       }
     },
 
