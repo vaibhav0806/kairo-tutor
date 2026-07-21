@@ -196,3 +196,29 @@ pub(crate) fn finish_onboarding(app: tauri::AppHandle) {
     }
     crate::klog!(app, info, "onboarding finished");
 }
+
+/// Re-run first-run onboarding on demand ("Replay intro" tray item / `replay_onboarding_cmd`).
+/// The inverse of `finish_onboarding`: delete the onboarded marker + any stale resume step, drop
+/// PTT ownership, flip back to Regular so the window can take keyboard focus, then (re)open the
+/// onboarding window. Idempotent — safe to call while already onboarding.
+pub(crate) fn replay_onboarding(app: &tauri::AppHandle) {
+    if let Some(path) = onboarded_marker(app) {
+        let _ = std::fs::remove_file(path);
+    }
+    if let Some(path) = onboarding_step_marker(app) {
+        let _ = std::fs::remove_file(path);
+    }
+    crate::input::ONBOARDING_PTT.store(false, Ordering::SeqCst);
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    }
+    show_onboarding_window(app);
+    crate::klog!(app, info, "replay intro: onboarding marker cleared + window reopened");
+}
+
+/// Frontend/tray entry point for "Replay intro".
+#[tauri::command]
+pub(crate) fn replay_onboarding_cmd(app: tauri::AppHandle) {
+    replay_onboarding(&app);
+}

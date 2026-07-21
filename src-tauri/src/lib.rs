@@ -433,14 +433,50 @@ fn restart_app(app: tauri::AppHandle) {
 /// app (no Dock icon), so this is the only always-visible affordance a user has
 /// to quit/restart the app or reopen the notch. Not gated to macOS — the tray is
 /// cross-platform, so a future Windows build gets the same menu for free.
+fn screen_recording_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|d| d.join("screen_recording_granted"))
+}
+
+/// Compare the "was ever granted" marker against the live status. Returns true exactly once per
+/// reset: marker present + status now NOT granted → macOS reset Screen Recording (Sequoia does this
+/// ~monthly). Keeps the marker in sync otherwise (writes it the first time it's granted; clears it
+/// on a reset so we heads-up once and re-arm on the next grant).
+fn detect_screen_recording_reset(app: &tauri::AppHandle) -> bool {
+    let status = permissions::get_permission_status();
+    let granted = matches!(status.screen_recording, crate::types::PermissionState::Granted);
+    let Some(marker) = screen_recording_marker(app) else {
+        return false;
+    };
+    let was_granted = marker.exists();
+    if granted {
+        if !was_granted {
+            if let Some(dir) = marker.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&marker, b"1");
+        }
+        return false;
+    }
+    if was_granted {
+        let _ = std::fs::remove_file(&marker);
+        return true;
+    }
+    false
+}
+
 fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
     let show_item = MenuItem::with_id(app, "tray_show_notch", "Show Notch", true, None::<&str>)?;
+    let replay_item =
+        MenuItem::with_id(app, "tray_replay_intro", "Replay intro", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "tray_quit", "Quit Kairo", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
+    let menu = Menu::with_items(app, &[&show_item, &replay_item, &separator, &quit_item])?;
 
     let mut builder = TrayIconBuilder::with_id("kairo-menu-bar")
         .tooltip("Kairo Tutor")
@@ -458,6 +494,10 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
                 {
                     klog!(app, error, "menu bar: show notch failed: {error}");
                 }
+            }
+            "tray_replay_intro" => {
+                klog!(app, info, "menu bar: replay intro selected");
+                crate::onboarding::replay_onboarding(app);
             }
             other => klog!(app, warn, id = other, "menu bar: unknown menu event"),
         });
@@ -678,6 +718,14 @@ pub fn run() {
             if let Err(error) = create_menu_bar_tray(app) {
                 klog!(app, error, "failed to create menu bar tray: {error}");
             }
+            // Sequoia periodically resets Screen Recording. Only heads-up when already onboarded
+            // (during onboarding, Act 3 owns Screen Recording); the notch shows a friendly line.
+            if crate::onboarding::is_onboarded(app.handle())
+                && detect_screen_recording_reset(app.handle())
+            {
+                klog!(app, warn, "screen recording was reset by macOS since last run");
+                let _ = app.handle().emit("permissions:screen-recording-reset", ());
+            }
             // Deep link: after Google sign-in the browser redirects to
             // kairo://auth-callback?code=…; exchange the one-time code for a session token.
             // First front the onboarding window (if we're onboarding) so the browser's
@@ -752,6 +800,7 @@ pub fn run() {
             save_gesture_debug_image,
             proxy::check_paywalled,
             onboarding::finish_onboarding,
+            onboarding::replay_onboarding_cmd,
             onboarding::set_onboarding_step,
             onboarding::get_onboarding_step,
             onboarding::set_onboarding_ptt,
