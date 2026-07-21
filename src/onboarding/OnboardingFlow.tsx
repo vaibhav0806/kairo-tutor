@@ -52,6 +52,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const step = STEPS[index];
   const nameRef = useRef(name);
   nameRef.current = name;
+  // STEPS is now just the two practice beats (learn_point, circle); after the last one we hand back
+  // to the orchestrator (→ Act 5 sign-in) instead of advancing into a (removed) 'done' step.
+  const indexRef = useRef(index);
+  indexRef.current = index;
   const autoOpenedRef = useRef(false);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
   const gestureBufferRef = useRef<TimedPoint[]>([]);
@@ -256,14 +260,18 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           setDemoDone(true);
           setDemoRetry(null);
           if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-          advanceTimerRef.current = setTimeout(() => go(1), 1200);
+          advanceTimerRef.current = setTimeout(() => {
+            // Last practice beat → hand back to the orchestrator (Act 5); else next beat.
+            if (indexRef.current >= STEPS.length - 1) onComplete();
+            else go(1);
+          }, 1200);
         } else {
           // Not satisfied — keep the step open so the next ⌥⌃ hold retries.
           setDemoRetry(result.reason ?? 'empty');
         }
       }
     },
-    [nativeBridge, go, showSelf],
+    [nativeBridge, go, showSelf, onComplete],
   );
 
   // Wire the interactive practice steps: claim push-to-talk, listen for the ⌥⌃ hold +
