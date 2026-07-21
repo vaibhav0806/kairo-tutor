@@ -54,20 +54,27 @@ export const STEPS: StepDef[] = [
 /** Coach-surface lines for the redesigned acts (Phase 3). Static → pre-generated + cached WAV,
  *  falling back to live Sarvam TTS if the WAV isn't shipped yet (useVoice handles the fallback). */
 export const ACT_LINES: Record<string, Segment> = {
-  act1_wake: { cacheKey: 'act1_wake', text: () => "Hey — I'm Kairo. I live up here, on your screen." },
-  act1_color: { cacheKey: 'act1_color', text: () => 'First — pick my color. This is me, from now on.' },
+  // Names the notch so "up here" is concrete (the user should look at the top of their screen).
+  act1_wake: {
+    cacheKey: 'act1_wake',
+    text: () => "Hey — I'm Kairo. See that notch at the top of your screen? That's my home."
+  },
+  act1_color: {
+    cacheKey: 'act1_color',
+    text: () => "First up: pick my color. This is the real me, from now on."
+  },
   act2_primer: {
     cacheKey: 'act2_primer',
     text: () =>
-      "To hear you, I'll need your mic — and permission to notice when you hold two keys. Quick and painless."
+      "So I can actually hear you, I'll need your mic — plus permission to notice when you hold two keys. Takes two seconds."
   },
   act2_drill: {
     cacheKey: 'act2_drill',
     text: () =>
-      "This is how you talk to me. Hold Option and Control together, say hi, then let go — I'm listening the whole time you hold them."
+      "Here's how we talk. Hold Option and Control together, say hey, then let go. I'm listening the whole time you're holding them."
   },
-  act2_short: { cacheKey: 'act2_short', text: () => 'Hold them a beat longer.' },
-  act2_empty: { cacheKey: 'act2_empty', text: () => "Didn't quite catch that — try again." }
+  act2_short: { cacheKey: 'act2_short', text: () => 'Hold them a touch longer for me.' },
+  act2_empty: { cacheKey: 'act2_empty', text: () => "Hmm, didn't catch that — give it another go." }
 } satisfies Record<string, Segment>;
 
 /** The seeded-prompt chip shown during the Act 2 say-hi drill (master spec §8). */
@@ -88,15 +95,20 @@ export const PERMISSION_LINES: Record<'perm_both' | 'perm_screen' | 'perm_access
  * Screen Recording is spoken first (it forces the relaunch); Accessibility is reframed as
  * "steer the pointer", never "control your Mac".
  */
-export const ACT3_LINES: Record<'act3_screen' | 'act3_access' | 'act3_access_fallback', string> = {
+export const ACT3_LINES: Record<
+  'act3_screen' | 'act3_access' | 'act3_access_fallback' | 'act3_access_filler',
+  string
+> = {
   act3_screen:
     'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
-    "and I never save it. I look, help, and forget. Flip on Screen Recording and I'll take it from here.",
+    "and I never save it. I look, help, forget. Flip on Screen Recording and we're set.",
   act3_access:
-    "One more — Accessibility. It's how I steer the little pointer to what I'm showing you, " +
-    "not to control your Mac. Watch — I'll point right at the switch. Flip this one on.",
+    "One more — Accessibility. It's just how I move that little pointer to what I'm showing you. " +
+    "Not to control your Mac, promise. Watch — I'll point right at the switch.",
+  // Spoken WHILE the vision call runs in the background (buys time + holds attention, §Act 3b).
+  act3_access_filler: "Alright, let me find that switch for you — one sec.",
   act3_access_fallback:
-    'Almost there — turn on Accessibility so I can steer the pointer for you. It\'s the switch next to my name.'
+    "Almost there — flip on Accessibility so I can steer the pointer. It's the switch right next to my name."
 };
 
 export const act3ScreenLine: Segment[] = [
@@ -107,6 +119,9 @@ export const act3AccessLine: Segment[] = [
 ];
 export const act3AccessFallbackLine: Segment[] = [
   { cacheKey: 'act3_access_fallback', text: () => ACT3_LINES.act3_access_fallback }
+];
+export const act3AccessFillerLine: Segment[] = [
+  { cacheKey: 'act3_access_filler', text: () => ACT3_LINES.act3_access_filler }
 ];
 
 /** Short coach-caption text pushed to the notch per Act 3 sub-step (title / detail). */
@@ -138,7 +153,7 @@ export function pickSeededPrompt(mode: 'talk' | 'point' | 'circle', seed: number
 
 /** Act 5a — sign in (temp panel). Static line, cached. */
 export const ACT5_SIGNIN: Segment[] = [
-  { cacheKey: 'act5_signin', text: () => "Almost done — let's save your setup. Sign in with Google." }
+  { cacheKey: 'act5_signin', text: () => "Almost there — let's save your setup. Sign in with Google and we're good." }
 ];
 
 /** Spoken once the Google name is known (dynamic — synthesized live). */
@@ -147,7 +162,7 @@ export const act5Greeting = (name: string): Segment[] =>
 
 /** Act 5b — source chips. Static line, cached. */
 export const ACT5_SOURCE: Segment[] = [
-  { cacheKey: 'act5_source', text: () => "Last thing — where'd you hear about me?" }
+  { cacheKey: 'act5_source', text: () => "Last thing, I'm curious — where'd you hear about me?" }
 ];
 
 /** Act 6 — warm ending. First line personalized (live), second cached. */
