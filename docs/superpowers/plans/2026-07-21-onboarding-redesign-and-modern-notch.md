@@ -526,6 +526,27 @@ implementation plan (`docs/superpowers/plans/2026-07-21-onboarding-phaseN-*.md`)
 
 ---
 
+## 18. Cross-phase reconciliations (from the plan-consistency pass)
+
+The 8 per-phase plans (`2026-07-21-onboarding-phaseN-*.md`) agree on the §3B contract names. Two
+adjustments to note before executing:
+
+1. **Pull the paywall/auth exemption FORWARD (build after Phase 0, before Phase 4).** Phase 5's
+   investigation found the real blocker isn't the notch paywall (which never fires during onboarding —
+   audio routes to `onboarding:audio`, notch inert) but that Act 3/4 vision turns proxy to the
+   **authed** backend (`proxy.rs::authed_post` → `fetch_jwt`), so pre-sign-in they **401 (NoAuth)**.
+   The fix — new unauth, IP-rate-limited `/v1/onboarding/{gate,vision,tts}` routes + a central
+   `proxy_post_builder` reroute gated on `ONBOARDING_PTT` (Phase 5 Tasks 1-3) — is a **prerequisite for
+   Phase 4's Accessibility vision-point** and every Act-4 turn. Build it as a foundation, not last.
+   (Act 2's say-hi already uses the unauth `/v1/onboarding/chat` + native TTS, so it's fine.)
+2. **Name-in-prompt — split ownership, append once.** Phase 0 owns the plumbing (`userName` field on the
+   turn inputs + the `prompts.rs` non-cached append). Phase 6 owns the value (file-backed
+   `get/set_user_name` cache + threading it live from `NotchApp`). Do the `prompts.rs` append ONCE
+   (Phase 0); Phase 6 only supplies the value — don't double-append.
+
+**Revised build order:** Phase 0 → **paywall exemption (Phase 5 Tasks 1-3)** → Phase 1 + Phase 2
+(independent surface redesigns, any order) → Phase 3 → Phase 4 → Phase 5 (rest) → Phase 6 → Phase 7.
+
 ## Appendix — Research basis
 Value-first / learn-by-doing / aha-in-60s / permission-priming / peak-end / endowed-progress — synthesized
 from: the 200-flow study (designerup), Product School, NN/g AI onboarding, Superhuman's playbook (chord
