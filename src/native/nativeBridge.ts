@@ -125,6 +125,8 @@ export type NativeGateInput = {
   history?: string;
   // True when a guide pointer is on screen waiting for a click (biases needsScreen).
   pointerPending?: boolean;
+  // The signed-in user's display name — appended to the NON-cached gate prompt (spec §12).
+  userName?: string;
 };
 
 export type NativeBridge = {

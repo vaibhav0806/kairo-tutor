@@ -49,8 +49,15 @@ fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
             object.insert("spokenIntro".to_string(), json!(intro));
         }
     }
-    serde_json::to_string_pretty(&context)
-        .map_err(|error| format!("Failed to build tutor prompt: {error}"))
+    let mut prompt = serde_json::to_string_pretty(&context)
+        .map_err(|error| format!("Failed to build tutor prompt: {error}"))?;
+    // The user's name goes in the NON-cached user turn only (never the cached system prefix).
+    let name_line = crate::prompts::user_name_line(input.user_name.as_deref());
+    if !name_line.is_empty() {
+        prompt.push_str("\n\n");
+        prompt.push_str(&name_line);
+    }
+    Ok(prompt)
 }
 
 pub(crate) fn build_openrouter_messages(
@@ -662,6 +669,13 @@ pub(crate) async fn run_gate_turn(
         "Active app: {app}\nWindow title: {title}{history_line}{pointer_line}\nUser question (spoken): \"{}\"",
         input.user_query
     );
+    // Append the user's name to the NON-cached gate user turn (empty when unknown / signed out).
+    let name_line = crate::prompts::user_name_line(input.user_name.as_deref());
+    let user_message = if name_line.is_empty() {
+        user_message
+    } else {
+        format!("{user_message}\n{name_line}")
+    };
     // Diagnostic: pair the exact question the gate saw with its answer (the "gate
     // result" line below; always shown, constants::LOG_TRANSCRIPTS).
     crate::klog!(

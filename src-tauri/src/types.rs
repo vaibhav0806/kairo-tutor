@@ -210,6 +210,10 @@ pub(crate) struct TutorTurnInput {
     // so the tutor continues from it instead of greeting again. Absent otherwise.
     #[serde(default)]
     pub(crate) spoken_intro: Option<String>,
+    // The signed-in user's display name (Google profile), appended to the NON-cached user message
+    // so the tutor can address them. Empty/absent when unknown. See spec §12.
+    #[serde(default)]
+    pub(crate) user_name: Option<String>,
 }
 
 // The notch capsule's bounding rect in CSS px (viewport-relative), reported by the
@@ -286,6 +290,10 @@ pub(crate) struct GateInput {
     // the gate toward needsScreen=true for continuations ("what next", "ok done").
     #[serde(default)]
     pub(crate) pointer_pending: bool,
+    // The signed-in user's display name (Google profile), appended to the NON-cached gate user
+    // message so the gate can address them. Empty/absent when unknown. See spec §12.
+    #[serde(default)]
+    pub(crate) user_name: Option<String>,
 }
 
 // The cheap text-only ack: the instruction the user just completed, spoken back

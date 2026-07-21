@@ -87,3 +87,29 @@ actual control in the screenshot.\n{}",
     lines.push("Output ONLY the JSON object — no prose, no markdown, no code fences, nothing before { or after }.".to_string());
     lines.join("\n")
 }
+
+/// The user's-name line for the NON-CACHED (dynamic) section of the gate + tutor prompts. Empty
+/// when the name is unknown / signed out. Kept out of the cached system prefix so it never busts
+/// prompt caching. See spec §12.
+pub(crate) fn user_name_line(user_name: Option<&str>) -> String {
+    match user_name.map(str::trim) {
+        Some(name) if !name.is_empty() => format!("The user's name is {name}."),
+        _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::user_name_line;
+
+    #[test]
+    fn appends_for_a_name() {
+        assert_eq!(user_name_line(Some("Prasad")), "The user's name is Prasad.");
+    }
+
+    #[test]
+    fn empty_when_absent_or_blank() {
+        assert_eq!(user_name_line(None), "");
+        assert_eq!(user_name_line(Some("  ")), "");
+    }
+}

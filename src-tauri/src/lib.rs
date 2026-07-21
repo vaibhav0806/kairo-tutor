@@ -988,6 +988,7 @@ mod tests {
             constraints: vec!["Return one short tutor step.".to_string()],
             recent_context: None,
             spoken_intro: None,
+            user_name: None,
         }
     }
 }

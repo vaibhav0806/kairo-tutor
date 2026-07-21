@@ -22,6 +22,8 @@ export type TutorTurnInput = {
   recentContext?: string;
   // The line the gate already spoke aloud this turn — continue from it, don't re-greet.
   spokenIntro?: string;
+  // The signed-in user's display name — appended to the NON-cached prompt section (spec §12).
+  userName?: string;
 };
 
 export type TutorPlannerAdapter = (input: TutorTurnInput) => Promise<TutorResponse>;
@@ -31,13 +33,15 @@ export function buildTutorTurnInput({
   screenCapture,
   skillSlug,
   recentContext,
-  spokenIntro
+  spokenIntro,
+  userName
 }: {
   request: TutorRequest;
   screenCapture: NativeScreenCapture | null;
   skillSlug: string;
   recentContext?: string;
   spokenIntro?: string;
+  userName?: string;
 }): TutorTurnInput {
   return {
     userQuery: request.userQuery,
@@ -67,7 +71,8 @@ export function buildTutorTurnInput({
       'Do not invent app state that is not visible in the provided context.'
     ],
     ...(recentContext && recentContext.trim() ? { recentContext } : {}),
-    ...(spokenIntro && spokenIntro.trim() ? { spokenIntro } : {})
+    ...(spokenIntro && spokenIntro.trim() ? { spokenIntro } : {}),
+    ...(userName && userName.trim() ? { userName } : {})
   };
 }
 
@@ -79,6 +84,7 @@ export function createTutorOrchestrator({ planner }: { planner: TutorPlannerAdap
       skillSlug: string;
       recentContext?: string;
       spokenIntro?: string;
+      userName?: string;
     }) {
       return planner(buildTutorTurnInput(args));
     }
