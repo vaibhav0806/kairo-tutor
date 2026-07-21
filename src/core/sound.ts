@@ -145,41 +145,75 @@ export function playRecordingCue(recording: boolean): void {
   playSound(recording ? 'stt-start' : 'stt-end');
 }
 
+// Render a short sine chime to a 16-bit PCM WAV data-URI. Played via an <audio> element (below) so
+// it shares the SAME autoplay path as the onboarding TTS — that path is what's unlocked during
+// onboarding (the Web Audio context is a different one that stays suspended pre-gesture, which is
+// why the earlier oscillator version was silent).
+function chimeWavDataUri(notes: number[], noteDur: number, gap: number, peak: number): string {
+  const rate = 44100;
+  const total = Math.ceil((notes.length * gap + noteDur) * rate) + 1;
+  const samples = new Float32Array(total);
+  notes.forEach((freq, i) => {
+    const start = Math.floor(i * gap * rate);
+    const len = Math.floor(noteDur * rate);
+    for (let s = 0; s < len; s += 1) {
+      const t = s / rate;
+      const env = Math.min(1, t / 0.012) * Math.exp(-t * 6); // quick attack, exp decay
+      const idx = start + s;
+      if (idx < total) samples[idx] += Math.sin(2 * Math.PI * freq * t) * env * peak;
+    }
+  });
+  const buf = new ArrayBuffer(44 + total * 2);
+  const view = new DataView(buf);
+  const wr = (o: number, str: string) => {
+    for (let i = 0; i < str.length; i += 1) view.setUint8(o + i, str.charCodeAt(i));
+  };
+  wr(0, 'RIFF');
+  view.setUint32(4, 36 + total * 2, true);
+  wr(8, 'WAVE');
+  wr(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  wr(36, 'data');
+  view.setUint32(40, total * 2, true);
+  let o = 44;
+  for (let i = 0; i < total; i += 1) {
+    const v = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(o, v * 32767, true);
+    o += 2;
+  }
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+  return `data:audio/wav;base64,${btoa(bin)}`;
+}
+
+const chimeCache: Partial<Record<'confirm' | 'entrance', string>> = {};
+
 /**
- * Procedural chimes for the onboarding cinematic beats — no asset needed (a soft sine envelope on
- * the shared TTS context). `confirm` = a satisfying two-note rise (color confirm); `entrance` = a
- * single soft warm tone (the pet coming to life). Sound *design*, not a music loop — subtle,
- * premium, never gimmicky. Gated by the same `soundsEnabled()` flag.
+ * Procedural chimes for the onboarding cinematic beats. `confirm` = a satisfying two-note rise
+ * (color lock-in); `entrance` = a warm single tone (Kairo coming to life). Sound *design*, not a
+ * music loop — subtle, premium. Gated by the same `soundsEnabled()` flag.
  */
 export function playChime(kind: 'confirm' | 'entrance'): void {
   if (!soundsEnabled()) {
     return;
   }
-  const ctx = getAudioContext();
-  if (!ctx) {
-    return;
-  }
   try {
-    if (ctx.state === 'suspended') {
-      void ctx.resume();
+    if (!chimeCache[kind]) {
+      chimeCache[kind] =
+        kind === 'confirm'
+          ? chimeWavDataUri([523.25, 783.99], 0.3, 0.1, 0.55) // C5 → G5
+          : chimeWavDataUri([329.63], 0.6, 0, 0.5); // E4 warm
     }
-    const now = ctx.currentTime + 0.02;
-    const notes = kind === 'confirm' ? [523.25, 783.99] : [329.63]; // C5→G5 rise; E4 warm
-    const dur = kind === 'confirm' ? 0.16 : 0.55;
-    const peak = kind === 'confirm' ? 0.13 : 0.07;
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const t0 = now + i * 0.09;
-      gain.gain.setValueAtTime(0, t0);
-      gain.gain.linearRampToValueAtTime(peak, t0 + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t0);
-      osc.stop(t0 + dur + 0.02);
-    });
+    const el = new Audio(chimeCache[kind]);
+    el.volume = kind === 'confirm' ? 0.7 : 0.55;
+    void el.play().catch(() => {});
     klog('notch', 'debug', 'chime played', { kind });
   } catch (err) {
     klog('notch', 'warn', 'chime failed', { kind, err: String(err) });

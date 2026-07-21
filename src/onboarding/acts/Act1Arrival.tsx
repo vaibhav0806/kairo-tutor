@@ -18,6 +18,9 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
   const bridge = useMemo(() => createNativeBridge(), []);
   const voice = useVoice();
   const [phase, setPhase] = useState<'wake' | 'color'>('wake');
+  // The wheel panel appears only when the color line's audio starts — so panel + caption + voice
+  // all land at the same instant (perfectly synced), never text-then-voice.
+  const [colorReady, setColorReady] = useState(false);
   const [hex, setHex] = useState<string>(DEFAULT_ACCENT);
 
   // Load the current accent as the wheel's starting value (getAccent is async in Phase 0).
@@ -28,18 +31,21 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
   // 1a — the wake-up: pet entrance (Phase 2) + coach caption, then auto-advance to color.
   useEffect(() => {
     klog('onboarding', 'info', 'act1 wake');
-    void emit('cursor:entrance'); // Phase 2 signature entrance
-    playChime('entrance'); // soft warm tone as Kairo comes to life
-    void coachSay(bridge, voice.speak, [ACT_LINES.act1_wake], name, { title: 'Kairo' }).then(() =>
-      setPhase('color')
-    );
+    void emit('cursor:entrance'); // Phase 2 signature entrance (pet)
+    void coachSay(bridge, voice.speak, [ACT_LINES.act1_wake], name, {
+      title: 'Kairo',
+      onReady: () => playChime('entrance') // warm tone in sync with the wake voice (audio unlocked)
+    }).then(() => setPhase('color'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 1b — give me a color: caption + the wheel; live theming as it moves.
+  // 1b — give me a color: the wheel panel reveals in sync with the caption + voice (onReady).
   useEffect(() => {
     if (phase !== 'color') return;
-    void coachSay(bridge, voice.speak, [ACT_LINES.act1_color], name, { title: 'Kairo' });
+    void coachSay(bridge, voice.speak, [ACT_LINES.act1_color], name, {
+      title: 'Kairo',
+      onReady: () => setColorReady(true)
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
@@ -67,7 +73,7 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
   return (
     <>
       <div className="ob-vignette" aria-hidden />
-      {phase === 'color' && (
+      {phase === 'color' && colorReady && (
         <TempPanel>
           <div className="ob-color">
             {/* The spoken notch caption carries the instruction — the card stays minimal (just a
