@@ -66,13 +66,34 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
     let openedSettings = false; // deep-link the IM pane at most ONCE (never spam it every poll)
     let guided = false;
     void (async () => {
+      // Returning user who already granted BOTH → skip the whole primer straight to the drill (no
+      // prompts, no "skip the restart" line). Also ensure the tap is running.
+      const [preStatus, preIm] = await Promise.all([
+        bridge.getPermissionStatus(),
+        bridge.getInputMonitoringStatus()
+      ]);
+      if (cancelled) return;
+      if (preStatus.microphone === 'granted' && preIm === 'granted') {
+        await bridge.startPtt();
+        if (!cancelled) setPhase('drill');
+        return;
+      }
+
       await coachSay(bridge, voice.speak, [ACT_LINES.act2_primer], name, { title: 'Kairo' });
+      if (cancelled) return;
       const mic = await bridge.requestMicrophone(); // mic-only OS prompt
+      if (cancelled) return;
       await bridge.requestInputMonitoring(); // input-monitoring prompt + Settings listing
       await bridge.startPtt(); // creates the ⌥⌃ tap NOW (prompt appears here, not at launch)
+      if (cancelled) return;
       klog('onboarding', 'info', 'act2 primer', { mic: mic.microphone });
-      // The Input-Monitoring prompt offers a restart — skippable (the ⌥⌃ tap retries live).
-      await coachSay(bridge, voice.speak, [ACT_LINES.act2_im_skip], name, { title: 'Kairo' });
+      // Only reassure about the restart when Input Monitoring is NOT already granted (else the line
+      // is irrelevant + would overwrite the next step). Guard on `cancelled` so a phase advance
+      // (both granted) can't leave this line lingering on top of the drill.
+      const imNow = await bridge.getInputMonitoringStatus();
+      if (!cancelled && imNow !== 'granted') {
+        await coachSay(bridge, voice.speak, [ACT_LINES.act2_im_skip], name, { title: 'Kairo' });
+      }
     })();
     const iv = setInterval(() => {
       void (async () => {
