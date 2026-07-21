@@ -458,12 +458,30 @@ fn spawn_ptt_controller(app: tauri::AppHandle, rx: Receiver<PttEvent>) {
     });
 }
 
+// True once the PTT controller + tap have been spawned, so `spawn_ptt` is idempotent — it can be
+// called at startup (onboarded users), from Act 2 (first-run, after the mic/IM primer), and from
+// finish_onboarding without ever creating a second controller/tap.
+static PTT_SPAWNED: AtomicBool = AtomicBool::new(false);
+
 // Thin event tap: forward clean ⌥⌃ Down/Up edges to the controller. Owns nothing
-// but a local edge-detector; all timing/state lives in the controller.
+// but a local edge-detector; all timing/state lives in the controller. Idempotent — creating the
+// CGEventTap is what triggers the macOS "Keystroke Receiving" (Input Monitoring) prompt, so we do
+// NOT call this at launch for a first-run user (that would prompt before any value); Act 2 starts it.
 pub(crate) fn spawn_ptt(app: &tauri::AppHandle) {
+    if PTT_SPAWNED.swap(true, Ordering::SeqCst) {
+        return; // already running
+    }
     let (tx, rx) = channel::<PttEvent>();
     spawn_ptt_controller(app.clone(), rx);
     spawn_ptt_tap(tx);
+}
+
+/// Start the ⌥⌃ push-to-talk tap on demand (idempotent). Act 2 calls this AFTER priming Input
+/// Monitoring, so the Keystroke-Receiving prompt appears in Act 2 — not at launch. The tap retries
+/// until the grant lands, so ⌥⌃ goes live the moment the user allows it.
+#[tauri::command]
+pub(crate) fn start_ptt(app: tauri::AppHandle) {
+    spawn_ptt(&app);
 }
 
 fn spawn_ptt_tap(tx: Sender<PttEvent>) {

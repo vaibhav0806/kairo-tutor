@@ -187,6 +187,9 @@ pub(crate) fn finish_onboarding(app: tauri::AppHandle) {
         let _ = std::fs::remove_file(path);
     }
     crate::input::ONBOARDING_PTT.store(false, Ordering::SeqCst);
+    // Make sure the ⌥⌃ tap is running for the live product (idempotent — a no-op if Act 2 already
+    // started it). Covers the edge where onboarding finished without the Act 2 primer starting it.
+    crate::input::spawn_ptt(&app);
     if let Some(win) = app.get_webview_window("onboarding") {
         let _ = win.close();
     }

@@ -67,7 +67,7 @@ mod auth;
 mod onboarding;
 mod accent;
 mod proxy;
-use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, FollowClickWatch};
+use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, start_ptt, FollowClickWatch};
 
 // Non-activating NSPanel for the notch. A non-activating panel can receive
 // input without activating the app, so showing it does not pull the user out
@@ -709,14 +709,15 @@ pub fn run() {
                 }
             }
             // Push-to-talk runs on its own tap so its (possibly Input-Monitoring-gated)
-            // keyboard access can't disturb the mouse/scroll reset tap above. Only auto-request
-            // the grant for ALREADY-onboarded users — first-run users are asked in Act 2 (with the
-            // mic), so we don't fire a scary keystroke prompt at launch before any value. The PTT
-            // tap retries until the grant lands, so Act 2's ⌥⌃ starts working the moment it's given.
+            // keyboard access can't disturb the mouse/scroll reset tap above. For a FIRST-RUN user
+            // we do NOT create the tap at launch — creating the CGEventTap is what triggers the
+            // macOS "Keystroke Receiving" (Input Monitoring) prompt, and that belongs in Act 2 (with
+            // the mic), not before any value. Act 2 calls `start_ptt` after its primer; the tap then
+            // retries until the grant lands. Already-onboarded users get it (+ the grant) at launch.
             if crate::onboarding::is_onboarded(app.handle()) {
                 ensure_input_monitoring_access();
+                spawn_ptt(app.handle());
             }
-            spawn_ptt(app.handle());
             // Menu-bar status item: the only always-visible way to quit/restart
             // Kairo or reopen the notch, since we run Dock-less (Accessory).
             if let Err(error) = create_menu_bar_tray(app) {
@@ -809,6 +810,7 @@ pub fn run() {
             onboarding::get_onboarding_step,
             onboarding::set_onboarding_ptt,
             onboarding::set_onboarding_click_through,
+            start_ptt,
             onboarding::set_user_name,
             onboarding::get_user_name,
             accent::get_accent,
