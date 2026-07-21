@@ -48,18 +48,15 @@ import { gestureConfig } from '../config/gesture';
 import {
   defaultPayload,
   FILLER_FALLBACK,
-  GATE_HISTORY_TRIPLES,
   NOTCH_IDLE_CLOSE_MS,
   pickFiller,
   pickNudge,
   STEP_GAP_MS,
   STEP_SYNTH_TIMEOUT_MS,
-  TRIPLE_BUFFER,
-  TUTOR_HISTORY_TRIPLES,
   VOICE_ERROR_VISIBLE_MS,
-  type QuerySource,
-  type TurnTriple
+  type QuerySource
 } from './notchConstants';
+import { useTurnHistory } from './useTurnHistory';
 
 
 function NotchIcon({ children, size = 18 }: { children: ReactNode; size?: number }) {
@@ -147,7 +144,7 @@ export function NotchApp() {
   // Backstop so the answer always "settles" even if the audio 'ended' event misfires.
   const settleFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Session memory: rolling turn-triples for continuity (last N → tutor/gate).
-  const triplesRef = useRef<TurnTriple[]>([]);
+  const { recordTriple, buildRecentContext, buildGateHistory } = useTurnHistory();
   // The skill pack chosen for the current task. Set by the gate (voice path); reused
   // across follow-along turns; "" lets Rust resolve it via the app-match fallback.
   const activeSkillRef = useRef<string>('');
@@ -357,36 +354,6 @@ export function NotchApp() {
   }, []);
 
   // ---- Session memory: rolling turn-triples -----------------------------------
-  // Record ONE triple per turn (voice OR click). The kairo side is the response's
-  // step says + a short note of what was highlighted/awaited.
-  const recordTriple = useCallback((triple: TurnTriple) => {
-    triplesRef.current.push(triple);
-    if (triplesRef.current.length > TRIPLE_BUFFER) {
-      triplesRef.current = triplesRef.current.slice(-TRIPLE_BUFFER);
-    }
-    klog('notch', 'debug', 'turn triple recorded', { total: triplesRef.current.length });
-  }, []);
-
-  const formatTriples = (triples: TurnTriple[]) =>
-    triples
-      .map((t) => {
-        const filler = t.gateFiller.trim() ? ` filler="${t.gateFiller.trim()}"` : '';
-        return `Turn: user="${t.user.trim()}"${filler} kairo="${t.kairo.trim()}"`;
-      })
-      .join('\n');
-
-  // Last 20 triples → the tutor's `recentContext`.
-  const buildRecentContext = useCallback(() => {
-    const t = triplesRef.current.slice(-TUTOR_HISTORY_TRIPLES);
-    return t.length ? formatTriples(t) : '';
-  }, []);
-
-  // Last 6 triples → the gate.
-  const buildGateHistory = useCallback(() => {
-    const t = triplesRef.current.slice(-GATE_HISTORY_TRIPLES);
-    return t.length ? formatTriples(t) : '';
-  }, []);
-
   // Tear down the PREVIOUS turn's visual + context state on re-engage (a new voice
   // hold or a tap-to-type), independent of submitQuery — which for voice only runs
   // after key-release + STT, far too late to stop the old box/watch/TTS lingering.
