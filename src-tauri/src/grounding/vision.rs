@@ -19,6 +19,27 @@ pub(crate) enum VisionOutcome {
     Failed,
 }
 
+/// Send a vision answer+box body through the metered proxy. Returns the raw provider JSON,
+/// or the `VisionOutcome` to short-circuit with (402 → QuotaExceeded, else → Failed). Shared
+/// by both single-call vision providers.
+async fn proxy_vision_payload(
+    app: &AppHandle,
+    ask_id: &str,
+    provider_hint: &str,
+    body: Value,
+    timeout: Duration,
+    model: &str,
+) -> Result<Value, VisionOutcome> {
+    match crate::proxy::vision_tutor(app, ask_id, provider_hint, body, timeout).await {
+        Ok(payload) => Ok(payload),
+        Err(crate::proxy::ProxyError::QuotaExceeded) => Err(VisionOutcome::QuotaExceeded),
+        Err(error) => {
+            crate::klog!(grounding, warn, provider = provider_hint, model = %model, "vision via proxy failed: {}", error.describe());
+            Err(VisionOutcome::Failed)
+        }
+    }
+}
+
 fn grounding_timeout() -> Duration {
     Duration::from_millis(constants::GROUNDING_TIMEOUT_MS)
 }
@@ -58,13 +79,9 @@ pub(crate) async fn anthropic_vision_chat(
     // Proxy path (metered): the backend forwards this exact body to Anthropic and hands
     // back the raw response, so the parsing below is identical to the direct path.
     let payload = if crate::proxy::proxy_enabled() {
-        match crate::proxy::vision_tutor(app, ask_id, "anthropic", body, timeout).await {
+        match proxy_vision_payload(app, ask_id, "anthropic", body, timeout, model).await {
             Ok(payload) => payload,
-            Err(crate::proxy::ProxyError::QuotaExceeded) => return VisionOutcome::QuotaExceeded,
-            Err(error) => {
-                crate::klog!(grounding, warn, model = %model, "vision chat via proxy failed: {}", error.describe());
-                return VisionOutcome::Failed;
-            }
+            Err(outcome) => return outcome,
         }
     } else {
         let Some(api_key) =
@@ -168,13 +185,9 @@ pub(crate) async fn openai_vision_chat(
     // Proxy path (metered): the backend forwards this body to OpenAI's /v1/responses and
     // hands back the raw response, so the parsing below is identical to the direct path.
     let payload = if crate::proxy::proxy_enabled() {
-        match crate::proxy::vision_tutor(app, ask_id, "openai", body, timeout).await {
+        match proxy_vision_payload(app, ask_id, "openai", body, timeout, model).await {
             Ok(payload) => payload,
-            Err(crate::proxy::ProxyError::QuotaExceeded) => return VisionOutcome::QuotaExceeded,
-            Err(error) => {
-                crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision via proxy failed: {}", error.describe());
-                return VisionOutcome::Failed;
-            }
+            Err(outcome) => return outcome,
         }
     } else {
         let Some(api_key) =
