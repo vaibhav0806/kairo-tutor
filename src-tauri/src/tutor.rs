@@ -692,8 +692,13 @@ pub(crate) async fn run_gate_turn(
     // Run the paywall check in parallel with the gate so it adds no latency: if the gate
     // decides this ask needs a (metered) screen turn AND the user is out of free requests,
     // speak the upgrade prompt directly — no "let me look" filler, no wasted vision call.
-    let quota_check =
-        async { crate::proxy::proxy_enabled() && crate::proxy::over_free_limit(&app_handle).await };
+    // Onboarding demo gate turns run pre-sign-in and are never metered — don't let a stray
+    // /v1/me check flip them into the upgrade prompt (it would 401 and fail-open anyway).
+    let quota_check = async {
+        crate::proxy::proxy_enabled()
+            && !crate::proxy::onboarding_active()
+            && crate::proxy::over_free_limit(&app_handle).await
+    };
     let gate_call =
         openrouter_text_chat(&app_handle, &system, &user_message, &model, timeout, true);
     let (gate_result, paywalled) = tokio::join!(gate_call, quota_check);

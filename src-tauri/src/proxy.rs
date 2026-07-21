@@ -4,6 +4,7 @@
 //! (see auth.rs `fetch_jwt`). The backend forwards the exact body/form we send and returns
 //! the raw provider response, so callers parse it exactly as they parse the direct call.
 
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -16,6 +17,41 @@ use crate::tutor::shared_http_client;
 
 // Mirrors `ASK_ID_HEADER` in packages/shared (Rust can't import the TS constant).
 const ASK_ID_HEADER: &str = "x-kairo-ask-id";
+
+/// True while an onboarding practice turn owns push-to-talk. Onboarding demos run PRE-sign-in
+/// (value-first), so their provider calls must NEVER require a JWT or hit the credit meter — they
+/// transparently route to the unauthenticated, IP-rate-limited `/v1/onboarding/*` sibling routes.
+pub(crate) fn onboarding_active() -> bool {
+    crate::input::ONBOARDING_PTT.load(Ordering::SeqCst)
+}
+
+/// Map an authed/metered product proxy path to its unauthenticated onboarding sibling.
+/// Unknown paths pass through unchanged (borrowing the input, hence the tied lifetime).
+fn onboarding_sibling(path: &str) -> &str {
+    match path {
+        "/v1/stt" => "/v1/onboarding/stt",
+        "/v1/llm/chat" => "/v1/onboarding/gate",
+        "/v1/vision/tutor" => "/v1/onboarding/vision",
+        "/v1/tts/stream" => "/v1/onboarding/tts/stream",
+        _ => path,
+    }
+}
+
+/// Build the POST for `path`. During an onboarding practice turn, reroute to the unauthenticated
+/// onboarding sibling (no JWT, no metering); otherwise a JWT-authed POST (`NoAuth` when signed out).
+async fn proxy_post_builder(
+    app: &AppHandle,
+    path: &str,
+    timeout: Duration,
+) -> Result<reqwest::RequestBuilder, ProxyError> {
+    if onboarding_active() {
+        let sibling = onboarding_sibling(path);
+        crate::klog!(app, debug, path = sibling, "onboarding turn → unauthenticated proxy route");
+        let url = format!("{}{}", constants::KAIRO_BACKEND_URL, sibling);
+        return Ok(shared_http_client().post(&url).timeout(timeout));
+    }
+    authed_post(app, path, timeout).await
+}
 
 /// True when provider calls should route through the backend proxy. Runtime-overridable
 /// via `KAIRO_USE_BACKEND_PROXY` (no rebuild); otherwise the compiled default.
@@ -84,7 +120,7 @@ pub(crate) async fn proxy_post_json(
     ask_id: Option<&str>,
     timeout: Duration,
 ) -> Result<Value, ProxyError> {
-    let mut request = authed_post(app, path, timeout).await?.json(body);
+    let mut request = proxy_post_builder(app, path, timeout).await?.json(body);
     if let Some(id) = ask_id {
         request = request.header(ASK_ID_HEADER, id);
     }
@@ -106,7 +142,7 @@ pub(crate) async fn proxy_post_multipart(
     form: reqwest::multipart::Form,
     timeout: Duration,
 ) -> Result<Value, ProxyError> {
-    let response = authed_post(app, path, timeout)
+    let response = proxy_post_builder(app, path, timeout)
         .await?
         .multipart(form)
         .send()
@@ -127,7 +163,7 @@ pub(crate) async fn proxy_stream_request(
     body: &Value,
     timeout: Duration,
 ) -> Result<reqwest::Response, ProxyError> {
-    let response = authed_post(app, path, timeout)
+    let response = proxy_post_builder(app, path, timeout)
         .await?
         .json(body)
         .send()
@@ -142,7 +178,7 @@ pub(crate) async fn proxy_stream_request(
 /// meaningful with the proxy on (that's where metering lives).
 #[tauri::command]
 pub(crate) async fn check_paywalled(app: tauri::AppHandle) -> bool {
-    proxy_enabled() && over_free_limit(&app).await
+    proxy_enabled() && !onboarding_active() && over_free_limit(&app).await
 }
 
 /// Check the user's free-request quota via `/v1/me`. Returns true when they're paywalled
