@@ -43,6 +43,7 @@ export async function coachSay(
     .map((s) => s.text(name))
     .join(' ')
     .trim();
-  await setCoachCaption(bridge, { title: opts.title, detail, chip: opts.chip });
-  await speak(segments, name);
+  // Fire the caption AND the speech together so the words appear WITH the voice, not before it.
+  // (setCoachCaption is near-instant; speak carries the TTS synth latency — this closes the gap.)
+  await Promise.all([setCoachCaption(bridge, { title: opts.title, detail, chip: opts.chip }), speak(segments, name)]);
 }

@@ -57,29 +57,29 @@ export const ACT_LINES: Record<string, Segment> = {
   // Names the notch so "up here" is concrete (the user should look at the top of their screen).
   act1_wake: {
     cacheKey: 'act1_wake',
-    text: () => "Hey — I'm Kairo. See that notch at the top of your screen? That's my home."
+    text: () => "Hey — I'm Kairo. See that notch at the top of your screen? That's where I live!"
   },
   act1_color: {
     cacheKey: 'act1_color',
-    text: () => "First up: pick my color. This is the real me, from now on."
+    text: () => "Alright, fun part first — give me a color. Whatever you pick, that's officially me."
   },
   act2_primer: {
     cacheKey: 'act2_primer',
     text: () =>
-      "So I can actually hear you, I'll need your mic — plus permission to notice when you hold two keys. Takes two seconds."
+      "To actually hear you, I'll need your mic — plus permission to notice when you hold two keys. Give me permission to do so, takes two seconds."
   },
   act2_drill: {
     cacheKey: 'act2_drill',
     text: () =>
-      "Here's how we talk. Hold Option and Control together, say hey, then let go. I'm listening the whole time you're holding them."
+      "Here's how you can talk to me. Hold Option and Control together, say something, then let go. I'm listening the whole time you're holding them."
   },
-  act2_short: { cacheKey: 'act2_short', text: () => 'Hold them a touch longer for me.' },
+  act2_short: { cacheKey: 'act2_short', text: () => 'Hold the keys slightly longer for me.' },
   act2_empty: { cacheKey: 'act2_empty', text: () => "Hmm, didn't catch that — give it another go." },
   // Reassurance: the macOS Input-Monitoring prompt offers a "restart" — but the ⌥⌃ tap picks up the
   // grant live (it retries), so the user can skip it. Keeps Act 2 reopen-free.
   act2_im_skip: {
     cacheKey: 'act2_im_skip',
-    text: () => "Oh — if macOS asks to restart me, just skip it. I'm already listening."
+    text: () => "Oh — and if macOS asks to restart me, just skip it. I'm already listening."
   }
 } satisfies Record<string, Segment>;
 
