@@ -23,16 +23,27 @@ export const TIP_AY = (4 / VIEWBOX) * GLYPH_SIZE;
 
 // Comet trail behind the tip during flight. TRAIL_BASE is its unscaled length;
 // the right edge is anchored at the tip (transform-origin 100% 50%) and it
-// stretches/​fades with speed. Default brand purple gradient.
-export const TRAIL_BASE = 44;
-export const TRAIL_H = 8;
+// stretches/​fades with speed. Threaded through the accent CSS vars (§11B).
+export const TRAIL_BASE = 40;
+export const TRAIL_H = 7;
 export const DEFAULT_ARROW_FILL = 'url(#kairo-cursor-grad)';
-export const DEFAULT_TRAIL = `linear-gradient(to left, #7c3aed, #7c3aed00)`;
-// While recording, the arrow core turns a live "mic on" red so listening is
-// unmistakable even apart from the halo.
-export const RECORDING_FILL = '#ff4d6d';
+export const DEFAULT_TRAIL = `linear-gradient(to left, var(--cur-accent), rgb(var(--cur-accent-rgb) / 0))`;
+// While recording, the arrow core switches to the accent's "hot" (vivid, saturated)
+// tint so listening is unmistakable even apart from the halo. Derived from the user's
+// accent (§11B) rather than a fixed red — see cursorTheme.accentTints().
+export const RECORDING_FILL = 'var(--cur-accent-hot)';
+
+// One-shot expressive beats (additive; fired by onboarding, reusable in-product). The JS
+// clears data-beat after these windows — kept slightly longer than the CSS animations so
+// cleanup never truncates them. Reduced-motion uses the shorter, dampened variants.
+export const ENTRANCE_MS = 640;
+export const ENTRANCE_REDUCED_MS = 240;
+export const CELEBRATE_MS = 720;
+export const CELEBRATE_REDUCED_MS = 260;
 
 export type CursorFx = 'none' | 'listening' | 'thinking' | 'speaking';
+
+export type CursorBeat = 'entrance' | 'celebrate';
 
 export type CursorMode = 'shadow' | 'pointing' | 'drag';
 

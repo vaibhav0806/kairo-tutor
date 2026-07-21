@@ -25,15 +25,22 @@ import {
   lerp
 } from '../core/penDraw';
 import { klog } from '../core/logger';
+import { getAccent, onAccentChanged } from '../core/accent';
+import { applyCursorAccent } from './cursorTheme';
 import {
+  CELEBRATE_MS,
+  CELEBRATE_REDUCED_MS,
   DEFAULT_ARROW_FILL,
   DEFAULT_TRAIL,
+  ENTRANCE_MS,
+  ENTRANCE_REDUCED_MS,
   IDLE_HIDE_MS,
   RECORDING_FILL,
   TIP_AX,
   TIP_AY,
   TRAIL_BASE,
   TRAIL_H,
+  type CursorBeat,
   type CursorFx,
   type CursorMode,
   type DragPayload,
@@ -132,6 +139,27 @@ export function useCursorEngine(): CursorEngineRefs {
     // Start the idle clock now so the pet is visible for a full window after launch.
     lastActivityRef.current = globalThis.performance?.now?.() ?? 0;
 
+    // Thread the user's accent (Phase 0) through the pet. Apply once now, then live-update
+    // on accent:changed. Both the cursor CSS and the engine's inline style writes read the
+    // resulting --cur-accent* vars, so this single call recolors the whole pet. Phase 0's
+    // accent API is async (native invoke + event), so resolve the promises defensively.
+    const applyAccent = (hex: string) => {
+      if (shellRef.current) {
+        applyCursorAccent(shellRef.current, hex);
+        klog('cursor', 'debug', 'accent applied', { hex });
+      }
+    };
+    let offAccent: (() => void) | undefined;
+    void getAccent()
+      .then(applyAccent)
+      .catch((error) => {
+        klog('cursor', 'warn', 'accent read failed; using CSS defaults', { error: String(error) });
+      });
+    void onAccentChanged(applyAccent).then((off) => {
+      if (!isMounted) off();
+      else offAccent = off;
+    });
+
     // Current spring target (local px) + glyph orientation for this mode.
     const resolveTarget = (): { x: number; y: number; flipX: boolean; flipY: boolean } => {
       if (modeRef.current === 'pointing') {
@@ -185,10 +213,10 @@ export function useCursorEngine(): CursorEngineRefs {
         return;
       }
       const angle = Math.atan2(vy, vx) * (180 / Math.PI);
-      const length = Math.min(speed * 0.05, 44);
+      const length = Math.min(speed * 0.045, TRAIL_BASE);
       const tipX = springX.current.value;
       const tipY = springY.current.value;
-      trail.style.opacity = String(Math.min(speed / 1400, 0.65));
+      trail.style.opacity = String(Math.min(speed / 1500, 0.55));
       trail.style.transform = `translate(${tipX - TRAIL_BASE}px, ${
         tipY - TRAIL_H / 2
       }px) rotate(${angle}deg) scaleX(${length / TRAIL_BASE})`;
@@ -341,6 +369,49 @@ export function useCursorEngine(): CursorEngineRefs {
       wake();
       // FX starting/stopping changes hide-eligibility (e.g. listening un-hides).
       applyVisibility();
+    };
+
+    // One-shot expressive beat: set data-beat on the shell so CSS animates the glyph/burst,
+    // then clear it after the (reduced-motion-aware) window. Entrance also force-shows the pet.
+    const beatTimers = new Set<ReturnType<typeof globalThis.setTimeout>>();
+    const runBeat = (beat: CursorBeat) => {
+      const shell = shellRef.current;
+      if (!shell) {
+        return;
+      }
+      const reduce = reduceMotionRef.current;
+      if (beat === 'entrance') {
+        // The pet is "arriving" — cancel any hide and make it visible for the wake-up.
+        lastActivityRef.current = globalThis.performance?.now?.() ?? 0;
+        sysVisibleRef.current = true;
+        hiddenAppliedRef.current = false;
+        shell.style.opacity = '1';
+      }
+      const name = reduce ? `${beat}-reduced` : beat;
+      const durMs =
+        beat === 'entrance'
+          ? reduce
+            ? ENTRANCE_REDUCED_MS
+            : ENTRANCE_MS
+          : reduce
+            ? CELEBRATE_REDUCED_MS
+            : CELEBRATE_MS;
+      // Re-trigger cleanly if a beat is already showing (remove → next frame → set).
+      delete shell.dataset.beat;
+      requestAnimationFrame(() => {
+        if (shellRef.current) {
+          shellRef.current.dataset.beat = name;
+        }
+      });
+      wake(); // keep the FX layer parked on the tip during the beat
+      const timer = globalThis.setTimeout(() => {
+        beatTimers.delete(timer);
+        if (shellRef.current?.dataset.beat === name) {
+          delete shellRef.current.dataset.beat;
+        }
+      }, durMs);
+      beatTimers.add(timer);
+      klog('cursor', 'debug', 'cursor beat', { beat, reduce });
     };
 
     void nativeBridge
@@ -565,6 +636,20 @@ export function useCursorEngine(): CursorEngineRefs {
           lastActivityRef.current = globalThis.performance?.now?.() ?? 0; // reset idle clock
         }
         applyVisibility();
+      }),
+      // Signature "come to life" wake-up (onboarding Act 1; reusable in-product).
+      listen('cursor:entrance', () => {
+        if (!isMounted) {
+          return;
+        }
+        runBeat('entrance');
+      }),
+      // The Act 4a peak flourish — a delightful pop + accent burst on the first real point.
+      listen('cursor:celebrate', () => {
+        if (!isMounted) {
+          return;
+        }
+        runBeat('celebrate');
       })
     ])
       .then((next) => {
@@ -585,6 +670,8 @@ export function useCursorEngine(): CursorEngineRefs {
         rafRef.current = null;
       }
       globalThis.clearInterval(idleInterval);
+      beatTimers.forEach((timer) => globalThis.clearTimeout(timer));
+      offAccent?.();
       unlisteners.forEach((unlisten) => unlisten());
     };
   }, [nativeBridge]);

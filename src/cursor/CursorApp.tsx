@@ -19,6 +19,7 @@ export function CursorApp() {
           <i />
           <i />
         </span>
+        <span className="kairo-cursor-burst" />
       </div>
       <div className="kairo-cursor-trail" ref={trailRef} aria-hidden="true" />
       <div
@@ -29,16 +30,16 @@ export function CursorApp() {
         <svg className="kairo-cursor-arrow" viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}>
           <defs>
             <linearGradient id="kairo-cursor-grad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#c79bff" />
-              <stop offset="100%" stopColor="#7c3aed" />
+              <stop offset="0%" style={{ stopColor: 'var(--cur-accent-hi)' }} />
+              <stop offset="100%" style={{ stopColor: 'var(--cur-accent)' }} />
             </linearGradient>
           </defs>
           <path
             ref={arrowPathRef}
-            d="M28 4 L6 14 L15 17 L18 26 Z"
+            d="M28 4 L6.5 13.4 L14.3 15.7 L16.9 25 Z"
             fill="url(#kairo-cursor-grad)"
-            stroke="#ffffff"
-            strokeWidth="1.6"
+            stroke="rgba(255, 255, 255, 0.92)"
+            strokeWidth="1.25"
             strokeLinejoin="round"
             strokeLinecap="round"
           />

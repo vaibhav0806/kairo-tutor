@@ -520,6 +520,16 @@ input {
    that the spring loop moves via `transform`. Pointer-events off everywhere so it
    never blocks the user's clicks. */
 .kairo-cursor-shell {
+  /* Accent custom properties — defaults are the brand purple; the engine overwrites
+     these live from the user's accent (Phase 0) via applyCursorAccent(). Both the CSS
+     FX below and the engine's inline style writes read them, so one accent:changed
+     recolors the whole pet. */
+  --cur-accent: #7c3aed;
+  --cur-accent-hi: #c79bff;
+  --cur-accent-soft: #a78bfa;
+  --cur-accent-hot: #ff4d6d;
+  --cur-accent-rgb: 124 58 237;
+
   background: transparent;
   inset: 0;
   overflow: hidden;
@@ -544,24 +554,26 @@ input {
   display: block;
   height: 100%;
   width: 100%;
-  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.45)) drop-shadow(0 0 8px rgb(124 58 237 / 0.65));
+  transform-origin: 87.5% 12.5%; /* the tip vertex (28,4) of the 32-unit viewBox */
+  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.45))
+    drop-shadow(0 0 8px rgb(var(--cur-accent-rgb) / 0.6));
 }
 
 /* Comet trail behind the tip during flight. Length/opacity/angle are written each
    frame from spring velocity; right edge (transform-origin 100% 50%) sits on the
    tip. Transform + opacity only so it stays GPU-composited and lag-free. */
 .kairo-cursor-trail {
-  background: linear-gradient(to left, #7c3aed, rgb(124 58 237 / 0));
-  border-radius: 4px;
-  filter: blur(0.5px);
-  height: 8px;
+  background: linear-gradient(to left, var(--cur-accent), rgb(var(--cur-accent-rgb) / 0));
+  border-radius: 999px;
+  filter: blur(0.3px);
+  height: 7px;
   left: 0;
   opacity: 0;
   pointer-events: none;
   position: absolute;
   top: 0;
   transform-origin: 100% 50%;
-  width: 44px;
+  width: 40px;
   will-change: transform, opacity;
 }
 
@@ -582,11 +594,11 @@ input {
 .kairo-cursor-halo {
   background: radial-gradient(
     circle,
-    rgb(167 139 250 / 0.5) 0%,
-    rgb(124 58 237 / 0.32) 45%,
-    rgb(124 58 237 / 0) 72%
+    rgb(var(--cur-accent-rgb) / 0.5) 0%,
+    rgb(var(--cur-accent-rgb) / 0.32) 45%,
+    rgb(var(--cur-accent-rgb) / 0) 72%
   );
-  border: 2px solid rgb(196 161 255 / calc(0.45 + var(--mic-level, 0) * 0.55));
+  border: 2px solid rgb(var(--cur-accent-rgb) / calc(0.45 + var(--mic-level, 0) * 0.55));
   border-radius: 999px;
   height: 48px;
   left: 0;
@@ -638,7 +650,7 @@ input {
 }
 
 .kairo-cursor-think i {
-  background: #7c3aed;
+  background: var(--cur-accent);
   border-radius: 999px;
   height: 5px;
   left: 50%;
@@ -698,8 +710,8 @@ input {
 
 /* Steady core dot on the exact point. */
 .kairo-cursor-ring-core {
-  border: 2.5px solid #c79bff;
-  box-shadow: 0 0 10px rgb(124 58 237 / 0.7);
+  border: 2.5px solid var(--cur-accent-hi);
+  box-shadow: 0 0 10px rgb(var(--cur-accent-rgb) / 0.7);
   height: 16px;
   margin: -8px 0 0 -8px;
   width: 16px;
@@ -708,7 +720,7 @@ input {
 /* Expanding ping for attention. */
 .kairo-cursor-ring-ping {
   animation: kairo-cursor-ping 1.5s ease-out infinite;
-  border: 2px solid rgb(199 155 255 / 0.7);
+  border: 2px solid rgb(var(--cur-accent-rgb) / 0.7);
   height: 16px;
   margin: -8px 0 0 -8px;
   width: 16px;
@@ -722,6 +734,139 @@ input {
   100% {
     opacity: 0;
     transform: scale(2.8);
+  }
+}
+
+/* One-shot expressive beats. Driven by data-beat on the shell (set/cleared by the engine).
+   Animations target the arrow glyph + the burst ring, NOT .kairo-cursor (whose transform
+   is written every frame by the spring loop), so they never fight the JS. */
+
+/* Burst ring: an accent halo-out used by both entrance (bloom) and celebrate (pop). Centered
+   on the fx-layer origin (the cursor tip) via negative margins. */
+.kairo-cursor-burst {
+  border: 2px solid rgb(var(--cur-accent-rgb) / 0.8);
+  border-radius: 999px;
+  height: 22px;
+  left: 0;
+  margin: -11px 0 0 -11px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 22px;
+}
+
+/* Entrance — the pet "comes to life": the glyph scales + fades up from its tip while a soft
+   accent ring blooms out behind it. */
+.kairo-cursor-shell[data-beat='entrance'] .kairo-cursor-arrow {
+  animation: kairo-cursor-wake 600ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.kairo-cursor-shell[data-beat='entrance'] .kairo-cursor-burst {
+  animation: kairo-cursor-burst 600ms ease-out both;
+}
+
+@keyframes kairo-cursor-wake {
+  0% {
+    opacity: 0;
+    transform: scale(0.24);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes kairo-cursor-burst {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3.4);
+  }
+}
+
+/* Reduced-motion entrance: a plain fade, no scale/bloom. */
+.kairo-cursor-shell[data-beat='entrance-reduced'] .kairo-cursor-arrow {
+  animation: kairo-cursor-fade-in 220ms ease-out both;
+}
+
+@keyframes kairo-cursor-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Celebrate — the peak reaction (first real point): the glyph pops and the accent ring
+   bursts out. Reuses the same burst element as entrance. */
+.kairo-cursor-shell[data-beat='celebrate'] .kairo-cursor-arrow {
+  animation: kairo-cursor-pop 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.kairo-cursor-shell[data-beat='celebrate'] .kairo-cursor-burst {
+  animation: kairo-cursor-burst 700ms ease-out both;
+}
+
+@keyframes kairo-cursor-pop {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.28);
+  }
+  55% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Reduced-motion celebrate: a single gentle nudge, no burst. */
+.kairo-cursor-shell[data-beat='celebrate-reduced'] .kairo-cursor-arrow {
+  animation: kairo-cursor-nudge 240ms ease-out both;
+}
+
+@keyframes kairo-cursor-nudge {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+/* Idle aliveness: an almost-imperceptible breathe on the resting glyph so the pet feels
+   alive without drawing attention. Only when no status FX is showing and no beat is
+   playing; the wake/pop/fade animations (which set their own transform) take precedence. */
+.kairo-cursor-shell[data-fx='none']:not([data-beat]) .kairo-cursor-arrow {
+  animation: kairo-cursor-breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes kairo-cursor-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.045);
+  }
+}
+
+/* CSS-level reduced-motion safety net: kills the infinite breathe + any burst outright
+   (the engine also selects the -reduced beat variants). */
+@media (prefers-reduced-motion: reduce) {
+  .kairo-cursor-arrow,
+  .kairo-cursor-burst {
+    animation: none !important;
   }
 }
 
