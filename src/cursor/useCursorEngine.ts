@@ -26,6 +26,7 @@ import {
 } from '../core/penDraw';
 import { klog } from '../core/logger';
 import { getAccent, onAccentChanged } from '../core/accent';
+import { prefersReducedMotion, onReducedMotionChange } from '../core/reducedMotion';
 import { applyCursorAccent } from './cursorTheme';
 import {
   CELEBRATE_MS,
@@ -120,18 +121,13 @@ export function useCursorEngine(): CursorEngineRefs {
     };
   }, []);
 
-  // Honor the OS "Reduce Motion" setting: the drag reveal snaps to the corner.
+  // Honor the OS "Reduce Motion" setting (shared source of truth — the notch + onboarding read the
+  // same helper, so all three dampen together). The drag reveal + entrance/celebrate beats snap.
   useEffect(() => {
-    const query = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!query) {
-      return;
-    }
-    reduceMotionRef.current = query.matches;
-    const onChange = (event: MediaQueryListEvent) => {
-      reduceMotionRef.current = event.matches;
-    };
-    query.addEventListener?.('change', onChange);
-    return () => query.removeEventListener?.('change', onChange);
+    reduceMotionRef.current = prefersReducedMotion();
+    return onReducedMotionChange((reduced) => {
+      reduceMotionRef.current = reduced;
+    });
   }, []);
 
   useEffect(() => {
