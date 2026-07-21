@@ -64,6 +64,7 @@ use panels::{
 mod input;
 mod auth;
 mod onboarding;
+mod accent;
 mod proxy;
 use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, FollowClickWatch};
 
@@ -606,6 +607,9 @@ pub fn run() {
             // Warm the TLS handshake to each provider host so the first gate/vision/
             // STT/TTS request skips the cold negotiation (shaves first-turn latency).
             crate::tutor::prewarm_http_connections();
+            // Load the user's chosen accent into the process-global cache so leaf code
+            // (color.rs) and every webview read the right hue from launch.
+            crate::accent::init_accent(app.handle());
             // Companion cursor: create it, show it always, and start tracking the
             // real mouse so it shadows the cursor from launch.
             match ensure_cursor_panel(app.handle()) {
@@ -726,6 +730,8 @@ pub fn run() {
             onboarding::set_onboarding_step,
             onboarding::get_onboarding_step,
             onboarding::set_onboarding_ptt,
+            accent::get_accent,
+            accent::set_accent,
             auth::start_google_auth,
             auth::get_auth_status,
             auth::get_backend_jwt,
