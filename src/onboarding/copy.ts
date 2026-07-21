@@ -24,26 +24,9 @@ export interface StepDef {
 
 export const STEPS: StepDef[] = [
   {
-    id: 'name',
-    title: () => 'What should I call you?',
-    speech: [{ cacheKey: 'name', text: () => 'What can we call you? You can either talk, or type it out below.' }],
-  },
-  {
-    id: 'signin',
-    title: () => 'Sign in with Google',
-    speech: [
-      { text: (n) => (n ? `Nice to meet you, ${n}.` : '') },
-      { cacheKey: 'signin', text: () => "Let's get you signed in." },
-    ],
-  },
-  {
-    id: 'source',
-    title: () => 'Where did you find us?',
-    speech: [{ cacheKey: 'source', text: () => 'By the way, where did you hear about Kairo?' }],
-  },
-  {
     // Interactive: the user asks Kairo to point at something on their real screen (gate → vision).
-    // Screen Recording + Accessibility are now primed by Act 3 (Act3Permissions), before this.
+    // Acts 1-3 (arrival/color, hearing, permissions) run BEFORE this; sign-in/source/ending are the
+    // Act 5-6 components AFTER. So the legacy STEPS wizard is now just the two practice beats.
     id: 'learn_point',
     title: () => 'I point, you act',
     speech: [
@@ -64,14 +47,6 @@ export const STEPS: StepDef[] = [
         text: () =>
           "One more trick. Hold Option and Control, then draw a circle around anything on your screen, and I'll tell you all about it.",
       },
-    ],
-  },
-  {
-    id: 'done',
-    title: (n) => (n ? `You're all set, ${n}` : "You're all set"),
-    speech: [
-      { text: (n) => (n ? `${n}, you're ready.` : "You're ready.") },
-      { cacheKey: 'done', text: () => "Hold Option and Control any time. Let's go." },
     ],
   },
 ];
@@ -161,6 +136,26 @@ export function pickSeededPrompt(mode: 'talk' | 'point' | 'circle', seed: number
   return list[((seed % list.length) + list.length) % list.length];
 }
 
+/** Act 5a — sign in (temp panel). Static line, cached. */
+export const ACT5_SIGNIN: Segment[] = [
+  { cacheKey: 'act5_signin', text: () => "Almost done — let's save your setup. Sign in with Google." }
+];
+
+/** Spoken once the Google name is known (dynamic — synthesized live). */
+export const act5Greeting = (name: string): Segment[] =>
+  name ? [{ text: () => `Nice to meet you, ${name}.` }] : [];
+
+/** Act 5b — source chips. Static line, cached. */
+export const ACT5_SOURCE: Segment[] = [
+  { cacheKey: 'act5_source', text: () => "Last thing — where'd you hear about me?" }
+];
+
+/** Act 6 — warm ending. First line personalized (live), second cached. */
+export const act6Ending = (name: string): Segment[] => [
+  { text: () => (name ? `You're all set, ${name}.` : "You're all set.") },
+  { cacheKey: 'act6_ending', text: () => "Hold Option and Control any time — I'll be right here." }
+];
+
 /** The static lines we pre-generate + ship (consumed by scripts/gen-onboarding-audio.ts). */
 export const CACHED_LINES: { key: string; text: string }[] = [
   ...STEPS.flatMap((s) => s.speech)
@@ -172,4 +167,8 @@ export const CACHED_LINES: { key: string; text: string }[] = [
   ...Object.values(ACT_LINES).map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
   // Act 3 permission lines (Phase 4).
   ...Object.entries(ACT3_LINES).map(([key, text]) => ({ key, text })),
+  // Act 5-6 lines (Phase 6) — spoken outside the STEPS wizard.
+  ...[...ACT5_SIGNIN, ...ACT5_SOURCE, ...act6Ending('')]
+    .filter((seg) => seg.cacheKey)
+    .map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
 ];
