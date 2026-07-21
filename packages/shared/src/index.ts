@@ -27,12 +27,16 @@ export interface MeResponse {
   /** True once the user finishes the onboarding flow. */
   onboarded: boolean;
   display_name: string | null;
+  /** The user's name from their Google profile (Better Auth `user.name`). Optional. */
+  account_name?: string | null;
 }
 
 /** Body of `POST /v1/onboarding`. */
 export interface OnboardingBody {
   displayName: string;
   source: string;
+  /** Chosen accent color, hex `#rrggbb`. Optional; validated server-side. */
+  accent?: string;
 }
 
 /** Common "where did you find us" options (the app also allows a free-text "Other"). */
