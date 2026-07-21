@@ -5,6 +5,8 @@ import {
   type NativePermissionState,
   type NativePermissionStatus
 } from './native/nativeBridge';
+import { getAuthStatus, onAuthChanged } from './onboarding/authClient';
+import { syncUserName } from './onboarding/userName';
 
 // The main window is normally hidden. Rust only reveals it on first run when TCC
 // permissions still need granting (see lib.rs setup). So this component is purely
@@ -36,6 +38,20 @@ function permissionStateLabel(state: NativePermissionState) {
 export function App() {
   const env = loadBrowserEnv();
   const nativeBridge = useMemo(() => createNativeBridge(), []);
+
+  // Keep the native user-name cache fresh for the notch: sync from /v1/me when signed in (so
+  // returning users who onboarded before this feature get their name into the prompt). §12.
+  useEffect(() => {
+    let un = () => {};
+    const sync = (signedIn: boolean) => {
+      if (signedIn) void syncUserName();
+    };
+    void getAuthStatus().then((s) => sync(s.signed_in));
+    void onAuthChanged(sync).then((u) => {
+      un = u;
+    });
+    return () => un();
+  }, []);
   const requiredPermissions = useMemo(
     () =>
       [

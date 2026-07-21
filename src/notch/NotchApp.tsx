@@ -148,6 +148,23 @@ export function NotchApp() {
   // pointer arms so the first wrong-button nudge on it always fires (clock-independent).
   const lastNudgeAtRef = useRef(Number.NEGATIVE_INFINITY);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
+  // The user's name (from onboarding / their Google account) is cached natively; read it at launch
+  // so every tutor/gate turn can pass it into the NON-cached prompt section (§12). Re-read on a
+  // fresh sign-in during a live session.
+  const userNameRef = useRef('');
+  useEffect(() => {
+    const load = () =>
+      void nativeBridge.getUserName().then((n) => {
+        if (n) userNameRef.current = n;
+        klog('notch', 'info', 'user name loaded', { name_len: n.length });
+      });
+    load();
+    let un = () => {};
+    void listen('auth:changed', load).then((u) => {
+      un = u;
+    });
+    return () => un();
+  }, [nativeBridge]);
   const env = loadBrowserEnv();
   // All answer/filler/step/follow audio playback lives in this hook (owns the clip refs +
   // playback epoch + narration/filler done-signals); the turn machine just calls it.
@@ -515,7 +532,8 @@ export function NotchApp() {
           bundleId: active?.bundleId ?? undefined,
           windowTitle: active?.windowTitle ?? undefined,
           history: buildGateHistory(),
-          pointerPending
+          pointerPending,
+          userName: userNameRef.current || undefined
         });
         const start = raw.indexOf('{');
         const end = raw.lastIndexOf('}');
@@ -678,7 +696,8 @@ export function NotchApp() {
           screenCapture: capturedScreenRef.current,
           recentContext,
           // What the gate just spoke aloud, so the tutor continues instead of re-greeting.
-          spokenIntro: filler
+          spokenIntro: filler,
+          userName: userNameRef.current || undefined
         });
         // A newer turn superseded this one while the tutor ran → don't paint a stale
         // answer, don't play its audio, don't arm a watch for the old target.
@@ -812,7 +831,8 @@ export function NotchApp() {
           annotations: [],
           screenCapture: shot,
           recentContext,
-          spokenIntro: ackText || 'Nice, one sec.'
+          spokenIntro: ackText || 'Nice, one sec.',
+          userName: userNameRef.current || undefined
         });
         if (signal.aborted) return;
         // 5. Render via the same path — re-arms the pointer if it points again.

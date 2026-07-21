@@ -28,6 +28,8 @@ export type AskTutorFromNotchOptions = {
   recentContext?: string;
   // The line the gate already spoke aloud this turn — the tutor continues from it.
   spokenIntro?: string;
+  // The user's display name (account); injected into the non-cached prompt section (§12).
+  userName?: string;
 };
 
 export type AskTutorResult = {
@@ -64,7 +66,8 @@ export async function askTutorFromNotch({
   annotations = [],
   screenCapture: providedCapture,
   recentContext,
-  spokenIntro
+  spokenIntro,
+  userName
 }: AskTutorFromNotchOptions): Promise<AskTutorResult> {
   try {
     const mockPlanner = createMockTutorPlanner();
@@ -100,7 +103,8 @@ export async function askTutorFromNotch({
       screenCapture,
       skillSlug,
       recentContext,
-      spokenIntro
+      spokenIntro,
+      userName
     });
 
     const displayBounds = screenCapture.displayBounds;
