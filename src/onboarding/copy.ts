@@ -50,7 +50,7 @@ export const STEPS: StepDef[] = [
       {
         cacheKey: 'learn_point',
         text: () =>
-          "Here's the fun part. Open any app or web page you like, then hold Option and Control and ask me to point something out — like 'where do I search?'. Watch me find it.",
+          'Now the fun part. Hold Option and Control together, and ask me to point something out on your screen — like the wifi icon, or the Apple menu. Watch me find it.',
       },
     ],
   },
@@ -145,6 +145,20 @@ export function permissionSpeech(screenOk: boolean, accessibilityOk: boolean): S
   if (screenOk && accessibilityOk) return null;
   const key: keyof typeof PERMISSION_LINES = accessibilityOk ? 'perm_screen' : !screenOk ? 'perm_both' : 'perm_access';
   return [{ cacheKey: key, text: () => PERMISSION_LINES[key] }];
+}
+
+/** Seeded practice prompts — 2-3 concrete phrases per mode so the mic is never blank (spec §8).
+ *  Point uses ALWAYS-PRESENT targets (menu bar / status icons) so it works on any screen. */
+export const SEEDED_PROMPTS: Record<'talk' | 'point' | 'circle', string[]> = {
+  talk: ["hey Kairo, what's up?", 'how are you today?', 'tell me a fun fact'],
+  point: ["where's the wifi icon?", 'point at the battery', "where's the Apple menu?"],
+  circle: ['circle any icon and ask what it is', 'circle something and ask about it']
+};
+
+/** Pick one seeded prompt for a mode, rotating by `seed` (e.g. a per-mount counter). */
+export function pickSeededPrompt(mode: 'talk' | 'point' | 'circle', seed: number): string {
+  const list = SEEDED_PROMPTS[mode];
+  return list[((seed % list.length) + list.length) % list.length];
 }
 
 /** The static lines we pre-generate + ship (consumed by scripts/gen-onboarding-audio.ts). */
