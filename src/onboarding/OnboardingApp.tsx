@@ -35,6 +35,10 @@ export function OnboardingApp() {
   const [actIndex, setActIndex] = useState(0);
   const [obName, setObName] = useState('');
   const [obSource, setObSource] = useState('');
+  // Hold ALL rendering until we've read the resume marker. Otherwise a relaunch (Screen Recording
+  // forces quit+reopen) flashes Act 1 — firing its "Hey, I'm Kairo…" wake line — before the async
+  // resume switches to Act 3. Gate on this so the intro never replays on a mid-onboarding reopen.
+  const [resolved, setResolved] = useState(!hasNativeBridge);
 
   // Make the webview transparent for the WHOLE onboarding (Acts 1-3/5-6 don't mount OnboardingFlow,
   // which used to add this) — otherwise the body keeps its default light background and the
@@ -61,7 +65,8 @@ export function OnboardingApp() {
   }, [actIndex]);
 
   // Resume after a permission-triggered relaunch (Screen Recording forces quit+reopen). Land on the
-  // right macro-step; the live status drives Act 3's sub-step and OnboardingFlow's own resume.
+  // right macro-step BEFORE rendering anything; the live status drives Act 3's sub-step and
+  // OnboardingFlow's own resume.
   useEffect(() => {
     if (!hasNativeBridge) return;
     void invoke<string>('get_onboarding_step')
@@ -69,12 +74,16 @@ export function OnboardingApp() {
         if (saved === 'act3') setActIndex(ACT.PERMISSIONS);
         else if (saved && STEPS.some((s) => s.id === saved)) setActIndex(ACT.PRACTICE);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setResolved(true));
   }, []);
 
   const finish = () => {
     if (hasNativeBridge) void invoke('finish_onboarding').catch(() => {});
   };
+
+  // Nothing until the resume marker is read (prevents the Act 1 flash on reopen).
+  if (!resolved) return <div className="ob-orchestrator" />;
 
   let body: React.ReactNode;
   switch (actIndex) {
