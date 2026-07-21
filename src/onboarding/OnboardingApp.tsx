@@ -36,6 +36,18 @@ export function OnboardingApp() {
   const [obName, setObName] = useState('');
   const [obSource, setObSource] = useState('');
 
+  // Make the webview transparent for the WHOLE onboarding (Acts 1-3/5-6 don't mount OnboardingFlow,
+  // which used to add this) — otherwise the body keeps its default light background and the
+  // full-screen window paints white over the real desktop.
+  useEffect(() => {
+    document.documentElement.classList.add('onboarding-document');
+    document.body.classList.add('onboarding-document');
+    return () => {
+      document.documentElement.classList.remove('onboarding-document');
+      document.body.classList.remove('onboarding-document');
+    };
+  }, []);
+
   const advance = () => {
     klog('onboarding', 'info', 'act advance', { from: actIndex });
     setActIndex((i) => Math.min(ACT_COUNT - 1, i + 1));
