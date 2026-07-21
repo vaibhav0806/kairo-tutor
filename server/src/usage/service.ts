@@ -28,6 +28,20 @@ export async function reserve(userId: string, askId: string): Promise<boolean> {
   });
 }
 
+/**
+ * Fast paywall check (no reserve): true when the user is out of free requests and not pro.
+ * A missing counter row (shouldn't happen — seeded on signup) reads as NOT paywalled so a
+ * setup hiccup never blocks a legit user; the atomic reserve() on the metered route is the
+ * real ceiling regardless.
+ */
+export async function isPaywalled(userId: string): Promise<boolean> {
+  const r = await db.execute(
+    sql`SELECT (plan <> 'pro' AND used_free >= free_limit) AS paywalled
+        FROM usage_counter WHERE user_id = ${userId}`,
+  );
+  return r.rows[0]?.paywalled === true;
+}
+
 /** Compensating refund (failure path). Idempotent per `askId`, never underflows. */
 export async function refund(userId: string, askId: string) {
   const r = await db.execute(

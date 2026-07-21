@@ -1,12 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { ASK_ID_HEADER } from '@kairo/shared';
 import { requireAuth } from '../plugins/auth-verify';
+import { requireCredits } from '../plugins/require-credits';
 import { forwardJson } from './forward';
 import { reserve, refund } from '../usage/service';
 import { QuotaExceededError } from '../plugins/error-handler';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Drop the `_provider` routing hint before forwarding the body to the provider. */
 function stripMeta(body: unknown): unknown {
@@ -19,19 +17,18 @@ function stripMeta(body: unknown): unknown {
 }
 
 export async function llmRoutes(app: FastifyInstance) {
-  // Gate / text / ack — authed but UNMETERED (they exist only to keep keys server-side).
-  app.post('/v1/llm/chat', { preHandler: requireAuth }, async (req) => {
+  // Gate / text / ack — authed + credit-gated but UNMETERED (they keep keys server-side; a
+  // paywalled user is refused here so we never spend on their gate/ack calls).
+  app.post('/v1/llm/chat', { preHandler: [requireAuth, requireCredits] }, async (req) => {
     const { json } = await forwardJson('openrouter', '/chat/completions', req.body);
     return json;
   });
 
   // The answer + box turn — authed AND METERED. One ask = one unit (this route fires once per ask).
-  app.post('/v1/vision/tutor', { preHandler: requireAuth }, async (req) => {
-    // usage_event.ask_id is a uuid column — only trust a well-formed UUID from the client;
-    // otherwise mint one so a malformed header can never crash the reserve INSERT.
-    const rawAskId = req.headers[ASK_ID_HEADER];
-    const askId =
-      typeof rawAskId === 'string' && UUID_RE.test(rawAskId) ? rawAskId : randomUUID();
+  app.post('/v1/vision/tutor', { preHandler: [requireAuth, requireCredits] }, async (req) => {
+    // Mint the ask_id server-side (ignore any client header): the client must NOT control it, or
+    // a modified client could reuse one id to get unlimited "already-counted" free asks.
+    const askId = randomUUID();
     const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
     const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
 
@@ -46,8 +43,8 @@ export async function llmRoutes(app: FastifyInstance) {
     }
   });
 
-  // Computer-use pointing — authed, UNMETERED (part of the same ask).
-  app.post('/v1/vision/point', { preHandler: requireAuth }, async (req) => {
+  // Computer-use pointing — authed + credit-gated, UNMETERED (part of the same ask).
+  app.post('/v1/vision/point', { preHandler: [requireAuth, requireCredits] }, async (req) => {
     const { json } = await forwardJson('openai', '/v1/responses', stripMeta(req.body));
     return json;
   });

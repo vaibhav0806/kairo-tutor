@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { providers } from '../config/providers';
 import { requireAuth } from '../plugins/auth-verify';
+import { requireCredits } from '../plugins/require-credits';
 import { forwardJson } from './forward';
 import { streamPassthrough } from './stream';
 
 export async function speechRoutes(app: FastifyInstance) {
   // STT — forward the WAV multipart to Sarvam (global fetch handles the multipart boundary).
-  app.post('/v1/stt', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/v1/stt', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
     const p = providers.sarvam;
     if (!p.key) return reply.status(502).send({ error: 'provider_error', code: 'provider_error' });
 
@@ -35,13 +36,13 @@ export async function speechRoutes(app: FastifyInstance) {
   });
 
   // TTS buffered (returns base64 audio JSON).
-  app.post('/v1/tts', { preHandler: requireAuth }, async (req) => {
+  app.post('/v1/tts', { preHandler: [requireAuth, requireCredits] }, async (req) => {
     const { json } = await forwardJson('sarvam', '/text-to-speech', req.body);
     return json;
   });
 
   // TTS streaming (linear16 PCM) — pipe straight through, low latency.
-  app.post('/v1/tts/stream', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/v1/tts/stream', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
     await streamPassthrough('sarvam', '/text-to-speech/stream', req.body, reply);
   });
 }
