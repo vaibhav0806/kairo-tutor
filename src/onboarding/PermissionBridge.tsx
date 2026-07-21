@@ -1,25 +1,27 @@
-// Guided-arrow bridge: the Screen-Recording guide + the Accessibility vision-miss fallback.
+// Guided bridge: the Screen-Recording guide + the Accessibility vision-miss fallback.
 //
-// NOTE (Phase 4 reconciliation): the onboarding orchestrator only has a WHOLE-WINDOW click-through
-// toggle (Phase 0), not the per-region hit-rect the notch uses. During Act 3 the window MUST be
-// click-through so the user can flip the real System Settings toggle underneath — so this bridge
-// can't host working buttons (they'd never receive clicks). It is therefore a NON-interactive
-// visual guide: the Settings pane is already deep-linked on sub-step entry, and macOS shows its own
-// "Quit & Reopen" for Screen Recording. A per-region hit-rect could restore buttons later.
+// NOTE (reconciliation): the onboarding orchestrator only has a WHOLE-WINDOW click-through toggle
+// (Phase 0), not the notch's per-region hit-rect. During Act 3 the window MUST be click-through so
+// the user can flip the real System Settings toggle underneath — so this is a NON-interactive visual
+// guide (no buttons; the pane is already deep-linked on entry). It sits at the TOP (below the notch)
+// so it never covers the Settings toggle, and it has no directional arrow (there's nothing on-screen
+// at a fixed offset to point at) and no bob animation.
 
 type Props = {
   permission: 'screen' | 'accessibility';
   accent: string; // hex from getAccent()
 };
 
-const COPY: Record<Props['permission'], { title: string; hint: string }> = {
+const COPY: Record<Props['permission'], { badge: string; title: string; hint: string }> = {
   screen: {
-    title: 'Turn on Screen Recording',
-    hint: 'Find Kairo Tutor in the list and flip its switch on — macOS will offer to reopen me.'
+    badge: 'Screen Recording',
+    title: 'Find Kairo in the list',
+    hint: "Flip my switch on — macOS will pop up to reopen me, that's normal."
   },
   accessibility: {
-    title: 'Turn on Accessibility',
-    hint: 'Flip the switch next to Kairo Tutor.'
+    badge: 'Accessibility',
+    title: 'Flip the switch next to me',
+    hint: 'Turn on Accessibility for Kairo Tutor so I can steer the pointer.'
   }
 };
 
@@ -27,19 +29,11 @@ export function PermissionBridge({ permission, accent }: Props) {
   const c = COPY[permission];
   return (
     <div className="ob-bridge" style={{ ['--ob-accent' as string]: accent }} aria-hidden>
-      <div className="ob-bridge-arrow">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M12 4v14M12 18l-5-5M12 18l5-5"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+      <span className="ob-bridge-badge">{c.badge}</span>
+      <div className="ob-bridge-text">
+        <h2 className="ob-bridge-title">{c.title}</h2>
+        <p className="ob-bridge-hint">{c.hint}</p>
       </div>
-      <h2 className="ob-bridge-title">{c.title}</h2>
-      <p className="ob-bridge-hint">{c.hint}</p>
     </div>
   );
 }
