@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onboardingTts } from './backendClient';
 import type { Segment } from './copy';
+import {
+  acquireMicrophoneStream,
+  createVoiceRecorder,
+  rmsFromTimeDomainData
+} from '../notch/voiceRecorder';
 
 // Shipped static lines, keyed by cacheKey (Vite turns each import into a URL).
 const CACHED: Record<string, string> = {};
@@ -121,10 +126,12 @@ export function useVoice() {
       onEndRef.current = onEnd;
       endedRef.current = false;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Shared mic acquisition: prefers the real built-in mic over silent virtual
+        // devices (BlackHole etc.) — the same fix the notch push-to-talk path uses.
+        const stream = await acquireMicrophoneStream();
         streamRef.current = stream;
         chunksRef.current = [];
-        const rec = new MediaRecorder(stream);
+        const { recorder: rec } = createVoiceRecorder(stream);
         recRef.current = rec;
         rec.ondataavailable = (e) => {
           if (e.data.size) chunksRef.current.push(e.data);
@@ -149,12 +156,7 @@ export function useVoice() {
         let silentSince = 0;
         const tick = () => {
           an.getByteTimeDomainData(buf);
-          let sum = 0;
-          for (const v of buf) {
-            const c = (v - 128) / 128;
-            sum += c * c;
-          }
-          const lvl = Math.min(1, Math.sqrt(sum / buf.length) * 3.2);
+          const lvl = Math.min(1, rmsFromTimeDomainData(buf) * 3.2);
           setLevel(lvl);
           const now = performance.now();
           if (lvl > SPEAK_LEVEL) {
