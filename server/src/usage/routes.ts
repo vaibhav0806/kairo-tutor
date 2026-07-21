@@ -22,6 +22,7 @@ export async function usageRoutes(app: FastifyInstance) {
       paywalled: !isPro && remaining === 0,
       onboarded: !!row.onboarding_completed_at,
       display_name: row.display_name ?? null,
+      account_name: row.name ?? null,
     };
   });
 }

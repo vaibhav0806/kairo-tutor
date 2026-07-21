@@ -81,6 +81,7 @@ export const profile = pgTable('profile', {
     .references(() => user.id, { onDelete: 'cascade' }),
   displayName: text('display_name'),
   source: text('source'), // "where did you find us"
+  accent: text('accent'), // chosen accent color, hex #rrggbb (nullable)
   waitlisted: boolean('waitlisted').notNull().default(true),
   onboardingCompletedAt: timestamp('onboarding_completed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

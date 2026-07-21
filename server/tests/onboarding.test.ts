@@ -58,6 +58,28 @@ describe('/v1/onboarding', () => {
     expect(after.display_name).toBe('Prasad');
   });
 
+  it('persists a valid accent hex and ignores a malformed one', async () => {
+    const jwt = await freshJwt();
+    const auth = { authorization: `Bearer ${jwt}` };
+
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding',
+      headers: auth,
+      payload: { displayName: 'Prasad', source: 'A friend', accent: '#7C3AED' },
+    });
+    expect(ok.statusCode).toBe(200);
+
+    // A malformed accent is dropped (null), not rejected — the save still succeeds.
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding',
+      headers: auth,
+      payload: { displayName: 'Prasad', source: 'A friend', accent: 'purple' },
+    });
+    expect(bad.statusCode).toBe(200);
+  });
+
   it('rejects an empty name', async () => {
     const jwt = await freshJwt();
     const res = await app.inject({

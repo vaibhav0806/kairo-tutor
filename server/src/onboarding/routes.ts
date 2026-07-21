@@ -22,8 +22,11 @@ export async function onboardingRoutes(app: FastifyInstance) {
   app.post<{ Body: OnboardingBody }>('/v1/onboarding', { preHandler: requireAuth }, async (req, reply) => {
     const displayName = (req.body?.displayName ?? '').trim().slice(0, 80);
     const source = (req.body?.source ?? '').trim().slice(0, 120);
+    // Accent is optional; only persist a well-formed #rrggbb hex, else null.
+    const rawAccent = (req.body?.accent ?? '').trim();
+    const accent = /^#[0-9a-fA-F]{6}$/.test(rawAccent) ? rawAccent.toLowerCase() : null;
     if (!displayName) return reply.status(400).send({ error: 'name_required', code: 'bad_request' });
-    await saveProfile(req.userId!, displayName, source);
+    await saveProfile(req.userId!, displayName, source, accent);
     return { ok: true };
   });
 

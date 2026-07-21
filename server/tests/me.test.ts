@@ -55,5 +55,6 @@ describe('/v1/me', () => {
     expect(body.usage).toEqual({ used: 0, limit: 10, remaining: 10 });
     expect(body.paywalled).toBe(false);
     expect(body.user.email).toBe('me@t.dev');
+    expect(body.account_name).toBe('Me'); // Better Auth user.name seeded in beforeAll
   });
 });

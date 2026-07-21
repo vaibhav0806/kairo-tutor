@@ -97,6 +97,7 @@ export async function refund(userId: string, askId: string) {
 
 export interface MeRow {
   email: string;
+  name: string | null;
   plan: 'free' | 'pro';
   used_free: number;
   free_limit: number;
@@ -109,7 +110,7 @@ export interface MeRow {
 
 export async function readMe(userId: string): Promise<MeRow | undefined> {
   const r = await db.execute(sql`
-    SELECT u.email, uc.plan, uc.used_free, uc.free_limit,
+    SELECT u.email, u.name, uc.plan, uc.used_free, uc.free_limit,
            s.status, s.current_period_end, s.cancel_at_period_end,
            p.onboarding_completed_at, p.display_name
     FROM usage_counter uc
