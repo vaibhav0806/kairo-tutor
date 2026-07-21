@@ -203,15 +203,19 @@ export async function runCircleTurn(
 const ACCESSIBILITY_POINT_QUERY =
   'On this macOS Accessibility settings screen, point at the ON/OFF toggle switch in the row labelled "Kairo Tutor".';
 
-export async function pointAtAccessibilityToggle(
+// Split find from reveal so the caller can run the (slow) vision call in the BACKGROUND while a
+// filler line holds the user's attention, then reveal the point at the perfect moment (§Act 3b).
+// `reveal()` draws the box + flies the pet; it's a no-op when nothing was located.
+export async function findAccessibilityToggle(
   bridge: NativeBridge,
   cb: DemoCallbacks = {},
-): Promise<{ located: boolean }> {
+): Promise<{ located: boolean; reveal: () => Promise<void> }> {
+  const noop = { located: false, reveal: async () => {} };
   cb.onThinking?.();
   const capture = await bridge.captureScreen();
   if (!capture.captured) {
     klog('onboarding', 'warn', 'act3 point: capture failed', { reason: capture.reason ?? '' });
-    return { located: false };
+    return noop;
   }
   const result = await askTutorFromNotch({
     query: ACCESSIBILITY_POINT_QUERY,
@@ -222,8 +226,6 @@ export async function pointAtAccessibilityToggle(
   });
   const step = result.steps.find((s) => s.visualTargets.length > 0);
   klog('onboarding', 'info', 'act3 point', { located: Boolean(step), steps: result.steps.length });
-  if (!step) return { located: false };
-  // Draw the box + fly the pet to the toggle. No TTS — the reframe line is spoken separately.
-  await result.revealStep(step, 'draw');
-  return { located: true };
+  if (!step) return noop;
+  return { located: true, reveal: () => result.revealStep(step, 'draw') };
 }

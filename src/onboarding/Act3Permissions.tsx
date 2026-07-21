@@ -5,10 +5,10 @@ import { createNativeBridge } from '../native/nativeBridge';
 import { DEFAULT_ACCENT, getAccent } from '../core/accent';
 import { useVoice } from './useVoice';
 import type { Segment } from './copy';
-import { ACT3_COACH, act3ScreenLine, act3AccessLine } from './copy';
+import { ACT3_COACH, act3ScreenLine, act3AccessLine, act3AccessFillerLine } from './copy';
 import { setCoachCaption } from './coachSurface';
 import { nextPermissionStep, type Act3SubStep } from './act3SubStep';
-import { pointAtAccessibilityToggle } from './demoController';
+import { findAccessibilityToggle } from './demoController';
 import { releaseVisualTargets } from '../overlay/targetRouting';
 import { PermissionBridge } from './PermissionBridge';
 import type { ActProps } from './acts/actTypes';
@@ -99,20 +99,33 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
         await bridge.openPermissionSettings('screenRecording');
         if (!cancelled) setShowBridge('screen'); // arrow + Open + Restart
       } else {
-        await setCoachCaption(bridge, ACT3_COACH.accessibility);
-        await bridge.requestAccessibility(); // registers Kairo → the toggle exists
+        // Register Kairo in the AX list (so a toggle exists) + open the pane.
+        await bridge.requestAccessibility();
         await bridge.openPermissionSettings('accessibility');
         const settled = await waitForSettings(bridge);
         if (cancelled) return;
+        if (!settled) {
+          setShowBridge('accessibility'); // never reached Settings → arrow fallback
+          return;
+        }
+        // Buy time + hold attention: play a short filler line WHILE the vision call finds the
+        // toggle in the background, then reveal the point after a beat (§Act 3b). This masks the
+        // ~2-4s vision latency so the pet's point feels instant + intentional.
+        await setCoachCaption(bridge, { title: 'Finding the switch…', detail: "One sec — I've got this." });
+        const finding = findAccessibilityToggle(bridge); // background — do NOT await yet
         if (!spoke.current.access) {
           spoke.current.access = true;
-          void speak(act3AccessLine);
+          await speak(act3AccessFillerLine); // "Alright, let me find that switch — one sec."
         }
-        if (settled) {
-          const { located } = await pointAtAccessibilityToggle(bridge);
-          if (!cancelled && !located) setShowBridge('accessibility'); // vision missed → arrow fallback
+        const { located, reveal } = await finding;
+        if (cancelled) return;
+        await delay(1000); // a beat, so the point doesn't collide with the filler line
+        if (located) {
+          await setCoachCaption(bridge, ACT3_COACH.accessibility);
+          void speak(act3AccessLine); // "One more — Accessibility… watch, I'll point right at it."
+          await reveal(); // NOW the pet flies to + points at the real toggle
         } else {
-          setShowBridge('accessibility'); // never reached settings → arrow fallback
+          setShowBridge('accessibility'); // vision missed → arrow fallback
         }
       }
     })().catch((e) =>
