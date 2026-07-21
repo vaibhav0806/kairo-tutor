@@ -136,6 +136,32 @@ pub(crate) async fn proxy_stream_request(
     check_status(response).await
 }
 
+/// Check the user's free-request quota via `/v1/me`. Returns true when they're paywalled
+/// (out of free requests and not pro). Fails OPEN (false) on any error — a check failure
+/// must never block a turn.
+pub(crate) async fn over_free_limit(app: &AppHandle) -> bool {
+    let Some(jwt) = fetch_jwt(app).await else {
+        return false;
+    };
+    let url = format!("{}/v1/me", constants::KAIRO_BACKEND_URL);
+    let response = match shared_http_client()
+        .get(&url)
+        .bearer_auth(jwt)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => response,
+        _ => return false,
+    };
+    response
+        .json::<Value>()
+        .await
+        .ok()
+        .and_then(|me| me.get("paywalled").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
 /// POST the vision answer+box body to the metered `/v1/vision/tutor` route, adding the
 /// `_provider` routing hint (`"anthropic"` | `"openai"`). Returns the raw provider JSON.
 pub(crate) async fn vision_tutor(
