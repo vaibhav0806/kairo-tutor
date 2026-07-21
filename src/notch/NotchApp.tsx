@@ -101,10 +101,14 @@ export function NotchApp() {
   // Bumped on every stopAnswerPlayback so a queued answer can detect it was
   // superseded by a newer turn while waiting for the filler, and not play stale.
   const playbackEpochRef = useRef(0);
-  // Bumped on every new turn (voice re-engage OR typed submit). A turn captures its
-  // epoch and bails after each await once a newer turn supersedes it, so a stale turn
-  // never mutates shared state (payload/box/context-watch/TTS/voiceCaptureState).
-  const turnEpochRef = useRef(0);
+  // Opened on every new turn (voice re-engage OR typed submit): abort the previous
+  // turn's controller and install a fresh one. A turn captures its AbortSignal and bails
+  // after each await once a newer turn supersedes it (aborts the old controller), so a
+  // stale turn never mutates shared state (payload/box/context-watch/TTS/voiceCaptureState).
+  const turnAbortRef = useRef<AbortController | null>(null);
+  // Monotonic id bumped alongside each turn controller — LOG-ONLY (cancellation rides
+  // the AbortSignal, not this). Keeps PTT log lines of one turn correlatable.
+  const turnLogSeqRef = useRef(0);
   // The teaching visuals for the current answer, revealed on TTS start (not when
   // the LLM answer arrives), plus the app they point at for the context watcher.
   const revealVisualsRef = useRef<() => Promise<void>>(async () => {});
@@ -338,8 +342,10 @@ export function NotchApp() {
   const resetPreviousTurn = useCallback(() => {
     // Supersede any in-flight turn the INSTANT the user re-engages (PTT promote / tap /
     // typed submit), so a stale in-flight answer can no longer paint over the fresh
-    // listening/typing UI or wipe pen marks. The next turn captures the bumped epoch.
-    turnEpochRef.current += 1;
+    // listening/typing UI or wipe pen marks. Abort the old controller + open a fresh one;
+    // the next turn captures this controller's signal.
+    turnAbortRef.current?.abort();
+    turnAbortRef.current = new AbortController();
     stopAnswerPlayback();
     // A re-engage supersedes any pending guide pointer: clear the watch + native
     // click arm so the next turn starts clean (it re-arms if it points again).
@@ -777,9 +783,9 @@ export function NotchApp() {
   // errors) — used by the click-turn so the next answer can queue BEHIND the ack. Plays
   // on the same follow-clip slot, so a voice barge-in (stopAnswerPlayback) cuts it.
   const speakFollowClipDone = useCallback(
-    async (text: string, turnEpoch: number) => {
+    async (text: string, signal: AbortSignal) => {
       const trimmed = text.trim();
-      if (!trimmed || turnEpochRef.current !== turnEpoch) {
+      if (!trimmed || signal.aborted) {
         return;
       }
       if (followClipRef.current) {
@@ -827,7 +833,7 @@ export function NotchApp() {
   // here at all — Fable routes those to manual "tell me when you're done" mode instead
   // of await_click. Bails if a newer turn supersedes this.
   const settleAfterClick = useCallback(
-    async (wait: FollowWait, turnEpoch: number) => {
+    async (wait: FollowWait, signal: AbortSignal) => {
       const floors = {
         instant: env.waitInstantMs,
         uiSettle: env.waitUiSettleMs,
@@ -836,7 +842,7 @@ export function NotchApp() {
       const ms = waitFloorMs(wait, floors);
       klog('follow', 'info', 'settle after click', { wait, ms });
       await new Promise<void>((resolve) => setTimeout(resolve, ms));
-      if (turnEpochRef.current !== turnEpoch) return;
+      if (signal.aborted) return;
     },
     [env.waitInstantMs, env.waitUiSettleMs, env.waitPageLoadMs]
   );
@@ -849,7 +855,7 @@ export function NotchApp() {
   const armPointerFromAwaitClick = useCallback(
     async (
       awaitClick: { visualTargets: VisualTarget[]; wait: string; button: string },
-      turnEpoch: number,
+      signal: AbortSignal,
       boundsOverride?: NativeOverlayDisplayBounds | null
     ) => {
       const bounds =
@@ -881,7 +887,7 @@ export function NotchApp() {
       // A newer turn superseded this one while we drew the pointer + hashed the frame
       // (e.g. a PTT hold re-engaged → resetPreviousTurn cleared the watch). Do NOT
       // re-arm a stale pointer + native click watch: tear down what we drew and bail.
-      if (turnEpochRef.current !== turnEpoch) {
+      if (signal.aborted) {
         klog('follow', 'debug', 'arm superseded mid-draw — clearing stale pointer');
         pendingAwaitClickRef.current = null;
         void nativeBridge.hideOverlay();
@@ -909,7 +915,7 @@ export function NotchApp() {
   const playResponseAndArm = useCallback(
     (
       result: AskTutorResult,
-      turnEpoch: number,
+      signal: AbortSignal,
       meta: { userSide: string; gateFiller: string }
     ) => {
       const {
@@ -959,7 +965,7 @@ export function NotchApp() {
       const armAwaitClick = () => {
         if (awaitArmed || !hasAwaitClick || !awaitClick) return;
         awaitArmed = true;
-        void armPointerFromAwaitClick(awaitClick, turnEpoch, displayBounds);
+        void armPointerFromAwaitClick(awaitClick, signal, displayBounds);
       };
 
       if (steps.length > 0) {
@@ -971,10 +977,10 @@ export function NotchApp() {
             void emit('cursor:idle', {});
           },
           () => {
-            // Superseded turn (e.g. a no-cut click bumped the epoch while THIS narration
-            // was still finishing) → do NOT arm or settle. Its stale markAnswerSettled
-            // would arm an idle-close that tears down the incoming turn mid-flight.
-            if (turnEpochRef.current !== turnEpoch) return;
+            // Superseded turn (e.g. a no-cut click aborted THIS narration's controller
+            // while it was still finishing) → do NOT arm or settle. Its stale
+            // markAnswerSettled would arm an idle-close that tears down the incoming turn.
+            if (signal.aborted) return;
             // After narration: fallback-arm the pointer if a step-start didn't; otherwise
             // arm the context watch + idle-close exactly as today.
             if (hasAwaitClick) {
@@ -1005,7 +1011,7 @@ export function NotchApp() {
           },
           () => {
             // Superseded turn → don't arm/settle (see the steps path above).
-            if (turnEpochRef.current !== turnEpoch) return;
+            if (signal.aborted) return;
             // No narration steps → arm here (nothing to interrupt/reveal-early anyway).
             armAwaitClick();
             markAnswerSettled();
@@ -1061,7 +1067,7 @@ export function NotchApp() {
   // Speak the gate's "let me look" filler while the vision turn runs. Guarded so a
   // slow synth never plays over the real answer.
   const speakFiller = useCallback(
-    async (text: string, turnEpoch: number) => {
+    async (text: string, signal: AbortSignal) => {
       fillerCancelRef.current = false;
       // Set up the "filler finished" signal the answer will queue behind.
       let resolveDone: () => void = () => {};
@@ -1088,7 +1094,7 @@ export function NotchApp() {
       if (trimmed) {
         // Supersede check up front — streaming plays as it arrives, so unlike the old
         // buffered path there's no synth window to become stale within.
-        if (fillerCancelRef.current || turnEpochRef.current !== turnEpoch) {
+        if (fillerCancelRef.current || signal.aborted) {
           finishFiller();
           return;
         }
@@ -1103,7 +1109,7 @@ export function NotchApp() {
       }
       // Fallback: a generic pre-synthesized line (gate returned no text / synth failed).
       const cached = fillerAudioUrlsRef.current;
-      if (cached.length > 0 && !fillerCancelRef.current && turnEpochRef.current === turnEpoch) {
+      if (cached.length > 0 && !fillerCancelRef.current && !signal.aborted) {
         const url = cached[Math.floor(Math.random() * cached.length)];
         const audio = createBufferedClip(url);
         startClip(audio);
@@ -1120,18 +1126,24 @@ export function NotchApp() {
     async (
       nextQuery: string,
       source: QuerySource = 'typed',
-      epoch?: number,
+      providedSignal?: AbortSignal,
       hasGestureMarks = false
     ) => {
       const trimmedQuery = nextQuery.trim();
       if (!trimmedQuery) {
         return;
       }
-      // Turn epoch. Voice passes the epoch stamped in processCapturedAudio (so the
-      // re-engage teardown and this turn share one epoch); the typed path opens a
-      // fresh turn here. A newer turn bumping the epoch supersedes this one — that
+      // Turn signal. Voice passes the signal opened in processCapturedAudio (so the
+      // re-engage teardown and this turn share one controller); the typed path opens a
+      // fresh turn here. A newer turn aborting this signal supersedes this one — that
       // REPLACES the old isSubmitting drop-guard (no more silently-dropped turns).
-      const turnEpoch = epoch === undefined ? (turnEpochRef.current += 1) : epoch;
+      const signal =
+        providedSignal ??
+        (() => {
+          turnAbortRef.current?.abort();
+          turnAbortRef.current = new AbortController();
+          return turnAbortRef.current.signal;
+        })();
 
       // Diagnostic: which input started this turn (pairs with the native STT
       // transcript + gate question/answer lines in the same log file).
@@ -1193,7 +1205,7 @@ export function NotchApp() {
           activeSkillRef.current = gate.skillSlug;
         }
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
-        if (turnEpochRef.current !== turnEpoch) return;
+        if (signal.aborted) return;
         const needsScreen =
           source === 'typed' || annotations.length > 0 || hasGestureMarks || gate.needsScreen;
 
@@ -1242,7 +1254,7 @@ export function NotchApp() {
         // turn runs. Prefer the gate's own contextual line; otherwise (gesture/annotation/
         // typed — no gate filler) pick a RANDOM line from the pool so it isn't repetitive.
         const filler = gate.voiceText || pickFiller();
-        void speakFiller(filler, turnEpoch);
+        void speakFiller(filler, signal);
 
         const result = await askTutorFromNotch({
           query: trimmedQuery,
@@ -1257,15 +1269,15 @@ export function NotchApp() {
         });
         // A newer turn superseded this one while the tutor ran → don't paint a stale
         // answer, don't play its audio, don't arm a watch for the old target.
-        if (turnEpochRef.current !== turnEpoch) return;
+        if (signal.aborted) return;
 
         // The unified render: play the steps (or the single answer), then arm the
         // pointer-watch if await_click is present — else idle-close exactly as today.
-        playResponseAndArm(result, turnEpoch, { userSide: trimmedQuery, gateFiller: filler });
+        playResponseAndArm(result, signal, { userSide: trimmedQuery, gateFiller: filler });
       } finally {
         // Only the CURRENT turn owns the submitting flag; a superseded turn must not
         // clear it out from under the newer turn that now owns it.
-        if (turnEpochRef.current === turnEpoch) {
+        if (!signal.aborted) {
           isSubmittingRef.current = false;
           setIsSubmitting(false);
         }
@@ -1294,8 +1306,11 @@ export function NotchApp() {
   // history, then render via playResponseAndArm (which re-arms if it points again).
   const runClickTurn = useCallback(
     async (wait: FollowWait, button: FollowButton) => {
-      // A click-turn is a new turn: bump the epoch so a voice hold during it supersedes.
-      const turnEpoch = (turnEpochRef.current += 1);
+      // A click-turn is a new turn: open a fresh controller so a voice hold during it
+      // aborts this one (supersede).
+      turnAbortRef.current?.abort();
+      turnAbortRef.current = new AbortController();
+      const signal = turnAbortRef.current.signal;
       klog('follow', 'info', 'click turn', { wait, button });
       // NO-CUT UX: do NOT stop the current step's speech. Let the line the user clicked
       // through finish naturally; the next turn's audio queues BEHIND it. Capture the
@@ -1329,7 +1344,7 @@ export function NotchApp() {
       // cursor:speaking while it's still talking (fires immediately if nothing's playing).
       void currentSpeechDone.then(() => {
         speechEnded = true;
-        if (turnEpochRef.current === turnEpoch) void emit('cursor:thinking', {});
+        if (!signal.aborted) void emit('cursor:thinking', {});
       });
 
       const recentContext = buildRecentContext();
@@ -1355,27 +1370,27 @@ export function NotchApp() {
         .catch(() => '');
       void (async () => {
         const ack = await ackTextPromise;
-        if (turnEpochRef.current !== turnEpoch) {
+        if (signal.aborted) {
           resolveGate();
           return;
         }
         if (ack && speechEnded) {
           // Ready only AFTER the line ended → play it as the bridge; answer queues behind.
-          await speakFollowClipDone(ack, turnEpoch);
+          await speakFollowClipDone(ack, signal);
         } else {
           // Ready before the line ended (skip it), or no ack → answer waits for the line.
           await gateCap(currentSpeechDone);
         }
-        if (turnEpochRef.current === turnEpoch) resolveGate();
+        if (!signal.aborted) resolveGate();
       })();
 
       try {
         // 3. Settle the UI after the click (fixed per-bucket wait).
-        await settleAfterClick(wait, turnEpoch);
-        if (turnEpochRef.current !== turnEpoch) return;
+        await settleAfterClick(wait, signal);
+        if (signal.aborted) return;
         // 4. Capture the settled screen + run the same tutor turn.
         const shot = await nativeBridge.captureScreen();
-        if (turnEpochRef.current !== turnEpoch) return;
+        if (signal.aborted) return;
         capturedScreenRef.current = shot;
         ackText = await ackTextPromise;
         const result = await askTutorFromNotch({
@@ -1389,14 +1404,14 @@ export function NotchApp() {
           recentContext,
           spokenIntro: ackText || 'Nice, one sec.'
         });
-        if (turnEpochRef.current !== turnEpoch) return;
+        if (signal.aborted) return;
         // 5. Render via the same path — re-arms the pointer if it points again.
-        playResponseAndArm(result, turnEpoch, { userSide, gateFiller: ackText });
+        playResponseAndArm(result, signal, { userSide, gateFiller: ackText });
       } catch (e) {
         klog('follow', 'warn', 'click turn failed', { err: String(e) });
-        if (turnEpochRef.current === turnEpoch) markAnswerSettled();
+        if (!signal.aborted) markAnswerSettled();
       } finally {
-        if (turnEpochRef.current === turnEpoch) {
+        if (!signal.aborted) {
           isSubmittingRef.current = false;
           setIsSubmitting(false);
         }
@@ -1524,8 +1539,8 @@ export function NotchApp() {
           gestureHideTimerRef.current = null;
         }
         // Assumes serialized holds: a re-hold during the previous hold's in-flight
-        // STT resets its buffer, but that turn is normally superseded by the epoch
-        // bump on the next release, so the reset does not corrupt a live turn.
+        // STT resets its buffer, but that turn is normally superseded when the next
+        // release aborts its controller, so the reset does not corrupt a live turn.
         gestureBufferRef.current = [];
         void (async () => {
           const bounds =
@@ -1740,7 +1755,7 @@ export function NotchApp() {
   // Paywalled: show + speak the cached upgrade line (bundled upgrade.wav — no Sarvam call),
   // then let the notch idle-close. Used the instant PTT is released for an out-of-credits user.
   const playUpgradeMessage = useCallback(
-    async (epoch: number) => {
+    async (signal: AbortSignal) => {
       stopAnswerPlayback();
       updateVoiceCaptureState('idle');
       setDetailHidden(false);
@@ -1748,7 +1763,7 @@ export function NotchApp() {
       const clip = createBufferedClip(upgradeAudioUrl);
       answerAudioRef.current = clip;
       clip.onplay = () => {
-        if (turnEpochRef.current !== epoch) return;
+        if (signal.aborted) return;
         setIsSpeaking(true);
         void emit('cursor:speaking');
       };
@@ -1770,30 +1785,32 @@ export function NotchApp() {
 
   const processCapturedAudio = useCallback(
     async (audioBase64: string, mimeType: string) => {
-      // Open a new turn on re-engage. resetPreviousTurn() bumps the epoch (superseding
-      // any in-flight turn) AND tears down the old box/watch/TTS, so a 2nd voice turn
-      // CANCELS the old one instead of being silently dropped. Capture the epoch AFTER
-      // the reset's bump — capturing before would make this new turn supersede itself.
+      // Open a new turn on re-engage. resetPreviousTurn() aborts the previous controller
+      // and installs a fresh one (superseding any in-flight turn) AND tears down the old
+      // box/watch/TTS, so a 2nd voice turn CANCELS the old one instead of being silently
+      // dropped. Capture the signal AFTER the reset — it's the freshly-opened controller.
       resetPreviousTurn();
       // A new turn supersedes any lingering voice-error capsule + its auto-close timer.
       if (voiceErrorTimeoutRef.current != null) {
         clearTimeout(voiceErrorTimeoutRef.current);
         voiceErrorTimeoutRef.current = null;
       }
-      const epoch = turnEpochRef.current;
+      // resetPreviousTurn just opened this turn's controller (always non-null after it).
+      const signal = turnAbortRef.current!.signal;
+      const turnLog = (turnLogSeqRef.current += 1); // log-only correlation id
       // Paywall FIRST — the instant PTT is released, check credits BEFORE any STT/gate/vision.
       // Out of free requests → play the cached upgrade line (no provider spend, no wait).
       if (await nativeBridge.checkPaywalled()) {
-        if (turnEpochRef.current !== epoch) return;
-        klog('notch', 'info', 'paywalled on ptt release → cached upgrade line', { epoch });
-        await playUpgradeMessage(epoch);
+        if (signal.aborted) return;
+        klog('notch', 'info', 'paywalled on ptt release → cached upgrade line', { epoch: turnLog });
+        await playUpgradeMessage(signal);
         return;
       }
       // Approx WAV bytes from the base64 length (×3/4), so we can correlate a bad
       // transcript with what the native mic actually delivered (see the native
       // `captured audio` / `MIC LEAK` logs for held_s vs audio_s).
       const approxBytes = Math.floor((audioBase64.length * 3) / 4);
-      klog('notch', 'info', 'ptt audio received', { epoch, mimeType, bytes: approxBytes });
+      klog('notch', 'info', 'ptt audio received', { epoch: turnLog, mimeType, bytes: approxBytes });
       updateVoiceCaptureState('transcribing');
       setVoicePayload('transcribing');
       void emit('cursor:thinking', {});
@@ -1815,8 +1832,8 @@ export function NotchApp() {
         });
         // A newer turn superseded this one while STT ran → bail without touching
         // shared state; the newest turn drives voiceCaptureState to completion.
-        if (turnEpochRef.current !== epoch) {
-          klog('notch', 'info', 'ptt turn superseded during stt', { epoch });
+        if (signal.aborted) {
+          klog('notch', 'info', 'ptt turn superseded during stt', { epoch: turnLog });
           return;
         }
         const transcript = result.text.trim();
@@ -1824,13 +1841,13 @@ export function NotchApp() {
           // Empty transcript → the brief self-dismissing voice-error capsule. Log it
           // explicitly so a recurrence is traceable to STT, not the mic-leak path.
           klog('notch', 'warn', 'ptt empty transcript → voice error capsule', {
-            epoch,
+            epoch: turnLog,
             bytes: approxBytes
           });
           showVoiceError('No speech was detected. Try again and speak a little louder.');
           return;
         }
-        klog('notch', 'info', 'ptt transcript ok', { epoch, transcript_len: transcript.length });
+        klog('notch', 'info', 'ptt transcript ok', { epoch: turnLog, transcript_len: transcript.length });
         setQuery(transcript);
         await capturePromise;
         // Freeze the hold's buffer, segment it into truth strokes, composite them
@@ -1840,17 +1857,17 @@ export function NotchApp() {
         gestureBufferRef.current = [];
         if (strokes.length > 0 && capturedScreenRef.current) {
           capturedScreenRef.current = await compositeMarks(capturedScreenRef.current, strokes);
-          klog('notch', 'info', 'gesture marks composited', { strokes: strokes.length, epoch });
+          klog('notch', 'info', 'gesture marks composited', { strokes: strokes.length, epoch: turnLog });
           if (gestureConfig.debugImages && capturedScreenRef.current.imageBase64) {
             void nativeBridge.saveGestureDebugImage(capturedScreenRef.current.imageBase64);
           }
         }
         // Gesture marks present → force a screen turn (skip the gate) so the
         // composited screenshot always reaches fable.
-        await submitQuery(transcript, 'voice', epoch, strokes.length > 0);
+        await submitQuery(transcript, 'voice', signal, strokes.length > 0);
       } catch (error) {
         // A superseded turn's STT failure must not clobber the newer turn's UI.
-        if (turnEpochRef.current !== epoch) {
+        if (signal.aborted) {
           return;
         }
         const detail =
@@ -1858,7 +1875,7 @@ export function NotchApp() {
             ? error.message.trim()
             : 'Voice transcription failed. Try again.';
         klog('notch', 'error', 'ptt transcription failed → voice error capsule', {
-          epoch,
+          epoch: turnLog,
           detail
         });
         showVoiceError(detail);
