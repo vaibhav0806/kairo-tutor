@@ -13,16 +13,27 @@ export async function forwardJson(
   const p = providers[providerId];
   if (!p?.key) throw new ProviderError(`no key configured for ${providerId}`);
 
-  const res = await request(`${p.baseUrl}${path}`, {
-    method: 'POST',
-    dispatcher: agent,
-    headersTimeout: p.timeoutMs,
-    bodyTimeout: p.timeoutMs,
-    headers: { 'content-type': 'application/json', ...p.authHeader(p.key), ...extraHeaders },
-    body: JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await request(`${p.baseUrl}${path}`, {
+      method: 'POST',
+      dispatcher: agent,
+      headersTimeout: p.timeoutMs,
+      bodyTimeout: p.timeoutMs,
+      headers: { 'content-type': 'application/json', ...p.authHeader(p.key), ...extraHeaders },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // Network / timeout / connection failure — wrap so it's a typed, logged 502 (not an
+    // opaque 500) and carries the real cause.
+    throw new ProviderError(`${providerId} ${path} request failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   const text = await res.body.text();
-  if (res.statusCode >= 400) throw new ProviderError(`${providerId} ${res.statusCode}: ${text.slice(0, 200)}`);
-  return { status: res.statusCode, json: text ? JSON.parse(text) : null };
+  if (res.statusCode >= 400) throw new ProviderError(`${providerId} ${res.statusCode}: ${text.slice(0, 500)}`);
+  try {
+    return { status: res.statusCode, json: text ? JSON.parse(text) : null };
+  } catch {
+    throw new ProviderError(`${providerId} ${res.statusCode} returned non-JSON: ${text.slice(0, 300)}`);
+  }
 }

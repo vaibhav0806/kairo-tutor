@@ -11,7 +11,7 @@ use crate::constants;
 use crate::prompts::{ack_system_prompt, build_tutor_system_prompt, gate_system_prompt};
 use crate::types::{AckInput, GateInput, TutorTurnInput};
 use serde_json::{json, Value};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 fn build_annotation_summary(input: &TutorTurnInput) -> String {
     if input.annotations.is_empty() {
@@ -281,15 +281,9 @@ pub(crate) async fn run_tutor_turn(
     mut input: TutorTurnInput,
 ) -> Result<String, String> {
     let _t = crate::klog::timer("tutor", "tutor_turn");
-    // Unique id per ask → one metered unit (the backend counts one unit per ask_id, so
-    // this also dedupes an accidental retry of the same turn).
-    let ask_id = format!(
-        "ask-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    );
+    // Unique id per ask → one metered unit (the backend's usage_event.ask_id is a uuid
+    // column, so this MUST be a real UUID; it also dedupes an accidental retry).
+    let ask_id = uuid::Uuid::new_v4().to_string();
     // Resolve/validate the incoming slug against the LIVE frontmost app (it may have
     // changed since the gate ran; non-gate paths send ""). Keeps skill logic in Rust.
     input.skill_slug = if constants::SKILLS_ENABLED {

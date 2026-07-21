@@ -64,10 +64,12 @@ async fn check_status(response: reqwest::Response) -> Result<reqwest::Response, 
         return Err(ProxyError::QuotaExceeded);
     }
     if !status.is_success() {
+        // Keep a generous slice so the real provider/backend error is fully stored in the
+        // Kairo log (the backend now surfaces the underlying message).
         let text = response.text().await.unwrap_or_default();
         return Err(ProxyError::Failed(format!(
             "{status}: {}",
-            text.chars().take(220).collect::<String>()
+            text.chars().take(600).collect::<String>()
         )));
     }
     Ok(response)
