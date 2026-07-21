@@ -66,10 +66,17 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
       <div className="ob-vignette" aria-hidden />
       {phase === 'color' && (
         <TempPanel>
-          <ColorWheel value={hex} onChange={onWheel} />
-          <button type="button" className="ob-wheel-confirm" onClick={() => void confirm()}>
-            That&apos;s the one
-          </button>
+          <div className="ob-color">
+            <div className="ob-color-head">
+              <span className="ob-color-dot" style={{ background: hex }} aria-hidden />
+              <h2 className="ob-color-title">Pick my color</h2>
+              <p className="ob-color-sub">This is me, from now on.</p>
+            </div>
+            <ColorWheel value={hex} onChange={onWheel} />
+            <button type="button" className="ob-color-confirm" onClick={() => void confirm()}>
+              That&apos;s the one
+            </button>
+          </div>
         </TempPanel>
       )}
     </>

@@ -680,55 +680,127 @@ body.onboarding-document {
   justify-content: center;
   pointer-events: none;
 }
+/* The card: near-black glassy surface, a hairline threaded with the accent, layered depth (shadows
+   over borders). Concentric radius: outer 28, inner controls 999/16. */
 .ob-color-panel {
   pointer-events: auto;
-  animation: ob-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  background: radial-gradient(135% 95% at 50% -12%, #271b40 0%, #150f21 44%, #0b0810 100%);
-  border: 1px solid color-mix(in srgb, var(--kairo-accent, #7c3aed) 22%, rgba(255, 255, 255, 0.07));
-  border-radius: 22px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
-  padding: 26px 30px;
+  animation: ob-panel-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  background:
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 16%, #14121c) 0%, #100e17 46%, #0a0910 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 40px 90px -30px rgba(0, 0, 0, 0.75),
+    0 0 60px -20px color-mix(in srgb, var(--kairo-accent, #7c3aed) 40%, transparent);
+  padding: 30px 30px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  -webkit-font-smoothing: antialiased;
+}
+@keyframes ob-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ob-color {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+.ob-color-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+/* Live swatch dot above the title — glows in the currently-picked hue. */
+.ob-color-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.06),
+    0 0 26px 2px color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, transparent);
+  transition: box-shadow 200ms ease;
+}
+/* Kairo's voice — Instrument Serif for the emotional line. */
+.ob-color-title {
+  margin: 0;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  color: #f6f2ff;
+}
+.ob-color-sub {
+  margin: 0;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 13.5px;
+  color: rgba(240, 236, 250, 0.55);
+}
+
+.ob-wheel {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 18px;
 }
-.ob-wheel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-.ob-wheel-disc {
-  border-radius: 50%;
-  cursor: crosshair;
-  touch-action: none;
+/* @uiw wheel — soft accent halo behind the disc so it feels lit. */
+.ob-wheel > div:first-child {
+  border-radius: 999px;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 0 40px color-mix(in srgb, var(--kairo-accent, #7c3aed) 40%, transparent);
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 44px -6px color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, transparent);
 }
 .ob-wheel-slider {
-  width: 200px;
-  accent-color: var(--kairo-accent, #7c3aed);
+  width: 208px;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
-.ob-wheel-swatch {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.1),
-    0 0 22px color-mix(in srgb, var(--kairo-accent, #7c3aed) 60%, transparent);
-}
-.ob-wheel-confirm {
+
+.ob-color-confirm {
+  margin-top: 4px;
   border: none;
-  border-radius: 12px;
-  padding: 10px 22px;
-  font: inherit;
+  border-radius: 14px;
+  padding: 12px 26px;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   color: #fff;
-  background: var(--kairo-accent, #7c3aed);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--kairo-accent, #7c3aed) 84%, #ffffff 16%),
+    var(--kairo-accent, #7c3aed)
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 10px 26px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 65%, transparent);
+  transition:
+    transform 120ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 160ms ease;
+}
+.ob-color-confirm:hover {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.3) inset,
+    0 14px 32px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 75%, transparent);
+}
+.ob-color-confirm:active {
+  transform: scale(0.96);
 }
 @media (prefers-reduced-motion: reduce) {
   .ob-color-panel {
