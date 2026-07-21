@@ -58,7 +58,7 @@ import {
   type QuerySource
 } from './notchConstants';
 import { useTurnHistory } from './useTurnHistory';
-import { CloseIcon } from './NotchIcons';
+import { NotchCapsule, type NotchCapsuleMode } from './NotchCapsule';
 import upgradeAudioUrl from './audio/upgrade.wav?url';
 
 
@@ -2239,7 +2239,7 @@ export function NotchApp() {
   // input while typing (⌘⇧Space) / on an error. Idle → hidden.
   // While speaking (TTS) the capsule hides — the cursor carries the speaking state
   // (a calm pulse at the target) instead. So: listening / thinking / typing only.
-  const capsuleMode: 'listening' | 'thinking' | 'typing' | 'error' | 'idle' =
+  const capsuleMode: NotchCapsuleMode =
     payload.state === 'listening'
       ? 'listening'
       : !isSpeaking && voiceCaptureState === 'error'
@@ -2288,84 +2288,38 @@ export function NotchApp() {
     noteNotchActivity();
   };
 
+  // Guarded typed submit: ignore an in-flight turn or an empty box; on failure clear
+  // the submitting flag so the box stays usable.
+  const handleTypedSubmit = () => {
+    if (isSubmittingRef.current || query.trim().length === 0) {
+      return;
+    }
+    submitQuery(query, 'typed').catch(() => {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    });
+  };
+
   const statusLabel = capsuleMode === 'listening' ? 'Listening' : 'Thinking';
 
   return (
-    <main className="kairo-capsule-shell" aria-label="Kairo status">
-      {capsuleMode === 'idle' ? null : (
-        <div
-          ref={capsuleRef}
-          className="kairo-capsule"
-          data-mode={capsuleMode}
-          onPointerEnter={noteCapsulePointer}
-          onPointerMove={noteCapsulePointer}
-          onPointerLeave={() => {
-            pointerInsideNotchRef.current = false;
-          }}
-          onPointerDown={() => {
-            lastNotchPointerAt.current = performance.now();
-            noteNotchActivity();
-          }}
-        >
-          {capsuleMode === 'typing' ? (
-            <form
-              className="kairo-capsule-prompt"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (isSubmittingRef.current || query.trim().length === 0) {
-                  return;
-                }
-                submitQuery(query, 'typed').catch(() => {
-                  isSubmittingRef.current = false;
-                  setIsSubmitting(false);
-                });
-              }}
-            >
-              <input
-                aria-label="Ask Kairo"
-                autoFocus
-                data-notch-input
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Ask about this screen — or hold ⌥⌃ to talk"
-                value={query}
-              />
-              <button
-                className="kairo-capsule-ask"
-                disabled={query.trim().length === 0}
-                type="submit"
-              >
-                Ask
-              </button>
-              <button
-                aria-label="Hide Kairo"
-                className="kairo-capsule-icon"
-                title="Close"
-                type="button"
-                onClick={hideNotch}
-              >
-                <CloseIcon />
-              </button>
-            </form>
-          ) : capsuleMode === 'error' ? (
-            <div className="kairo-capsule-status kairo-capsule-status-error" role="status">
-              <span className="kairo-capsule-label">
-                {payload.detail || "Didn't catch that — hold ⌥⌃ and speak"}
-              </span>
-            </div>
-          ) : (
-            <div className="kairo-capsule-status">
-              <span className="kairo-capsule-viz" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
-              </span>
-              <span className="kairo-capsule-label">{statusLabel}</span>
-            </div>
-          )}
-        </div>
-      )}
-    </main>
+    <NotchCapsule
+      mode={capsuleMode}
+      statusLabel={statusLabel}
+      detail={payload.detail}
+      query={query}
+      capsuleRef={capsuleRef}
+      onQueryChange={setQuery}
+      onSubmit={handleTypedSubmit}
+      onHide={hideNotch}
+      onCapsulePointer={noteCapsulePointer}
+      onPointerLeave={() => {
+        pointerInsideNotchRef.current = false;
+      }}
+      onPointerDown={() => {
+        lastNotchPointerAt.current = performance.now();
+        noteNotchActivity();
+      }}
+    />
   );
 }
