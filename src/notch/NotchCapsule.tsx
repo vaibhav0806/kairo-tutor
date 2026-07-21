@@ -38,7 +38,10 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
   if (mode === 'coach') {
     return (
       <div className="kairo-capsule-coach" role="status">
-        <span className="kairo-capsule-caption">{props.detail || props.title}</span>
+        <span className="kairo-capsule-caption-row">
+          <span className="kairo-capsule-dot" aria-hidden />
+          <span className="kairo-capsule-caption">{props.detail || props.title}</span>
+        </span>
         {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}
       </div>
     );

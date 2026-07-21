@@ -1718,29 +1718,74 @@ input {
 
 /* Coach caption (onboarding): light-neutral caption text; accent lives ONLY on the chip
    stroke/fill (contrast-safe per spec §5 — accent never a text background). */
+/* Coach caption (onboarding) — Kairo's spoken line in the real notch. Accent-presence dot +
+   tight, legible type. A subtle accent hairline threads the pill so it reads as "Kairo", not a
+   generic toast. */
+.kairo-capsule[data-mode='coach'] {
+  border-color: rgb(var(--accent-rgb) / 0.22);
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.46),
+    0 0 0 0.5px rgb(0 0 0 / 0.55),
+    0 0 40px -14px rgb(var(--accent-rgb) / 0.5),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
 .kairo-capsule-coach {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  max-width: 520px;
-  padding: 2px 2px;
+  gap: 8px;
+  max-width: 480px;
+  padding: 1px 2px;
+}
+.kairo-capsule-caption-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+/* Live accent dot — Kairo's presence, gently breathing. */
+.kairo-capsule-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 10px 1px rgb(var(--accent-rgb) / 0.85);
+  animation: kairo-dot-breathe 2.6s ease-in-out infinite;
+}
+@keyframes kairo-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }
 .kairo-capsule-caption {
-  color: #eef1f5;
+  color: #f2f4f8;
   font-size: 0.9rem;
-  font-weight: 560;
+  font-weight: 550;
   line-height: 1.35;
+  letter-spacing: -0.005em;
+  text-wrap: pretty;
 }
 .kairo-capsule-chip {
   align-self: flex-start;
-  border: 1px solid rgb(var(--accent-rgb) / 0.55);
-  background: rgb(var(--accent-rgb) / 0.12);
-  color: color-mix(in srgb, rgb(var(--accent-rgb)) 55%, #ffffff 45%);
+  margin-left: 16px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.5);
+  background: rgb(var(--accent-rgb) / 0.13);
+  color: color-mix(in srgb, rgb(var(--accent-rgb)) 50%, #ffffff 50%);
   border-radius: 999px;
   padding: 3px 11px;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kairo-capsule-dot {
+    animation: none;
+  }
 }
 
 .kairo-capsule-viz {
