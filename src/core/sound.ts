@@ -144,3 +144,44 @@ export function playSound(name: SoundName): void {
 export function playRecordingCue(recording: boolean): void {
   playSound(recording ? 'stt-start' : 'stt-end');
 }
+
+/**
+ * Procedural chimes for the onboarding cinematic beats — no asset needed (a soft sine envelope on
+ * the shared TTS context). `confirm` = a satisfying two-note rise (color confirm); `entrance` = a
+ * single soft warm tone (the pet coming to life). Sound *design*, not a music loop — subtle,
+ * premium, never gimmicky. Gated by the same `soundsEnabled()` flag.
+ */
+export function playChime(kind: 'confirm' | 'entrance'): void {
+  if (!soundsEnabled()) {
+    return;
+  }
+  const ctx = getAudioContext();
+  if (!ctx) {
+    return;
+  }
+  try {
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
+    const now = ctx.currentTime + 0.02;
+    const notes = kind === 'confirm' ? [523.25, 783.99] : [329.63]; // C5→G5 rise; E4 warm
+    const dur = kind === 'confirm' ? 0.16 : 0.55;
+    const peak = kind === 'confirm' ? 0.13 : 0.07;
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t0 = now + i * 0.09;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(peak, t0 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    });
+    klog('notch', 'debug', 'chime played', { kind });
+  } catch (err) {
+    klog('notch', 'warn', 'chime failed', { kind, err: String(err) });
+  }
+}

@@ -4,6 +4,7 @@ import { emit } from '@tauri-apps/api/event';
 import { createNativeBridge } from '../../native/nativeBridge';
 import { DEFAULT_ACCENT, applyAccent, clampAccent, getAccent } from '../../core/accent'; // Phase 0 + 7
 import { klog } from '../../core/logger';
+import { playChime } from '../../core/sound';
 import { useVoice } from '../useVoice';
 import { ACT_LINES } from '../copy';
 import { clearCoachCaption, coachSay } from '../coachSurface';
@@ -28,6 +29,7 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
   useEffect(() => {
     klog('onboarding', 'info', 'act1 wake');
     void emit('cursor:entrance'); // Phase 2 signature entrance
+    playChime('entrance'); // soft warm tone as Kairo comes to life
     void coachSay(bridge, voice.speak, [ACT_LINES.act1_wake], name, { title: 'Kairo' }).then(() =>
       setPhase('color')
     );
@@ -54,6 +56,7 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
     // Clamp the picked hue into a legible band so an extreme pick can never vanish (§5).
     const clamped = clampAccent(hex);
     klog('onboarding', 'info', 'act1 color confirmed', { picked: hex, clamped });
+    playChime('confirm'); // satisfying two-note rise on lock-in
     applyAccent(clamped);
     void emit('accent:changed', { hex: clamped });
     await invoke('set_accent', { hex: clamped }).catch(() => {}); // Phase 0: persist natively
@@ -67,10 +70,11 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
       {phase === 'color' && (
         <TempPanel>
           <div className="ob-color">
+            {/* The spoken notch caption carries the instruction — the card stays minimal (just a
+                live swatch + a small kicker) so the words aren't said twice. */}
             <div className="ob-color-head">
               <span className="ob-color-dot" style={{ background: hex }} aria-hidden />
-              <h2 className="ob-color-title">Pick my color</h2>
-              <p className="ob-color-sub">This is me, from now on.</p>
+              <span className="ob-color-kicker">your color</span>
             </div>
             <ColorWheel value={hex} onChange={onWheel} />
             <button type="button" className="ob-color-confirm" onClick={() => void confirm()}>

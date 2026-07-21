@@ -734,21 +734,14 @@ body.onboarding-document {
     0 0 26px 2px color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, transparent);
   transition: box-shadow 200ms ease;
 }
-/* Kairo's voice — Instrument Serif for the emotional line. */
-.ob-color-title {
-  margin: 0;
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-weight: 400;
-  font-size: 30px;
-  line-height: 1.05;
-  letter-spacing: 0.01em;
-  color: #f6f2ff;
-}
-.ob-color-sub {
-  margin: 0;
+/* Small kicker — the spoken caption says the rest, so the card doesn't repeat it. */
+.ob-color-kicker {
   font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
-  font-size: 13.5px;
-  color: rgba(240, 236, 250, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(240, 236, 250, 0.5);
 }
 
 .ob-wheel {
@@ -811,68 +804,72 @@ body.onboarding-document {
   }
 }
 
-/* ---- Act 3: guided-arrow permission bridge (Phase 4) ------------------------------------------ */
+/* ---- Act 3: guided permission bridge (Phase 4) ------------------------------------------------
+   A calm hint card at the TOP (below the notch), never over the Settings toggle. No directional
+   arrow, no bob — a static, legible guide. */
 .ob-bridge {
   position: fixed;
   left: 50%;
-  bottom: 48px;
+  top: 92px;
   transform: translateX(-50%);
-  width: min(360px, 80vw);
-  padding: 20px 22px;
-  border-radius: 18px;
-  background: rgba(20, 20, 24, 0.92);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
-  text-align: center;
-  color: #f4f4f6;
-  pointer-events: none; /* visual guide only — the click-through window lets Settings show through */
-}
-.ob-bridge-arrow {
-  color: var(--ob-accent, #7c3aed);
-  animation: ob-bridge-bob 1.4s ease-in-out infinite;
-}
-@keyframes ob-bridge-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(6px);
-  }
-}
-.ob-bridge-title {
-  margin: 8px 0 4px;
-  font-size: 16px;
-  font-weight: 600;
-}
-.ob-bridge-hint {
-  margin: 0 0 14px;
-  font-size: 13px;
-  opacity: 0.75;
-}
-.ob-bridge-actions {
+  width: min(380px, 84vw);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 18px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #17161d, #100f16);
+  border: 1px solid color-mix(in srgb, var(--ob-accent, #7c3aed) 22%, rgba(255, 255, 255, 0.08));
+  box-shadow:
+    0 24px 60px -18px rgba(0, 0, 0, 0.7),
+    0 0 40px -18px color-mix(in srgb, var(--ob-accent, #7c3aed) 55%, transparent);
+  text-align: center;
+  color: #f2f4f8;
+  -webkit-font-smoothing: antialiased;
+  pointer-events: none; /* visual guide only — the click-through window lets Settings show through */
+  animation: ob-bridge-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.ob-bridge-open {
-  background: var(--ob-accent, #7c3aed);
-  color: #fff;
-  border: 0;
-  border-radius: 10px;
-  padding: 9px 14px;
-  font-weight: 600;
-  cursor: pointer;
+@keyframes ob-bridge-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
-.ob-bridge-restart {
-  background: transparent;
-  color: #c9c9cf;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 10px;
-  padding: 8px 14px;
-  cursor: pointer;
+.ob-bridge-badge {
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ob-accent, #7c3aed) 55%, #ffffff 45%);
+  border: 1px solid color-mix(in srgb, var(--ob-accent, #7c3aed) 40%, transparent);
+  background: color-mix(in srgb, var(--ob-accent, #7c3aed) 12%, transparent);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.ob-bridge-title {
+  margin: 2px 0 0;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1.1;
+  color: #f6f2ff;
+}
+.ob-bridge-hint {
+  margin: 0;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(240, 244, 248, 0.62);
+  text-wrap: pretty;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ob-bridge-arrow {
+  .ob-bridge {
     animation: none;
   }
 }
