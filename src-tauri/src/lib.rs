@@ -361,6 +361,23 @@ fn cursor_active(app: tauri::AppHandle, active: bool) -> Result<(), String> {
         .map_err(|error| format!("Failed to emit cursor active: {error}"))
 }
 
+// One-shot "come to life" beat for the companion cursor (onboarding Act 1 wake-up;
+// reusable in-product). Broadcast via app.emit so it reaches the cursor WebView reliably.
+#[tauri::command]
+fn cursor_entrance(app: tauri::AppHandle) -> Result<(), String> {
+    klog!(cursor, debug, "entrance beat → cursor");
+    app.emit("cursor:entrance", ())
+        .map_err(|error| format!("Failed to emit cursor entrance: {error}"))
+}
+
+// One-shot celebratory flourish (onboarding Act 4a peak; used sparingly so it stays special).
+#[tauri::command]
+fn cursor_celebrate(app: tauri::AppHandle) -> Result<(), String> {
+    klog!(cursor, debug, "celebrate beat → cursor");
+    app.emit("cursor:celebrate", ())
+        .map_err(|error| format!("Failed to emit cursor celebrate: {error}"))
+}
+
 // Arm the context watcher when a teaching target is revealed. `baseline` is the
 // app the guidance points at; a later frontmost/scroll/click change clears the box.
 #[tauri::command]
@@ -707,6 +724,8 @@ pub fn run() {
             get_current_overlay_payload,
             hide_overlay,
             cursor_point,
+            cursor_entrance,
+            cursor_celebrate,
             cursor_release,
             cursor_arrived,
             cursor_active,

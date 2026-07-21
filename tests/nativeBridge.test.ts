@@ -81,6 +81,18 @@ describe('createNativeBridge', () => {
     expect(invoke).toHaveBeenCalledWith('request_required_permissions');
   });
 
+  test('cursorEntrance and cursorCelebrate invoke their native commands', async () => {
+    const commands: string[] = [];
+    const invoke = vi.fn(async (command: string) => {
+      commands.push(command);
+      return undefined as never;
+    });
+    const bridge = createNativeBridge(invoke as unknown as NativeInvoke);
+    await bridge.cursorEntrance();
+    await bridge.cursorCelebrate();
+    expect(commands).toEqual(['cursor_entrance', 'cursor_celebrate']);
+  });
+
   test('trusts native microphone status when the desktop shell reports it', async () => {
     const invoke = vi.fn(async () => ({
       screenRecording: 'granted',
