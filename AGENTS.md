@@ -246,3 +246,37 @@ Notes:
 - Watch logs: tail -F ~/Library/Logs/Kairo/kairo-latest.log
 
 Also - don't create branches unless i explicity tell u to, work on main branch only.
+
+## Fresh onboarding test — reset script
+
+To rehearse a TRUE first-run (see the OS permission prompts + the full 6-act onboarding from the
+top), reset all TCC grants + the app's on-disk markers BEFORE launching. Run this, then rebuild +
+launch:
+
+```bash
+osascript -e 'tell application "Kairo Tutor" to quit'; sleep 1
+# TCC grants (re-prompted on next launch): screen recording, accessibility, mic, input monitoring
+tccutil reset ScreenCapture com.kairo.tutor
+tccutil reset Accessibility com.kairo.tutor
+tccutil reset Microphone com.kairo.tutor
+tccutil reset ListenEvent com.kairo.tutor
+# App state markers (all live in the app config dir):
+CFG="$HOME/Library/Application Support/com.kairo.tutor"
+rm -f "$CFG/onboarded" "$CFG/onboarding_step" "$CFG/user_name" "$CFG/accent" \
+      "$CFG/screen_recording_granted" "$CFG/session.token"
+```
+
+Marker meanings (all under `$HOME/Library/Application Support/com.kairo.tutor/`):
+- `onboarded` — first-run done marker (delete → onboarding shows again).
+- `onboarding_step` — resume marker for the Screen-Recording quit+reopen (`act3` / a legacy step id).
+- `user_name` — cached display name injected into prompts (§12).
+- `accent` — chosen accent hex (delete → back to brand default `#7c3aed`).
+- `screen_recording_granted` — "was ever granted" marker for the Sequoia reset heads-up.
+- `session.token` — auth session (delete → signed out; needed to test the pre-sign-in / paywall path).
+
+Notes:
+- `tccutil` needs the app QUIT to take effect cleanly; quit first (the script does).
+- To test the **paywall exemption** (pre-sign-in Act 4 turns), also set `KAIRO_USE_BACKEND_PROXY=1`
+  in the repo-root `.env` and keep `session.token` deleted (signed out).
+- The backend must be running for the full walk (`npm run server:dev`) — auth, `/v1/me`,
+  onboarding chat/stt/tts all hit it.
