@@ -5,13 +5,13 @@
 use crate::env::{provider_env, provider_env_optional, provider_timeout_ms};
 use crate::grounding::{
     anthropic_vision_chat, apply_step_targets, clean_model_json, detect_click_point_openai,
-    ground_visual_targets, inject_primary_box, openai_vision_chat,
+    ground_visual_targets, inject_primary_box, openai_vision_chat, VisionOutcome,
 };
 use crate::constants;
 use crate::prompts::{ack_system_prompt, build_tutor_system_prompt, gate_system_prompt};
 use crate::types::{AckInput, GateInput, TutorTurnInput};
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 fn build_annotation_summary(input: &TutorTurnInput) -> String {
     if input.annotations.is_empty() {
@@ -261,9 +261,35 @@ async fn send_openrouter_chat_request(
         })
 }
 
+/// The turn returned when the backend meters the user out (free limit reached). Shaped
+/// like any other tutor turn so the frontend renders + speaks it normally.
+fn quota_exceeded_turn() -> String {
+    let message = "You've used all your free Kairo requests. Upgrade to keep going.";
+    json!({
+        "mode": "single",
+        "voiceText": message,
+        "steps": [{ "say": message, "visualTargets": [] }],
+        "awaitClick": Value::Null,
+        "done": true,
+    })
+    .to_string()
+}
+
 #[tauri::command]
-pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, String> {
+pub(crate) async fn run_tutor_turn(
+    app: tauri::AppHandle,
+    mut input: TutorTurnInput,
+) -> Result<String, String> {
     let _t = crate::klog::timer("tutor", "tutor_turn");
+    // Unique id per ask → one metered unit (the backend counts one unit per ask_id, so
+    // this also dedupes an accidental retry of the same turn).
+    let ask_id = format!(
+        "ask-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
     // Resolve/validate the incoming slug against the LIVE frontmost app (it may have
     // changed since the gate ran; non-gate paths send ""). Keeps skill logic in Rust.
     input.skill_slug = if constants::SKILLS_ENABLED {
@@ -348,13 +374,15 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
                 .image_mime_type
                 .as_deref()
                 .unwrap_or("image/jpeg");
-            let raw = if tutor_provider == "openai" {
+            let outcome = if tutor_provider == "openai" {
                 let openai_model =
                     provider_env("OPENAI_TUTOR_MODEL", constants::OPENAI_TUTOR_MODEL);
                 let effort =
                     provider_env("OPENAI_VISION_EFFORT", constants::OPENAI_VISION_EFFORT);
                 crate::klog!(tutor, info, provider = "openai", model = %openai_model, effort = %effort, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
                 openai_vision_chat(
+                    &app,
+                    &ask_id,
                     &system_prompt,
                     &user_text,
                     image_base64,
@@ -369,6 +397,8 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
                     provider_env("ANTHROPIC_VISION_MODEL", constants::TUTOR_VISION_MODEL);
                 crate::klog!(tutor, info, provider = "anthropic", model = %tutor_model, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
                 anthropic_vision_chat(
+                    &app,
+                    &ask_id,
                     &system_prompt,
                     &user_text,
                     image_base64,
@@ -378,8 +408,8 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
                 )
                 .await
             };
-            match raw {
-                Some(raw) => {
+            match outcome {
+                VisionOutcome::Answer(raw) => {
                     // Sanitize once so the frontend always gets a clean JSON object,
                     // even if the model wrapped it in prose/fences (no json_object mode).
                     let content = clean_model_json(&raw);
@@ -396,7 +426,11 @@ pub(crate) async fn run_tutor_turn(mut input: TutorTurnInput) -> Result<String, 
                     }
                     return Ok(grounded);
                 }
-                None => {
+                VisionOutcome::QuotaExceeded => {
+                    crate::klog!(tutor, info, "free request limit reached; returning upgrade prompt");
+                    return Ok(quota_exceeded_turn());
+                }
+                VisionOutcome::Failed => {
                     crate::klog!(tutor, warn, "vision turn empty; falling back to OpenRouter answer");
                     // fall through to the legacy path below.
                 }

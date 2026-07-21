@@ -64,6 +64,7 @@ use panels::{
 mod input;
 mod auth;
 mod onboarding;
+mod proxy;
 use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, FollowClickWatch};
 
 // Non-activating NSPanel for the notch. A non-activating panel can receive

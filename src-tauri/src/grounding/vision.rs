@@ -7,6 +7,17 @@ use crate::env::{provider_env, provider_env_optional};
 use crate::tutor::shared_http_client;
 use serde_json::{json, Value};
 use std::time::Duration;
+use tauri::AppHandle;
+
+/// Result of the single-call vision turn. `Answer` carries the raw model content (the
+/// caller cleans + grounds it); `QuotaExceeded` means the backend proxy metered the user
+/// out (free limit reached) → the caller surfaces an upgrade prompt; `Failed` is any
+/// other error → the caller falls through to the OpenRouter answer path.
+pub(crate) enum VisionOutcome {
+    Answer(String),
+    QuotaExceeded,
+    Failed,
+}
 
 fn grounding_timeout() -> Duration {
     Duration::from_millis(constants::GROUNDING_TIMEOUT_MS)
@@ -18,19 +29,15 @@ fn grounding_timeout() -> Duration {
 /// Fails loud: logs + times the round-trip and returns `None` on any non-2xx or
 /// empty body so the caller can degrade gracefully.
 pub(crate) async fn anthropic_vision_chat(
+    app: &AppHandle,
+    ask_id: &str,
     system: &str,
     user_text: &str,
     image_base64: &str,
     media_type: &str,
     model: &str,
     timeout: Duration,
-) -> Option<String> {
-    let api_key = provider_env_optional("ANTHROPIC_API_KEY")?;
-    if api_key.trim().is_empty() {
-        crate::klog!(grounding, warn, "vision chat: ANTHROPIC_API_KEY empty");
-        return None;
-    }
-    let base_url = provider_env("ANTHROPIC_BASE_URL", constants::ANTHROPIC_BASE_URL);
+) -> VisionOutcome {
     let body = json!({
         "model": model,
         "max_tokens": constants::ANTHROPIC_VISION_MAX_TOKENS,
@@ -47,28 +54,56 @@ pub(crate) async fn anthropic_vision_chat(
         }]
     });
     let _t = crate::klog::timer("grounding", "opus_vision_chat");
-    let response = match shared_http_client()
-        .post(format!("{}/v1/messages", base_url.trim_end_matches('/')))
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .timeout(timeout)
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            crate::klog!(grounding, warn, model = %model, "vision chat request failed: {error}");
-            return None;
+
+    // Proxy path (metered): the backend forwards this exact body to Anthropic and hands
+    // back the raw response, so the parsing below is identical to the direct path.
+    let payload = if crate::proxy::proxy_enabled() {
+        match crate::proxy::vision_tutor(app, ask_id, "anthropic", body, timeout).await {
+            Ok(payload) => payload,
+            Err(crate::proxy::ProxyError::QuotaExceeded) => return VisionOutcome::QuotaExceeded,
+            Err(error) => {
+                crate::klog!(grounding, warn, model = %model, "vision chat via proxy failed: {}", error.describe());
+                return VisionOutcome::Failed;
+            }
+        }
+    } else {
+        let Some(api_key) =
+            provider_env_optional("ANTHROPIC_API_KEY").filter(|key| !key.trim().is_empty())
+        else {
+            crate::klog!(grounding, warn, "vision chat: ANTHROPIC_API_KEY empty");
+            return VisionOutcome::Failed;
+        };
+        let base_url = provider_env("ANTHROPIC_BASE_URL", constants::ANTHROPIC_BASE_URL);
+        let response = match shared_http_client()
+            .post(format!("{}/v1/messages", base_url.trim_end_matches('/')))
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+            .timeout(timeout)
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                crate::klog!(grounding, warn, model = %model, "vision chat request failed: {error}");
+                return VisionOutcome::Failed;
+            }
+        };
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            crate::klog!(grounding, warn, status = %status, model = %model, "vision chat failed: {}", body.chars().take(220).collect::<String>());
+            return VisionOutcome::Failed;
+        }
+        match response.json::<Value>().await {
+            Ok(payload) => payload,
+            Err(error) => {
+                crate::klog!(grounding, warn, model = %model, "vision chat parse failed: {error}");
+                return VisionOutcome::Failed;
+            }
         }
     };
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        crate::klog!(grounding, warn, status = %status, model = %model, "vision chat failed: {}", body.chars().take(220).collect::<String>());
-        return None;
-    }
-    let payload = response.json::<Value>().await.ok()?;
+
     if payload.get("stop_reason").and_then(Value::as_str) == Some("max_tokens") {
         crate::klog!(grounding, warn, model = %model, "vision response truncated at max_tokens");
     }
@@ -86,10 +121,10 @@ pub(crate) async fn anthropic_vision_chat(
         .unwrap_or_default();
     if text.trim().is_empty() {
         crate::klog!(grounding, warn, model = %model, "vision chat returned no text");
-        return None;
+        return VisionOutcome::Failed;
     }
     crate::klog!(grounding, info, model = %model, chars = text.len(), "vision chat ok");
-    Some(text)
+    VisionOutcome::Answer(text)
 }
 
 /// OpenAI Responses call with a system prompt, one user text block, and one image,
@@ -102,6 +137,8 @@ pub(crate) async fn anthropic_vision_chat(
 /// round-trip and returns `None` on any non-2xx or empty body so the caller falls
 /// through to the OpenRouter answer path.
 pub(crate) async fn openai_vision_chat(
+    app: &AppHandle,
+    ask_id: &str,
     system_prompt: &str,
     user_text: &str,
     image_base64: &str,
@@ -109,13 +146,7 @@ pub(crate) async fn openai_vision_chat(
     model: &str,
     effort: &str,
     timeout: Duration,
-) -> Option<String> {
-    let api_key = provider_env_optional("OPENAI_API_KEY")?;
-    if api_key.trim().is_empty() {
-        crate::klog!(tutor, warn, provider = "openai", "vision chat: OPENAI_API_KEY empty");
-        return None;
-    }
-    let base_url = provider_env("OPENAI_BASE_URL", constants::OPENAI_BASE_URL);
+) -> VisionOutcome {
     let data_url = format!("data:{media_type};base64,{image_base64}");
     // gpt-5.6-sol rejects reasoning.effort:"minimal" (valid: none|low|medium|high|xhigh).
     let body = json!({
@@ -133,28 +164,55 @@ pub(crate) async fn openai_vision_chat(
     });
     crate::klog!(tutor, info, provider = "openai", model = %model, effort = %effort, "openai vision (answer+box) request");
     let _t = crate::klog::timer("tutor", "openai_vision");
-    let response = match shared_http_client()
-        .post(format!("{}/v1/responses", base_url.trim_end_matches('/')))
-        .header("Authorization", format!("Bearer {api_key}"))
-        .header("Content-Type", "application/json")
-        .timeout(timeout)
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision request failed: {error}");
-            return None;
+
+    // Proxy path (metered): the backend forwards this body to OpenAI's /v1/responses and
+    // hands back the raw response, so the parsing below is identical to the direct path.
+    let payload = if crate::proxy::proxy_enabled() {
+        match crate::proxy::vision_tutor(app, ask_id, "openai", body, timeout).await {
+            Ok(payload) => payload,
+            Err(crate::proxy::ProxyError::QuotaExceeded) => return VisionOutcome::QuotaExceeded,
+            Err(error) => {
+                crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision via proxy failed: {}", error.describe());
+                return VisionOutcome::Failed;
+            }
+        }
+    } else {
+        let Some(api_key) =
+            provider_env_optional("OPENAI_API_KEY").filter(|key| !key.trim().is_empty())
+        else {
+            crate::klog!(tutor, warn, provider = "openai", "vision chat: OPENAI_API_KEY empty");
+            return VisionOutcome::Failed;
+        };
+        let base_url = provider_env("OPENAI_BASE_URL", constants::OPENAI_BASE_URL);
+        let response = match shared_http_client()
+            .post(format!("{}/v1/responses", base_url.trim_end_matches('/')))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .header("Content-Type", "application/json")
+            .timeout(timeout)
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision request failed: {error}");
+                return VisionOutcome::Failed;
+            }
+        };
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            crate::klog!(tutor, warn, provider = "openai", status = %status, model = %model, "openai vision failed: {}", body.chars().take(240).collect::<String>());
+            return VisionOutcome::Failed;
+        }
+        match response.json::<Value>().await {
+            Ok(payload) => payload,
+            Err(error) => {
+                crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision parse failed: {error}");
+                return VisionOutcome::Failed;
+            }
         }
     };
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        crate::klog!(tutor, warn, provider = "openai", status = %status, model = %model, "openai vision failed: {}", body.chars().take(240).collect::<String>());
-        return None;
-    }
-    let payload = response.json::<Value>().await.ok()?;
     // Responses shape: output[] holds items; the assistant text lives in the item
     // with type=="message", whose content[] carries {type:"output_text", text}.
     let text = payload
@@ -176,7 +234,7 @@ pub(crate) async fn openai_vision_chat(
         .unwrap_or_default();
     if text.trim().is_empty() {
         crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision returned no text");
-        return None;
+        return VisionOutcome::Failed;
     }
     // Token usage for cost/latency tracking (never the content itself).
     let usage = payload.get("usage");
@@ -203,7 +261,7 @@ pub(crate) async fn openai_vision_chat(
         chars = text.len(),
         "openai vision chat ok"
     );
-    Some(text)
+    VisionOutcome::Answer(text)
 }
 
 // Any OpenAI-compatible chat/completions vision endpoint (OpenRouter, Alibaba
