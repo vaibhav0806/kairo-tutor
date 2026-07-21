@@ -121,6 +121,9 @@ pub(crate) const OPENROUTER_REQUEST_TIMEOUT_MS: u64 = 45_000;
 // questions. 12s gives the gate model room to answer.
 pub(crate) const GATE_TIMEOUT_MS: u64 = 12_000;
 pub(crate) const GROUNDING_TIMEOUT_MS: u64 = 15_000;
+// Cap on an STT transcription round-trip (only enforced on the backend-proxy path;
+// the direct path uses the shared client's default). A short voice clip is quick.
+pub(crate) const STT_TIMEOUT_MS: u64 = 30_000;
 // Default per-request cap on a TTS synthesis (the full direct answer / filler). A
 // long paragraph legitimately takes a while, so this stays generous; walkthrough
 // STEP synths pass a tighter override (they retry on failure).

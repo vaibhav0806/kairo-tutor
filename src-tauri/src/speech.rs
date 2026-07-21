@@ -153,6 +153,7 @@ async fn parse_binary_audio_response(
 
 #[tauri::command]
 pub(crate) async fn transcribe_audio(
+    app: tauri::AppHandle,
     input: TranscribeAudioInput,
 ) -> Result<TranscriptionResult, String> {
     let _t = crate::klog::timer("stt", "transcribe");
@@ -178,12 +179,10 @@ pub(crate) async fn transcribe_audio(
     let client = shared_http_client();
 
     if provider == "sarvam" {
-        let api_key = provider_env_optional("SARVAM_API_KEY")
-            .ok_or_else(|| "SARVAM_API_KEY is required for Sarvam transcription.".to_string())?;
-        let base_url = provider_env("SARVAM_BASE_URL", constants::SARVAM_BASE_URL);
-        // Pin the language so Sarvam doesn't auto-detect the wrong one (it
-        // guessed gu-IN on a cold first recording and returned an empty
-        // transcript). Set SARVAM_STT_LANGUAGE_CODE=unknown to auto-detect.
+        // Pin the language so Sarvam doesn't auto-detect the wrong one (it guessed gu-IN
+        // on a cold first recording and returned an empty transcript). Set
+        // SARVAM_STT_LANGUAGE_CODE=unknown to auto-detect. The proxy path sends these as
+        // form fields too (the backend forwards them), so behaviour matches direct.
         let form = reqwest::multipart::Form::new()
             .part("file", part)
             .text("model", provider_env("SARVAM_STT_MODEL", constants::SARVAM_STT_MODEL))
@@ -192,29 +191,45 @@ pub(crate) async fn transcribe_audio(
                 "language_code",
                 provider_env("SARVAM_STT_LANGUAGE_CODE", constants::SARVAM_STT_LANGUAGE_CODE),
             );
-        let response = client
-            .post(format!("{}/speech-to-text", base_url.trim_end_matches('/')))
-            .header("api-subscription-key", api_key)
-            .multipart(form)
-            .send()
+
+        let value: Value = if crate::proxy::proxy_enabled() {
+            crate::proxy::proxy_post_multipart(
+                &app,
+                "/v1/stt",
+                form,
+                Duration::from_millis(constants::STT_TIMEOUT_MS),
+            )
             .await
-            .map_err(|error| format!("Sarvam STT request failed: {error}"))?;
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        // Error bodies are small JSON (status + message), never media — safe to log a
-        // truncated snippet so we can see WHY Sarvam rejected the request.
-        let body_snippet: String = body.chars().take(500).collect();
-        if !status.is_success() {
-            crate::klog!(stt, error, provider = %provider, status = %status, body = %body_snippet, "sarvam STT request failed");
-            let msg = serde_json::from_str::<Value>(&body)
-                .map(|v| parse_provider_json_error(&v, &format!("Sarvam STT failed with {status}")))
-                .unwrap_or_else(|_| format!("Sarvam STT failed with {status}"));
-            return Err(msg);
-        }
-        let value: Value = serde_json::from_str(&body).map_err(|error| {
-            crate::klog!(stt, error, provider = %provider, status = %status, body = %body_snippet, "sarvam STT response was not JSON");
-            format!("Sarvam STT response was not JSON: {error}")
-        })?;
+            .map_err(|error| format!("Sarvam STT via proxy failed: {}", error.describe()))?
+        } else {
+            let api_key = provider_env_optional("SARVAM_API_KEY")
+                .ok_or_else(|| "SARVAM_API_KEY is required for Sarvam transcription.".to_string())?;
+            let base_url = provider_env("SARVAM_BASE_URL", constants::SARVAM_BASE_URL);
+            let response = client
+                .post(format!("{}/speech-to-text", base_url.trim_end_matches('/')))
+                .header("api-subscription-key", api_key)
+                .multipart(form)
+                .send()
+                .await
+                .map_err(|error| format!("Sarvam STT request failed: {error}"))?;
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            // Error bodies are small JSON (status + message), never media — safe to log a
+            // truncated snippet so we can see WHY Sarvam rejected the request.
+            let body_snippet: String = body.chars().take(500).collect();
+            if !status.is_success() {
+                crate::klog!(stt, error, provider = %provider, status = %status, body = %body_snippet, "sarvam STT request failed");
+                let msg = serde_json::from_str::<Value>(&body)
+                    .map(|v| parse_provider_json_error(&v, &format!("Sarvam STT failed with {status}")))
+                    .unwrap_or_else(|_| format!("Sarvam STT failed with {status}"));
+                return Err(msg);
+            }
+            serde_json::from_str(&body).map_err(|error| {
+                crate::klog!(stt, error, provider = %provider, status = %status, body = %body_snippet, "sarvam STT response was not JSON");
+                format!("Sarvam STT response was not JSON: {error}")
+            })?
+        };
+
         let text = value
             .get("transcript")
             .or_else(|| value.get("text"))
@@ -222,7 +237,7 @@ pub(crate) async fn transcribe_audio(
             .map(str::trim)
             .filter(|t| !t.is_empty())
             .ok_or_else(|| {
-                crate::klog!(stt, error, provider = %provider, status = %status, body = %body_snippet, "sarvam STT: 2xx but no transcript");
+                crate::klog!(stt, error, provider = %provider, "sarvam STT: no transcript in response");
                 "Sarvam STT response did not include transcript text.".to_string()
             })?
             .to_string();
@@ -391,6 +406,7 @@ pub(crate) enum TtsStreamMsg {
 // so the caller transparently falls back to the buffered `synthesize_speech`.
 #[tauri::command]
 pub(crate) async fn synthesize_speech_stream(
+    app: tauri::AppHandle,
     input: SynthesizeSpeechInput,
     on_chunk: tauri::ipc::Channel<TtsStreamMsg>,
 ) -> Result<(), String> {
@@ -409,35 +425,55 @@ pub(crate) async fn synthesize_speech_stream(
         return Err(format!("streaming TTS unsupported for provider {provider}"));
     }
 
-    let api_key = provider_env_optional("SARVAM_API_KEY")
-        .ok_or_else(|| "SARVAM_API_KEY is required for Sarvam speech synthesis.".to_string())?;
-    let base_url = provider_env("SARVAM_BASE_URL", constants::SARVAM_BASE_URL);
+    let stream_body = json!({
+        "text": text,
+        "target_language_code": provider_env("SARVAM_TTS_LANGUAGE_CODE", constants::SARVAM_TTS_LANGUAGE_CODE),
+        "speaker": provider_env("SARVAM_TTS_SPEAKER", constants::SARVAM_TTS_SPEAKER),
+        "model": provider_env("SARVAM_TTS_MODEL", constants::SARVAM_TTS_MODEL),
+        "output_audio_codec": "linear16",
+        "speech_sample_rate": sample_rate,
+    });
 
-    let response = shared_http_client()
-        .post(format!(
-            "{}/text-to-speech/stream",
-            base_url.trim_end_matches('/')
-        ))
-        .header("api-subscription-key", api_key)
-        .header("Content-Type", "application/json")
-        .timeout(timeout)
-        .json(&json!({
-            "text": text,
-            "target_language_code": provider_env("SARVAM_TTS_LANGUAGE_CODE", constants::SARVAM_TTS_LANGUAGE_CODE),
-            "speaker": provider_env("SARVAM_TTS_SPEAKER", constants::SARVAM_TTS_SPEAKER),
-            "model": provider_env("SARVAM_TTS_MODEL", constants::SARVAM_TTS_MODEL),
-            "output_audio_codec": "linear16",
-            "speech_sample_rate": sample_rate,
-        }))
-        .send()
-        .await
-        .map_err(|error| {
-            let message = format!("Sarvam TTS stream request failed: {error}");
-            let _ = on_chunk.send(TtsStreamMsg::Error {
-                message: message.clone(),
-            });
-            message
-        })?;
+    // Proxy path: the backend pipes Sarvam's stream straight through, so the chunk loop
+    // below reads it exactly as it reads the vendor stream.
+    let response = if crate::proxy::proxy_enabled() {
+        match crate::proxy::proxy_stream_request(&app, "/v1/tts/stream", &stream_body, timeout).await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                let message = format!("Sarvam TTS stream via proxy failed: {}", error.describe());
+                let _ = on_chunk.send(TtsStreamMsg::Error {
+                    message: message.clone(),
+                });
+                return Err(message);
+            }
+        }
+    } else {
+        let api_key = provider_env_optional("SARVAM_API_KEY")
+            .ok_or_else(|| "SARVAM_API_KEY is required for Sarvam speech synthesis.".to_string())?;
+        let base_url = provider_env("SARVAM_BASE_URL", constants::SARVAM_BASE_URL);
+        match shared_http_client()
+            .post(format!(
+                "{}/text-to-speech/stream",
+                base_url.trim_end_matches('/')
+            ))
+            .header("api-subscription-key", api_key)
+            .header("Content-Type", "application/json")
+            .timeout(timeout)
+            .json(&stream_body)
+            .send()
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                let message = format!("Sarvam TTS stream request failed: {error}");
+                let _ = on_chunk.send(TtsStreamMsg::Error {
+                    message: message.clone(),
+                });
+                return Err(message);
+            }
+        }
+    };
 
     let status = response.status();
     if !status.is_success() {

@@ -524,19 +524,13 @@ pub(crate) async fn run_tutor_turn(
 /// `json_object` toggles the structured `response_format` the gate needs but the
 /// plain-sentence ack must not carry. Shared by `run_gate_turn` + `run_ack_turn`.
 async fn openrouter_text_chat(
+    app: &tauri::AppHandle,
     system: &str,
     user: &str,
     model: &str,
     timeout: Duration,
     json_object: bool,
 ) -> Result<String, String> {
-    let api_key = provider_env_optional("OPENROUTER_API_KEY")
-        .ok_or_else(|| "OPENROUTER_API_KEY is required for OpenRouter text turns.".to_string())?;
-    let base_url = provider_env("OPENROUTER_BASE_URL", constants::OPENROUTER_BASE_URL);
-    let site_url = provider_env("OPENROUTER_SITE_URL", constants::OPENROUTER_SITE_URL);
-    let app_title = provider_env("OPENROUTER_APP_TITLE", constants::OPENROUTER_APP_TITLE);
-    let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
-
     let mut body = json!({
         "model": model,
         "messages": [
@@ -559,6 +553,23 @@ async fn openrouter_text_chat(
         }
     }
 
+    // Proxy path (unmetered): the backend forwards this to OpenRouter /chat/completions
+    // and returns the raw response, so we pull the message content the same way either way.
+    if crate::proxy::proxy_enabled() {
+        let payload = crate::proxy::proxy_post_json(app, "/v1/llm/chat", &body, None, timeout)
+            .await
+            .map_err(|error| error.describe())?;
+        return openrouter_message_content(&payload)
+            .ok_or_else(|| "OpenRouter proxy response had no message content.".to_string());
+    }
+
+    let api_key = provider_env_optional("OPENROUTER_API_KEY")
+        .ok_or_else(|| "OPENROUTER_API_KEY is required for OpenRouter text turns.".to_string())?;
+    let base_url = provider_env("OPENROUTER_BASE_URL", constants::OPENROUTER_BASE_URL);
+    let site_url = provider_env("OPENROUTER_SITE_URL", constants::OPENROUTER_SITE_URL);
+    let app_title = provider_env("OPENROUTER_APP_TITLE", constants::OPENROUTER_APP_TITLE);
+    let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
     send_openrouter_chat_request(
         shared_http_client(),
         &endpoint,
@@ -570,6 +581,18 @@ async fn openrouter_text_chat(
     )
     .await
     .map_err(|error| error.message)
+}
+
+/// Pull the assistant message content out of an OpenRouter/OpenAI chat-completions JSON.
+fn openrouter_message_content(payload: &Value) -> Option<String> {
+    payload
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.get("message"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 /// Keep the gate's JSON but force `skillSlug` through the registry guardrail: an
@@ -593,7 +616,10 @@ fn repair_gate_skill(content: &str, app: &str, bundle: &str, title: &str) -> Str
 }
 
 #[tauri::command]
-pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
+pub(crate) async fn run_gate_turn(
+    app_handle: tauri::AppHandle,
+    input: GateInput,
+) -> Result<String, String> {
     let _t = crate::klog::timer("gate", "gate_turn");
     // Safe default when no text provider is configured: always look (the full vision
     // turn then runs), so behaviour degrades to the pre-gate flow.
@@ -602,10 +628,9 @@ pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
     if provider_env("KAIRO_AI_PROVIDER", constants::AI_PROVIDER) != "openrouter" {
         return Ok(look());
     }
-    // Preserve the original no-key short-circuit: return look() silently (before the
-    // "gate turn" log / any network). openrouter_text_chat re-checks the key, but
-    // keeping the guard here keeps the gate's behaviour byte-identical.
-    if provider_env_optional("OPENROUTER_API_KEY").is_none() {
+    // No-key short-circuit: return look() silently. In proxy mode the backend holds the
+    // key, so only short-circuit when NOT proxying (otherwise the gate runs via the proxy).
+    if !crate::proxy::proxy_enabled() && provider_env_optional("OPENROUTER_API_KEY").is_none() {
         return Ok(look());
     }
     let model = provider_env("OPENROUTER_MODEL", constants::OPENROUTER_MODEL);
@@ -648,7 +673,7 @@ pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
     );
 
     let system = gate_system_prompt(&skills_block);
-    match openrouter_text_chat(&system, &user_message, &model, timeout, true).await {
+    match openrouter_text_chat(&app_handle, &system, &user_message, &model, timeout, true).await {
         Ok(content) => {
             let repaired = repair_gate_skill(&content, &app, &bundle, &title);
             crate::klog!(
@@ -670,13 +695,16 @@ pub(crate) async fn run_gate_turn(input: GateInput) -> Result<String, String> {
 /// vision model plans the next step. Screen-blind by design. MUST NEVER block the
 /// guide: on ANY failure it returns "" (the frontend simply skips speaking it).
 #[tauri::command]
-pub(crate) async fn run_ack_turn(input: AckInput) -> Result<String, String> {
+pub(crate) async fn run_ack_turn(
+    app_handle: tauri::AppHandle,
+    input: AckInput,
+) -> Result<String, String> {
     let _t = crate::klog::timer("follow", "run_ack_turn");
     let system = ack_system_prompt();
     let user = format!("Completed action: {}", input.completed_step);
     let timeout = Duration::from_millis(constants::ACK_TIMEOUT_MS);
     // Plain sentence → no json_object. `.unwrap_or_default()` → "" on any failure.
-    let text = openrouter_text_chat(&system, &user, constants::ACK_MODEL, timeout, false)
+    let text = openrouter_text_chat(&app_handle, &system, &user, constants::ACK_MODEL, timeout, false)
         .await
         .unwrap_or_default();
     let text = text.trim().to_string();

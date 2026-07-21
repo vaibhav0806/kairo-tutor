@@ -16,6 +16,14 @@ export async function speechRoutes(app: FastifyInstance) {
 
     const form = new FormData();
     form.append('file', new Blob([buf]), mp.filename || 'audio.wav');
+    // Forward the STT params the desktop sends (model / mode / language_code) so Sarvam
+    // uses the same config as the direct path — without these it defaults and can
+    // mis-detect the language (returning an empty/garbled transcript).
+    const fields = mp.fields as Record<string, { value?: string } | undefined> | undefined;
+    for (const key of ['model', 'mode', 'language_code'] as const) {
+      const value = fields?.[key]?.value;
+      if (value) form.append(key, value);
+    }
 
     const res = await fetch(`${p.baseUrl}/speech-to-text`, {
       method: 'POST',
