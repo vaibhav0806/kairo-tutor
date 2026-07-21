@@ -473,37 +473,46 @@ fn spawn_ptt_tap(tx: Sender<PttEvent>) {
         CGEventType, CallbackResult,
     };
     std::thread::spawn(move || {
-        let chord_down = AtomicBool::new(false);
-        let tap = CGEventTap::new(
-            CGEventTapLocation::Session,
-            CGEventTapPlacement::HeadInsertEventTap,
-            CGEventTapOptions::ListenOnly,
-            vec![CGEventType::FlagsChanged],
-            move |_proxy, _event_type, event| {
-                let flags = event.get_flags();
-                let both = flags.contains(CGEventFlags::CGEventFlagAlternate)
-                    && flags.contains(CGEventFlags::CGEventFlagControl);
-                let was = chord_down.swap(both, Ordering::SeqCst);
-                if both && !was {
-                    let _ = tx.send(PttEvent::Down(Instant::now()));
-                } else if !both && was {
-                    let _ = tx.send(PttEvent::Up(Instant::now()));
-                }
-                CallbackResult::Keep
-            },
-        );
-        let Ok(tap) = tap else {
-            crate::klog!(ptt, warn, "tap unavailable; grant Input Monitoring + relaunch to enable ⌥⌃");
-            return;
-        };
-        unsafe {
-            let Ok(source) = tap.mach_port().create_runloop_source(0) else {
-                crate::klog!(ptt, error, "failed to create PTT runloop source");
-                return;
+        // Retry loop: on first run we DON'T request Input Monitoring at launch (Act 2 does, with the
+        // mic), so the tap fails to build until the grant lands. Retry every few seconds so ⌥⌃ starts
+        // working the instant the user grants it in Act 2 — no relaunch required.
+        loop {
+            let tx_iter = tx.clone();
+            let chord_down = AtomicBool::new(false);
+            let tap = CGEventTap::new(
+                CGEventTapLocation::Session,
+                CGEventTapPlacement::HeadInsertEventTap,
+                CGEventTapOptions::ListenOnly,
+                vec![CGEventType::FlagsChanged],
+                move |_proxy, _event_type, event| {
+                    let flags = event.get_flags();
+                    let both = flags.contains(CGEventFlags::CGEventFlagAlternate)
+                        && flags.contains(CGEventFlags::CGEventFlagControl);
+                    let was = chord_down.swap(both, Ordering::SeqCst);
+                    if both && !was {
+                        let _ = tx_iter.send(PttEvent::Down(Instant::now()));
+                    } else if !both && was {
+                        let _ = tx_iter.send(PttEvent::Up(Instant::now()));
+                    }
+                    CallbackResult::Keep
+                },
+            );
+            let Ok(tap) = tap else {
+                crate::klog!(ptt, debug, "ptt tap unavailable (no Input Monitoring yet); retrying in 3s");
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                continue;
             };
-            CFRunLoop::get_current().add_source(&source, kCFRunLoopCommonModes);
-            tap.enable();
-            CFRunLoop::run_current();
+            unsafe {
+                let Ok(source) = tap.mach_port().create_runloop_source(0) else {
+                    crate::klog!(ptt, error, "failed to create PTT runloop source");
+                    return;
+                };
+                CFRunLoop::get_current().add_source(&source, kCFRunLoopCommonModes);
+                tap.enable();
+                crate::klog!(ptt, info, "ptt tap active (⌥⌃ live)");
+                CFRunLoop::run_current(); // blocks until the runloop stops (normally never)
+            }
+            // run_current returned (rare) — loop to re-establish the tap.
         }
     });
 }

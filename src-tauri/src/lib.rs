@@ -709,9 +709,13 @@ pub fn run() {
                 }
             }
             // Push-to-talk runs on its own tap so its (possibly Input-Monitoring-gated)
-            // keyboard access can't disturb the mouse/scroll reset tap above. Request
-            // the grant first so Kairo shows up in the Input Monitoring settings list.
-            ensure_input_monitoring_access();
+            // keyboard access can't disturb the mouse/scroll reset tap above. Only auto-request
+            // the grant for ALREADY-onboarded users — first-run users are asked in Act 2 (with the
+            // mic), so we don't fire a scary keystroke prompt at launch before any value. The PTT
+            // tap retries until the grant lands, so Act 2's ⌥⌃ starts working the moment it's given.
+            if crate::onboarding::is_onboarded(app.handle()) {
+                ensure_input_monitoring_access();
+            }
             spawn_ptt(app.handle());
             // Menu-bar status item: the only always-visible way to quit/restart
             // Kairo or reopen the notch, since we run Dock-less (Accessory).
