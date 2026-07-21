@@ -721,6 +721,7 @@ pub fn run() {
             synthesize_speech,
             synthesize_speech_stream,
             save_gesture_debug_image,
+            proxy::check_paywalled,
             onboarding::finish_onboarding,
             onboarding::set_onboarding_step,
             onboarding::get_onboarding_step,

@@ -48,6 +48,7 @@ import { gestureConfig } from '../config/gesture';
 import {
   defaultPayload,
   FILLER_FALLBACK,
+  FREE_LIMIT_TEXT,
   NOTCH_IDLE_CLOSE_MS,
   pickFiller,
   pickNudge,
@@ -58,6 +59,7 @@ import {
 } from './notchConstants';
 import { useTurnHistory } from './useTurnHistory';
 import { CloseIcon } from './NotchIcons';
+import upgradeAudioUrl from './audio/upgrade.wav?url';
 
 
 export function NotchApp() {
@@ -1735,6 +1737,37 @@ export function NotchApp() {
 
   // Transcribe captured audio and run the tutor turn. Shared by the WebView
   // recorder.onstop path and the native push-to-talk `ptt:audio` event.
+  // Paywalled: show + speak the cached upgrade line (bundled upgrade.wav — no Sarvam call),
+  // then let the notch idle-close. Used the instant PTT is released for an out-of-credits user.
+  const playUpgradeMessage = useCallback(
+    async (epoch: number) => {
+      stopAnswerPlayback();
+      updateVoiceCaptureState('idle');
+      setDetailHidden(false);
+      setPayload({ state: 'showing_step', layout: 'answer', title: 'Kairo', detail: FREE_LIMIT_TEXT });
+      const clip = createBufferedClip(upgradeAudioUrl);
+      answerAudioRef.current = clip;
+      clip.onplay = () => {
+        if (turnEpochRef.current !== epoch) return;
+        setIsSpeaking(true);
+        void emit('cursor:speaking');
+      };
+      const settle = () => {
+        setIsSpeaking(false);
+        void emit('cursor:idle');
+        noteNotchActivity();
+      };
+      clip.onended = settle;
+      clip.onerror = settle;
+      try {
+        await clip.play();
+      } catch {
+        settle();
+      }
+    },
+    [noteNotchActivity, stopAnswerPlayback, updateVoiceCaptureState]
+  );
+
   const processCapturedAudio = useCallback(
     async (audioBase64: string, mimeType: string) => {
       // Open a new turn on re-engage. resetPreviousTurn() bumps the epoch (superseding
@@ -1748,6 +1781,14 @@ export function NotchApp() {
         voiceErrorTimeoutRef.current = null;
       }
       const epoch = turnEpochRef.current;
+      // Paywall FIRST — the instant PTT is released, check credits BEFORE any STT/gate/vision.
+      // Out of free requests → play the cached upgrade line (no provider spend, no wait).
+      if (await nativeBridge.checkPaywalled()) {
+        if (turnEpochRef.current !== epoch) return;
+        klog('notch', 'info', 'paywalled on ptt release → cached upgrade line', { epoch });
+        await playUpgradeMessage(epoch);
+        return;
+      }
       // Approx WAV bytes from the base64 length (×3/4), so we can correlate a bad
       // transcript with what the native mic actually delivered (see the native
       // `captured audio` / `MIC LEAK` logs for held_s vs audio_s).
@@ -1823,7 +1864,15 @@ export function NotchApp() {
         showVoiceError(detail);
       }
     },
-    [nativeBridge, resetPreviousTurn, setVoicePayload, showVoiceError, submitQuery, updateVoiceCaptureState]
+    [
+      nativeBridge,
+      playUpgradeMessage,
+      resetPreviousTurn,
+      setVoicePayload,
+      showVoiceError,
+      submitQuery,
+      updateVoiceCaptureState
+    ]
   );
 
   const startVoiceCapture = useCallback(async () => {

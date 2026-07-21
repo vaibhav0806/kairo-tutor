@@ -5,6 +5,10 @@
 import type { FollowButton } from './followAlong';
 import type { NotchPayload } from './types';
 
+// Shown + spoken (via the bundled upgrade.wav) when the user is out of free requests.
+// MUST match the audio in src/notch/audio/upgrade.wav and the Rust FREE_LIMIT_MESSAGE.
+export const FREE_LIMIT_TEXT = "You've used all your free Kairo requests. Upgrade to keep going.";
+
 export const defaultPayload: NotchPayload = {
   state: 'idle',
   layout: 'compact',

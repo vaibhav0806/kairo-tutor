@@ -136,6 +136,15 @@ pub(crate) async fn proxy_stream_request(
     check_status(response).await
 }
 
+/// Command: is the signed-in user out of free requests? The notch calls this the instant
+/// push-to-talk is released, BEFORE transcribing — so a paywalled user never triggers STT /
+/// gate / vision (no provider spend), and we play the cached upgrade line instead. Only
+/// meaningful with the proxy on (that's where metering lives).
+#[tauri::command]
+pub(crate) async fn check_paywalled(app: tauri::AppHandle) -> bool {
+    proxy_enabled() && over_free_limit(&app).await
+}
+
 /// Check the user's free-request quota via `/v1/me`. Returns true when they're paywalled
 /// (out of free requests and not pro). Fails OPEN (false) on any error — a check failure
 /// must never block a turn.

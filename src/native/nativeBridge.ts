@@ -133,6 +133,10 @@ export type NativeBridge = {
   requestRequiredPermissions(): Promise<NativePermissionStatus>;
   openPermissionSettings(permission: NativePermissionKey): Promise<void>;
   restartApp(): Promise<void>;
+  // True when the signed-in user is out of free requests (proxy mode). The notch calls this
+  // on push-to-talk release BEFORE transcribing, to skip STT/gate/vision + play the cached
+  // upgrade line instead of spending on a paywalled user. false when unknown / proxy off.
+  checkPaywalled(): Promise<boolean>;
   captureScreen(): Promise<NativeScreenCapture>;
   getDisplayBounds(): Promise<NativeOverlayDisplayBounds>;
   showOverlay(payload: NativeOverlayPayload): Promise<void>;
@@ -339,6 +343,14 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
         await invoke<void>('restart_app');
       } catch {
         // Browser previews cannot restart the native app.
+      }
+    },
+
+    async checkPaywalled() {
+      try {
+        return await invoke<boolean>('check_paywalled');
+      } catch {
+        return false;
       }
     },
 
