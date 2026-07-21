@@ -1428,7 +1428,9 @@ export function NotchApp() {
   // While speaking (TTS) the capsule hides — the cursor carries the speaking state
   // (a calm pulse at the target) instead. So: listening / thinking / typing only.
   const capsuleMode: NotchCapsuleMode =
-    payload.state === 'listening'
+    payload.state === 'coach'
+      ? 'coach'
+      : payload.state === 'listening'
       ? 'listening'
       : !tts.isSpeaking && voiceCaptureState === 'error'
         ? 'error'
@@ -1495,6 +1497,8 @@ export function NotchApp() {
       mode={capsuleMode}
       statusLabel={statusLabel}
       detail={payload.detail}
+      title={payload.title}
+      chip={payload.chip}
       query={query}
       capsuleRef={capsuleRef}
       onQueryChange={setQuery}

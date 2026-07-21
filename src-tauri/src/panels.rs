@@ -645,6 +645,7 @@ pub(crate) fn listening_notch_payload() -> NotchPayload {
         layout: Some("compact".to_string()),
         title: "Kairo is listening".to_string(),
         detail: "Capturing the current screen".to_string(),
+        chip: None,
     }
 }
 
@@ -655,6 +656,7 @@ pub(crate) fn typing_notch_payload() -> NotchPayload {
         layout: Some("prompt".to_string()),
         title: "Ask Kairo".to_string(),
         detail: "Type a question, or hold ⌥⌃ to talk".to_string(),
+        chip: None,
     }
 }
 

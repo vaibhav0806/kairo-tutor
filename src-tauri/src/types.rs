@@ -114,6 +114,8 @@ pub(crate) struct NotchPayload {
     pub(crate) layout: Option<String>,
     pub(crate) title: String,
     pub(crate) detail: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) chip: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

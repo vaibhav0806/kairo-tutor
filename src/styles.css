@@ -1467,6 +1467,19 @@ input {
   color: #ffd7a6;
 }
 
+/* Coach caption (onboarding). Placeholder styling — Phase 1 replaces this with the
+   modern accent-threaded caption. */
+.kairo-capsule-coach {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+.kairo-capsule-chip {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
 .kairo-capsule-viz {
   align-items: center;
   display: flex;

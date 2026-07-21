@@ -34,6 +34,12 @@ export function activationStateToNotchPayload(state: ActivationState): NotchPayl
       layout: 'answer',
       title: 'Step is ready',
       detail: 'Showing guidance on screen'
+    },
+    coach: {
+      state: 'coach',
+      layout: 'compact',
+      title: 'Kairo',
+      detail: ''
     }
   };
 

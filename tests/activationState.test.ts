@@ -23,6 +23,13 @@ describe('activation state', () => {
     });
   });
 
+  test('maps the coach state to a caption payload', () => {
+    expect(activationStateToNotchPayload('coach')).toMatchObject({
+      state: 'coach',
+      layout: 'compact'
+    });
+  });
+
   test('maps tutor responses to visible notch answer copy', () => {
     expect(
       tutorResponseToNotchPayload({

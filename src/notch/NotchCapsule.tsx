@@ -5,13 +5,16 @@
 
 import { CloseIcon } from './NotchIcons';
 
-export type NotchCapsuleMode = 'listening' | 'thinking' | 'typing' | 'error' | 'idle';
+export type NotchCapsuleMode = 'listening' | 'thinking' | 'typing' | 'error' | 'coach' | 'idle';
 
 type NotchCapsuleProps = {
   mode: NotchCapsuleMode;
   statusLabel: string;
   // payload.detail — the error-capsule copy (falls back to a default prompt).
   detail: string;
+  // Coach-caption copy (payload.title) shown when detail is empty; optional seeded-prompt chip.
+  title?: string;
+  chip?: string;
   query: string;
   capsuleRef: React.RefObject<HTMLDivElement | null>;
   onQueryChange: (value: string) => void;
@@ -28,6 +31,8 @@ export function NotchCapsule({
   mode,
   statusLabel,
   detail,
+  title,
+  chip,
   query,
   capsuleRef,
   onQueryChange,
@@ -49,7 +54,12 @@ export function NotchCapsule({
           onPointerLeave={onPointerLeave}
           onPointerDown={onPointerDown}
         >
-          {mode === 'typing' ? (
+          {mode === 'coach' ? (
+            <div className="kairo-capsule-coach" role="status">
+              <span className="kairo-capsule-label">{detail || title}</span>
+              {chip ? <span className="kairo-capsule-chip">{chip}</span> : null}
+            </div>
+          ) : mode === 'typing' ? (
             <form
               className="kairo-capsule-prompt"
               onSubmit={(event) => {
