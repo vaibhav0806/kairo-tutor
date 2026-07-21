@@ -42,14 +42,8 @@ export const STEPS: StepDef[] = [
     speech: [{ cacheKey: 'source', text: () => 'By the way, where did you hear about Kairo?' }],
   },
   {
-    // Spoken dynamically (see permissionSpeech) so Kairo only mentions the permissions that
-    // are still missing. `speech` here is a fallback only.
-    id: 'permissions',
-    title: () => 'A couple of permissions',
-    speech: [{ text: () => PERMISSION_LINES.perm_both }],
-  },
-  {
     // Interactive: the user asks Kairo to point at something on their real screen (gate → vision).
+    // Screen Recording + Accessibility are now primed by Act 3 (Act3Permissions), before this.
     id: 'learn_point',
     title: () => 'I point, you act',
     speech: [
@@ -114,6 +108,38 @@ export const PERMISSION_LINES: Record<'perm_both' | 'perm_screen' | 'perm_access
   perm_access: 'Almost there. Turn on Accessibility so I can point things out for you.',
 };
 
+/**
+ * Act 3 — "Earn the Eyes". Two separate moments, each: why + benefit + honest privacy line.
+ * Screen Recording is spoken first (it forces the relaunch); Accessibility is reframed as
+ * "steer the pointer", never "control your Mac".
+ */
+export const ACT3_LINES: Record<'act3_screen' | 'act3_access' | 'act3_access_fallback', string> = {
+  act3_screen:
+    'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
+    "and I never save it. I look, help, and forget. Flip on Screen Recording and I'll take it from here.",
+  act3_access:
+    "One more — Accessibility. It's how I steer the little pointer to what I'm showing you, " +
+    "not to control your Mac. Watch — I'll point right at the switch. Flip this one on.",
+  act3_access_fallback:
+    'Almost there — turn on Accessibility so I can steer the pointer for you. It\'s the switch next to my name.'
+};
+
+export const act3ScreenLine: Segment[] = [
+  { cacheKey: 'act3_screen', text: () => ACT3_LINES.act3_screen }
+];
+export const act3AccessLine: Segment[] = [
+  { cacheKey: 'act3_access', text: () => ACT3_LINES.act3_access }
+];
+export const act3AccessFallbackLine: Segment[] = [
+  { cacheKey: 'act3_access_fallback', text: () => ACT3_LINES.act3_access_fallback }
+];
+
+/** Short coach-caption text pushed to the notch per Act 3 sub-step (title / detail). */
+export const ACT3_COACH: Record<'screen' | 'accessibility', { title: string; detail: string }> = {
+  screen: { title: 'Let me see the screen', detail: 'Only while you hold ⌥⌃ — never saved' },
+  accessibility: { title: 'Steer the pointer', detail: "I'll point at the switch — flip it on" }
+};
+
 /** Which permission line to speak for the current grant state. null → both granted (say nothing). */
 export function permissionSpeech(screenOk: boolean, accessibilityOk: boolean): Segment[] | null {
   if (screenOk && accessibilityOk) return null;
@@ -130,4 +156,6 @@ export const CACHED_LINES: { key: string; text: string }[] = [
   ...Object.entries(PERMISSION_LINES).map(([key, text]) => ({ key, text })),
   // Act 1-2 coach lines (Phase 3).
   ...Object.values(ACT_LINES).map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
+  // Act 3 permission lines (Phase 4).
+  ...Object.entries(ACT3_LINES).map(([key, text]) => ({ key, text })),
 ];
