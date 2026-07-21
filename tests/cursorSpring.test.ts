@@ -38,6 +38,14 @@ describe('stepSpring', () => {
     expect(springAtRest(spring, 100)).toBe(true);
   });
 
+  test('pointing spring settles crisply — within 1px of target by frame 60', () => {
+    const spring = createSpring(0);
+    for (let i = 0; i < 60; i += 1) {
+      stepSpring(spring, 100, POINTING_SPRING, DT);
+    }
+    expect(Math.abs(100 - spring.value)).toBeLessThan(1);
+  });
+
   test('clamps large frame gaps so it cannot blow up', () => {
     const spring = createSpring(0);
     stepSpring(spring, 100, POINTING_SPRING, 5); // 5-second stall

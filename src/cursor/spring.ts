@@ -17,10 +17,10 @@ export type SpringConfig = {
 // Loose, slightly overdamped: trails the mouse with visible lag, never overshoots.
 export const SHADOW_SPRING: SpringConfig = { stiffness: 90, damping: 19 };
 
-// Slow, graceful glide: low stiffness so it eases in (accelerates from rest,
-// peaks mid-flight, decelerates into the target). Damping is near-critical
-// (~2*sqrt(stiffness)) so it settles smoothly with no bounce/overshoot.
-export const POINTING_SPRING: SpringConfig = { stiffness: 80, damping: 18 };
+// Crisp, fluid glide to a target — the modern-notch motion vocabulary (Raycast
+// tightness + Arc fluidity). Stiffness raised for a snappier arrival; damping kept
+// just above critical (2*sqrt(120) ≈ 21.9) so it settles fast with NO overshoot/bounce.
+export const POINTING_SPRING: SpringConfig = { stiffness: 120, damping: 22 };
 
 export function createSpring(value = 0): Spring {
   return { value, velocity: 0 };
