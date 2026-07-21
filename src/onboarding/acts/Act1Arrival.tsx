@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { createNativeBridge } from '../../native/nativeBridge';
-import { DEFAULT_ACCENT, applyAccent, getAccent } from '../../core/accent'; // Phase 0
+import { DEFAULT_ACCENT, applyAccent, clampAccent, getAccent } from '../../core/accent'; // Phase 0 + 7
 import { klog } from '../../core/logger';
 import { useVoice } from '../useVoice';
 import { ACT_LINES } from '../copy';
@@ -51,8 +51,12 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
   }, []);
 
   const confirm = useCallback(async () => {
-    klog('onboarding', 'info', 'act1 color confirmed', { hex });
-    await invoke('set_accent', { hex }).catch(() => {}); // Phase 0: persist natively
+    // Clamp the picked hue into a legible band so an extreme pick can never vanish (§5).
+    const clamped = clampAccent(hex);
+    klog('onboarding', 'info', 'act1 color confirmed', { picked: hex, clamped });
+    applyAccent(clamped);
+    void emit('accent:changed', { hex: clamped });
+    await invoke('set_accent', { hex: clamped }).catch(() => {}); // Phase 0: persist natively
     await clearCoachCaption(bridge);
     onAdvance();
   }, [hex, bridge, onAdvance]);
