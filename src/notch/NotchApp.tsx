@@ -47,11 +47,15 @@ import {
 } from './notchConstants';
 import { useTurnHistory } from './useTurnHistory';
 import { useTTSPlayback } from './useTTSPlayback';
-import { NotchCapsule, type NotchCapsuleMode } from './NotchCapsule';
+import { NotchCapsule } from './NotchCapsule';
+import { resolveCapsuleMode } from './capsuleMode';
+import { useNotchAccent } from './useNotchAccent';
 import upgradeAudioUrl from './audio/upgrade.wav?url';
 
 
 export function NotchApp() {
+  // Thread the user's chosen accent (Phase 0 pref) into the notch CSS vars, live.
+  useNotchAccent();
   const [payload, setPayload] = useState<NotchPayload>(defaultPayload);
   // The answer body is held back until TTS playback actually starts, so the notch
   // never shows the answer text before it is spoken.
@@ -1427,22 +1431,14 @@ export function NotchApp() {
   // input while typing (⌘⇧Space) / on an error. Idle → hidden.
   // While speaking (TTS) the capsule hides — the cursor carries the speaking state
   // (a calm pulse at the target) instead. So: listening / thinking / typing only.
-  const capsuleMode: NotchCapsuleMode =
-    payload.state === 'coach'
-      ? 'coach'
-      : payload.state === 'listening'
-      ? 'listening'
-      : !tts.isSpeaking && voiceCaptureState === 'error'
-        ? 'error'
-        : !tts.isSpeaking &&
-            (isSubmitting ||
-              payload.state === 'thinking' ||
-              voiceCaptureState === 'transcribing' ||
-              detailHidden)
-          ? 'thinking'
-          : !tts.isSpeaking && payload.layout === 'prompt'
-            ? 'typing'
-            : 'idle';
+  const capsuleMode = resolveCapsuleMode({
+    state: payload.state,
+    layout: payload.layout,
+    isSpeaking: tts.isSpeaking,
+    isSubmitting,
+    voiceCaptureState,
+    detailHidden
+  });
 
   // Tell native the capsule's rect so the notch panel is click-through everywhere
   // around the small capsule (the empty panel area otherwise swallows clicks). Also

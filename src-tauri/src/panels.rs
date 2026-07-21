@@ -546,6 +546,9 @@ pub(crate) fn configure_notch_window(
 pub(crate) fn notch_window_size(layout: Option<&str>, state: Option<&str>) -> (f64, f64) {
     let _ = layout;
     let _ = state;
+    // The morph happens INSIDE this fixed frame; the capsule sizes itself via the measured
+    // --capsule-w/-h (see NotchCapsule/useCapsuleMorph). 760×236 clears the widest state
+    // (typing ≈680px, coach caption ≤520px) and the 44px notch-clearing top padding.
     (760.0, 236.0)
 }
 
