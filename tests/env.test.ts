@@ -1,82 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { loadKairoEnv, loadKairoPublicEnv } from '../src/config/env';
+import { loadKairoEnv } from '../src/config/env';
 
 describe('loadKairoEnv', () => {
-  test('allows a full local mock configuration without vendor keys', () => {
+  test('reads the provider selection', () => {
     const env = loadKairoEnv({
-      KAIRO_APP_ENV: 'development',
-      KAIRO_AI_PROVIDER: 'mock',
-      KAIRO_STT_PROVIDER: 'mock',
-      KAIRO_TTS_PROVIDER: 'mock',
-      KAIRO_DEFAULT_SKILL: 'blender',
-      KAIRO_ENABLE_WEB_RESEARCH: 'false'
-    });
-
-    expect(env.aiProvider).toBe('mock');
-    expect(env.defaultSkill).toBe('blender');
-    expect(env.enableWebResearch).toBe(false);
-  });
-
-  test('requires an OpenRouter key only when OpenRouter is selected', () => {
-    expect(() =>
-      loadKairoEnv({
-        KAIRO_AI_PROVIDER: 'openrouter',
-        KAIRO_STT_PROVIDER: 'mock',
-        KAIRO_TTS_PROVIDER: 'mock'
-      })
-    ).toThrow('OPENROUTER_API_KEY is required when KAIRO_AI_PROVIDER=openrouter');
-  });
-
-  test('loads OpenRouter model routing when configured', () => {
-    const env = loadKairoEnv({
-      KAIRO_AI_PROVIDER: 'openrouter',
-      KAIRO_STT_PROVIDER: 'mock',
-      KAIRO_TTS_PROVIDER: 'mock',
-      OPENROUTER_API_KEY: 'test-key',
-      OPENROUTER_MODEL: 'anthropic/claude-sonnet-4'
-    });
-
-    expect(env.aiProvider).toBe('openrouter');
-    expect(env.openRouterModel).toBe('anthropic/claude-sonnet-4');
-    expect(env.openRouterVisionModel).toBe('google/gemini-2.5-flash');
-  });
-
-  test('loads an explicit OpenRouter vision model when configured', () => {
-    const env = loadKairoEnv({
-      KAIRO_AI_PROVIDER: 'openrouter',
-      KAIRO_STT_PROVIDER: 'mock',
-      KAIRO_TTS_PROVIDER: 'mock',
-      OPENROUTER_API_KEY: 'test-key',
-      OPENROUTER_MODEL: 'qwen/qwen3.6-flash',
-      OPENROUTER_VISION_MODEL: 'google/gemini-2.5-pro'
-    });
-
-    expect(env.openRouterModel).toBe('qwen/qwen3.6-flash');
-    expect(env.openRouterVisionModel).toBe('google/gemini-2.5-pro');
-  });
-
-  test('requires Sarvam key when Sarvam handles speech', () => {
-    expect(() =>
-      loadKairoEnv({
-        KAIRO_AI_PROVIDER: 'mock',
-        KAIRO_STT_PROVIDER: 'sarvam',
-        KAIRO_TTS_PROVIDER: 'mock'
-      })
-    ).toThrow('SARVAM_API_KEY is required when Sarvam speech is selected');
-  });
-
-  test('requires ElevenLabs key when ElevenLabs handles speech', () => {
-    expect(() =>
-      loadKairoEnv({
-        KAIRO_AI_PROVIDER: 'mock',
-        KAIRO_STT_PROVIDER: 'mock',
-        KAIRO_TTS_PROVIDER: 'elevenlabs'
-      })
-    ).toThrow('ELEVENLABS_API_KEY is required when ElevenLabs speech is selected');
-  });
-
-  test('loads public app configuration without requiring browser-exposed vendor keys', () => {
-    const env = loadKairoPublicEnv({
       KAIRO_AI_PROVIDER: 'openrouter',
       KAIRO_STT_PROVIDER: 'sarvam',
       KAIRO_TTS_PROVIDER: 'elevenlabs'
@@ -85,5 +12,23 @@ describe('loadKairoEnv', () => {
     expect(env.aiProvider).toBe('openrouter');
     expect(env.sttProvider).toBe('sarvam');
     expect(env.ttsProvider).toBe('elevenlabs');
+  });
+
+  test('defaults provider selection + follow/wait tuning', () => {
+    const env = loadKairoEnv({});
+
+    expect(env.aiProvider).toBe('openrouter');
+    expect(env.sttProvider).toBe('sarvam');
+    expect(env.ttsProvider).toBe('sarvam');
+    expect(env.followClickPadPt).toBe(24);
+    expect(env.followNudgeCooldownMs).toBe(3_500);
+    expect(env.waitPageLoadMs).toBe(3_000);
+  });
+
+  test('coerces numeric tuning overrides from strings', () => {
+    const env = loadKairoEnv({ FOLLOW_CLICK_PAD_PT: '40', WAIT_INSTANT_MS: '250' });
+
+    expect(env.followClickPadPt).toBe(40);
+    expect(env.waitInstantMs).toBe(250);
   });
 });

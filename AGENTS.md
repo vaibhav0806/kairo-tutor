@@ -153,8 +153,10 @@ Non-secret config is centralized — **`.env` holds ONLY API keys.**
 - **Native** config lives in `src-tauri/src/constants.rs` (committed, shared):
   providers, models, base URLs, timeouts, tuning, toggles, logging flags. Edit that
   file, not env. To change a model or timeout, edit `constants.rs` and rebuild.
-- **Frontend** config lives in the zod defaults in `src/config/env.ts`. Keep the two
-  in sync for values used by both (provider selection, model names).
+- **Frontend** config lives in the zod defaults in `src/config/env.ts` — provider
+  *selection* + follow-along/wait tuning ONLY. Model names / base URLs / keys live
+  solely in `constants.rs` (the desktop bundle never needs them). Keep the provider
+  selection + follow/wait defaults in sync with `constants.rs`.
 - **`.env`** (per-person, git-ignored) holds ONLY the API keys: `OPENROUTER_API_KEY`,
   `ANTHROPIC_API_KEY`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY`, `DASHSCOPE_API_KEY`
   (see `.env.example`). A fresh clone runs with just these five keys — no other env
