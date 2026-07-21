@@ -1,8 +1,25 @@
-//! Accent-colour selection: derive a vibrant, high-contrast highlight hue from the
-//! pixels behind a detected box.
+//! Accent-colour selection: the user's chosen accent is the base tint; we contrast-adjust its
+//! lightness against the pixels behind a detected box only when it would be invisible there.
 
-// Vibrant candidate hues (deg): cyan, violet, magenta, lime, orange, yellow.
-const ACCENT_HUES: [f64; 6] = [190.0, 275.0, 320.0, 95.0, 30.0, 55.0];
+// Parse "#rrggbb" → (r, g, b) as 0..255 floats (matching rgb_to_hsl's input). None if malformed.
+fn parse_hex(hex: &str) -> Option<(f64, f64, f64)> {
+    let h = hex.strip_prefix('#')?;
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let n = u32::from_str_radix(h, 16).ok()?;
+    Some((
+        ((n >> 16) & 0xff) as f64,
+        ((n >> 8) & 0xff) as f64,
+        (n & 0xff) as f64,
+    ))
+}
+
+// How close (in HSL lightness) the accent may sit to the background before we treat it as
+// invisible and push its lightness to the opposite end.
+const ACCENT_MIN_L_CONTRAST: f64 = 0.22;
+// Floor on saturation so the on-screen accent always reads as vibrant, not washed out.
+const ACCENT_MIN_S: f64 = 0.6;
 
 fn rgb_to_hsl(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let (r, g, b) = (r / 255.0, g / 255.0, b / 255.0);
@@ -56,27 +73,25 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
     )
 }
 
-fn hue_dist(a: f64, b: f64) -> f64 {
-    let d = (a - b).abs().rem_euclid(360.0);
-    d.min(360.0 - d)
-}
-
-// Pick a vibrant, high-contrast accent: the candidate hue farthest from the
-// background hue, saturated, with lightness opposite the background's so it
-// always pops and stays readable.
-pub(crate) fn vibrant_accent(bg_r: f64, bg_g: f64, bg_b: f64) -> String {
-    let (bg_h, _s, bg_l) = rgb_to_hsl(bg_r, bg_g, bg_b);
-    let hue = ACCENT_HUES
-        .iter()
-        .copied()
-        .max_by(|a, b| {
-            hue_dist(*a, bg_h)
-                .partial_cmp(&hue_dist(*b, bg_h))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .unwrap_or(190.0);
-    let lightness = if bg_l > 0.5 { 0.44 } else { 0.62 };
-    let (r, g, b) = hsl_to_rgb(hue, 0.85, lightness);
+/// The highlight/pointer accent for a target. The **user accent** (`accent_hex`) is the base:
+/// its HUE is always preserved. We only contrast-adjust its LIGHTNESS when the accent sits within
+/// `ACCENT_MIN_L_CONTRAST` of the background behind the box — then we push lightness to the
+/// opposite end so it stays visible. Saturation is floored so it stays vibrant. A malformed
+/// accent falls back to the brand default.
+pub(crate) fn vibrant_accent(accent_hex: &str, bg_r: f64, bg_g: f64, bg_b: f64) -> String {
+    let (ar, ag, ab) = parse_hex(accent_hex)
+        .or_else(|| parse_hex(crate::constants::DEFAULT_ACCENT))
+        .unwrap_or((124.0, 58.0, 237.0));
+    let (h_a, s_a, l_a) = rgb_to_hsl(ar, ag, ab);
+    let (_h_bg, _s_bg, l_bg) = rgb_to_hsl(bg_r, bg_g, bg_b);
+    let s = s_a.max(ACCENT_MIN_S);
+    // Keep the user's own lightness unless it's too close to the background to be seen.
+    let l = if (l_a - l_bg).abs() < ACCENT_MIN_L_CONTRAST {
+        if l_bg > 0.5 { 0.44 } else { 0.62 }
+    } else {
+        l_a
+    };
+    let (r, g, b) = hsl_to_rgb(h_a, s, l);
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 
@@ -125,4 +140,31 @@ pub(crate) fn sample_background(
         sg as f64 / n as f64,
         sb as f64 / n as f64,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_hex, vibrant_accent};
+
+    #[test]
+    fn keeps_user_hue_when_it_contrasts() {
+        // Violet accent on a near-white background: lightness differs plenty → hue is preserved,
+        // so the result stays blue-dominant (blue is violet's max channel).
+        let out = vibrant_accent("#7c3aed", 245.0, 245.0, 245.0);
+        let (r, g, b) = parse_hex(&out).unwrap();
+        assert!(b > r && b > g, "expected a violet-ish hue, got {out}");
+    }
+
+    #[test]
+    fn shifts_lightness_when_invisible_against_bg() {
+        // Background lightness ≈ accent lightness → the safety-adjust fires and the output moves.
+        let out = vibrant_accent("#7c3aed", 122.0, 90.0, 175.0);
+        assert_ne!(out.to_lowercase(), "#7c3aed");
+    }
+
+    #[test]
+    fn falls_back_to_default_on_bad_accent() {
+        let out = vibrant_accent("not-a-hex", 30.0, 30.0, 30.0);
+        assert!(out.starts_with('#') && out.len() == 7);
+    }
 }

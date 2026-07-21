@@ -257,8 +257,9 @@ fn decode_rgb(image_base64: &str) -> Option<image::RgbImage> {
 
 // Vibrant accent hex sampled from behind a normalized box (default if no image).
 fn sample_accent(rgb: &Option<image::RgbImage>, [nx1, ny1, nx2, ny2]: [f64; 4]) -> String {
+    let accent = crate::accent::current();
     let Some(rgb) = rgb else {
-        return vibrant_accent(90.0, 90.0, 90.0);
+        return vibrant_accent(&accent, 90.0, 90.0, 90.0);
     };
     let (w, h) = (rgb.width() as f64, rgb.height() as f64);
     let (ar, ag, ab) = sample_background(
@@ -268,7 +269,7 @@ fn sample_accent(rgb: &Option<image::RgbImage>, [nx1, ny1, nx2, ny2]: [f64; 4]) 
         (nx2 * w) as u32,
         (ny2 * h) as u32,
     );
-    vibrant_accent(ar, ag, ab)
+    vibrant_accent(&accent, ar, ag, ab)
 }
 
 // One normalized box → a pointer (companion cursor at the raw center) + a padded
