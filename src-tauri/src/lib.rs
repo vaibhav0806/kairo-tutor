@@ -439,12 +439,21 @@ fn restart_app(app: tauri::AppHandle) {
 /// deliberately won't take focus from another app, which is exactly what we DON'T want here.
 #[cfg(target_os = "macos")]
 fn activate_frontmost(app: &tauri::AppHandle) {
-    let _ = app.run_on_main_thread(|| {
+    let app2 = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let mut activated = false;
         if let Some(mtm) = objc2::MainThreadMarker::new() {
             let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
             #[allow(deprecated)]
             ns_app.activateIgnoringOtherApps(true);
+            activated = true;
         }
+        // Also key the onboarding window itself (activation alone can leave it non-key).
+        if let Some(win) = app2.get_webview_window("onboarding") {
+            let _ = win.show();
+            let _ = win.set_focus();
+        }
+        crate::klog!(app, info, activated = activated, "activate frontmost");
     });
 }
 
@@ -669,7 +678,17 @@ pub fn run() {
             if need_onboarding {
                 crate::onboarding::show_onboarding_window(app.handle());
                 #[cfg(target_os = "macos")]
-                activate_frontmost(app.handle());
+                {
+                    // Activate now AND again after the launch settles — macOS activation is finicky
+                    // during app launch (deprecated activateIgnoringOtherApps can be ignored on
+                    // Sonoma until the runloop is up), so re-assert on a short delay.
+                    activate_frontmost(app.handle());
+                    let handle = app.handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(700));
+                        activate_frontmost(&handle);
+                    });
+                }
             }
             // Pre-create the notch panel + webview at startup so the first
             // shortcut press shows it instantly instead of building it lazily.
