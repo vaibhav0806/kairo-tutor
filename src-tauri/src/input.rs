@@ -463,17 +463,16 @@ fn spawn_ptt_controller(app: tauri::AppHandle, rx: Receiver<PttEvent>) {
 // finish_onboarding without ever creating a second controller/tap.
 static PTT_SPAWNED: AtomicBool = AtomicBool::new(false);
 
-// Thin event tap: forward clean ⌥⌃ Down/Up edges to the controller. Owns nothing
-// but a local edge-detector; all timing/state lives in the controller. Idempotent — creating the
-// CGEventTap is what triggers the macOS "Keystroke Receiving" (Input Monitoring) prompt, so we do
-// NOT call this at launch for a first-run user (that would prompt before any value); Act 2 starts it.
+// Start push-to-talk: a controller (timing/state) fed by a modifier-state POLL (no keyboard tap, so
+// no Input Monitoring prompt). Idempotent — safe to call at launch (onboarded), from Act 2, and from
+// finish_onboarding.
 pub(crate) fn spawn_ptt(app: &tauri::AppHandle) {
     if PTT_SPAWNED.swap(true, Ordering::SeqCst) {
         return; // already running
     }
     let (tx, rx) = channel::<PttEvent>();
     spawn_ptt_controller(app.clone(), rx);
-    spawn_ptt_tap(tx);
+    spawn_ptt_poll(tx);
 }
 
 /// Start the ⌥⌃ push-to-talk tap on demand (idempotent). Act 2 calls this AFTER priming Input
@@ -484,53 +483,38 @@ pub(crate) fn start_ptt(app: tauri::AppHandle) {
     spawn_ptt(&app);
 }
 
-fn spawn_ptt_tap(tx: Sender<PttEvent>) {
-    use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
-    use core_graphics::event::{
-        CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-        CGEventType, CallbackResult,
-    };
+// CoreGraphics state query — the CURRENT modifier flags, as a bitmask. This is a READ of cached
+// state, NOT observing the event stream, so it needs no permission (unlike a keyboard CGEventTap,
+// which forces the macOS "Keystroke Receiving" / Input Monitoring prompt).
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGEventSourceFlagsState(state_id: u32) -> u64;
+}
+
+// Detect the ⌥⌃ chord by POLLING the modifier state (~60Hz) instead of tapping the keyboard event
+// stream. That's the whole reason first-run no longer shows the Input-Monitoring prompt: reading
+// CGEventSourceFlagsState needs no grant, so ⌥⌃ push-to-talk works immediately without asking for
+// anything. 16ms is well under any real hold/tap (both >100ms), so no press is missed.
+fn spawn_ptt_poll(tx: Sender<PttEvent>) {
+    // CGEventFlags bits: Control = 0x0004_0000, Alternate (Option) = 0x0008_0000.
+    const CTRL: u64 = 0x0004_0000;
+    const ALT: u64 = 0x0008_0000;
+    // kCGEventSourceStateHIDSystemState = 1 → the physical keyboard state.
+    const HID_STATE: u32 = 1;
     std::thread::spawn(move || {
-        // Retry loop: on first run we DON'T request Input Monitoring at launch (Act 2 does, with the
-        // mic), so the tap fails to build until the grant lands. Retry every few seconds so ⌥⌃ starts
-        // working the instant the user grants it in Act 2 — no relaunch required.
+        crate::klog!(ptt, info, "ptt modifier poll active (⌥⌃ live, no tap / no Input Monitoring)");
+        let mut was_down = false;
         loop {
-            let tx_iter = tx.clone();
-            let chord_down = AtomicBool::new(false);
-            let tap = CGEventTap::new(
-                CGEventTapLocation::Session,
-                CGEventTapPlacement::HeadInsertEventTap,
-                CGEventTapOptions::ListenOnly,
-                vec![CGEventType::FlagsChanged],
-                move |_proxy, _event_type, event| {
-                    let flags = event.get_flags();
-                    let both = flags.contains(CGEventFlags::CGEventFlagAlternate)
-                        && flags.contains(CGEventFlags::CGEventFlagControl);
-                    let was = chord_down.swap(both, Ordering::SeqCst);
-                    if both && !was {
-                        let _ = tx_iter.send(PttEvent::Down(Instant::now()));
-                    } else if !both && was {
-                        let _ = tx_iter.send(PttEvent::Up(Instant::now()));
-                    }
-                    CallbackResult::Keep
-                },
-            );
-            let Ok(tap) = tap else {
-                crate::klog!(ptt, debug, "ptt tap unavailable (no Input Monitoring yet); retrying in 3s");
-                std::thread::sleep(std::time::Duration::from_secs(3));
-                continue;
-            };
-            unsafe {
-                let Ok(source) = tap.mach_port().create_runloop_source(0) else {
-                    crate::klog!(ptt, error, "failed to create PTT runloop source");
-                    return;
-                };
-                CFRunLoop::get_current().add_source(&source, kCFRunLoopCommonModes);
-                tap.enable();
-                crate::klog!(ptt, info, "ptt tap active (⌥⌃ live)");
-                CFRunLoop::run_current(); // blocks until the runloop stops (normally never)
+            let flags = unsafe { CGEventSourceFlagsState(HID_STATE) };
+            let both = (flags & CTRL != 0) && (flags & ALT != 0);
+            if both && !was_down {
+                let _ = tx.send(PttEvent::Down(Instant::now()));
+            } else if !both && was_down {
+                let _ = tx.send(PttEvent::Up(Instant::now()));
             }
-            // run_current returned (rare) — loop to re-establish the tap.
+            was_down = both;
+            std::thread::sleep(std::time::Duration::from_millis(16));
         }
     });
 }

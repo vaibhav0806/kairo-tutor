@@ -12,7 +12,7 @@ use crate::types::ActiveApp;
 // AppleScript. Returns name + bundle id; window title isn't exposed here (see frontmost_window_title).
 #[cfg(target_os = "macos")]
 fn frontmost_running_app() -> Option<objc2::rc::Retained<objc2_app_kit::NSRunningApplication>> {
-    let ws = unsafe { objc2_app_kit::NSWorkspace::sharedWorkspace() };
+    let ws = objc2_app_kit::NSWorkspace::sharedWorkspace();
     ws.frontmostApplication()
 }
 

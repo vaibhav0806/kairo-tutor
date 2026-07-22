@@ -27,7 +27,6 @@ use platform::get_active_app;
 
 mod permissions;
 #[cfg(target_os = "macos")]
-use permissions::ensure_input_monitoring_access;
 use permissions::{
     get_input_monitoring_status, get_permission_status, open_permission_settings,
     request_accessibility, request_input_monitoring, request_microphone,
@@ -780,14 +779,11 @@ pub fn run() {
                     *guard = Some(tx);
                 }
             }
-            // Push-to-talk runs on its own tap so its (possibly Input-Monitoring-gated)
-            // keyboard access can't disturb the mouse/scroll reset tap above. For a FIRST-RUN user
-            // we do NOT create the tap at launch — creating the CGEventTap is what triggers the
-            // macOS "Keystroke Receiving" (Input Monitoring) prompt, and that belongs in Act 2 (with
-            // the mic), not before any value. Act 2 calls `start_ptt` after its primer; the tap then
-            // retries until the grant lands. Already-onboarded users get it (+ the grant) at launch.
+            // Push-to-talk detects ⌥⌃ by POLLING the modifier state (CGEventSourceFlagsState), NOT a
+            // keyboard CGEventTap — so it needs NO Input Monitoring and never shows the "Keystroke
+            // Receiving" prompt. Onboarded users start it at launch; first-run users start it in Act 2
+            // (start_ptt) alongside the mic. Idempotent either way.
             if crate::onboarding::is_onboarded(app.handle()) {
-                ensure_input_monitoring_access();
                 spawn_ptt(app.handle());
             }
             // Menu-bar status item: the only always-visible way to quit/restart
