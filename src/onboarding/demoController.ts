@@ -221,37 +221,3 @@ export async function runCircleTurn(
   const hasTarget = result.steps.some((s) => s.visualTargets.length > 0);
   return { ok: hasTarget, reason: hasTarget ? undefined : 'no_target' };
 }
-
-// Act 3b — the signature move. With Screen Recording granted, Kairo uses its OWN vision pipeline
-// to find the Accessibility ON/OFF switch for "Kairo Tutor" and points the pet at it.
-// `located=false` when the model can't place a box (small system toggle) → the caller falls back to
-// the guided arrow. Reveals silently; narration is the Act 3 scripted reframe line, spoken separately.
-const ACCESSIBILITY_POINT_QUERY =
-  'On this macOS Accessibility settings screen, point at the ON/OFF toggle switch in the row labelled "Kairo Tutor".';
-
-// Split find from reveal so the caller can run the (slow) vision call in the BACKGROUND while a
-// filler line holds the user's attention, then reveal the point at the perfect moment (§Act 3b).
-// `reveal()` draws the box + flies the pet; it's a no-op when nothing was located.
-export async function findAccessibilityToggle(
-  bridge: NativeBridge,
-  cb: DemoCallbacks = {},
-): Promise<{ located: boolean; reveal: () => Promise<void> }> {
-  const noop = { located: false, reveal: async () => {} };
-  cb.onThinking?.();
-  const capture = await bridge.captureScreen();
-  if (!capture.captured) {
-    klog('onboarding', 'warn', 'act3 point: capture failed', { reason: capture.reason ?? '' });
-    return noop;
-  }
-  const result = await askTutorFromNotch({
-    query: ACCESSIBILITY_POINT_QUERY,
-    nativeBridge: bridge,
-    aiProvider: AI_PROVIDER,
-    skillSlug: '',
-    screenCapture: capture,
-  });
-  const step = result.steps.find((s) => s.visualTargets.length > 0);
-  klog('onboarding', 'info', 'act3 point', { located: Boolean(step), steps: result.steps.length });
-  if (!step) return noop;
-  return { located: true, reveal: () => result.revealStep(step, 'draw') };
-}

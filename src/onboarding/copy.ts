@@ -103,57 +103,40 @@ export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
  * "steer the pointer", never "control your Mac".
  */
 export const ACT3_LINES: Record<
-  | 'act3_screen'
-  | 'act3_screen_restart'
-  | 'act3_access_intro'
-  | 'act3_access_find'
-  | 'act3_access_point'
-  | 'act3_access_fallback',
+  'act3_screen' | 'act3_screen_grant' | 'act3_access_intro' | 'act3_access_grant',
   string
 > = {
   act3_screen:
     'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
     'and I never save it. I look, help, forget.',
-  // Spoken AFTER the OS dialog + Settings open — carries the do-it-now instruction itself, so the
-  // caption that stays on screen was actually said. This grant needs a relaunch (macOS caches screen
-  // access per process); frame it as planned, not a crash — resume lands the user right back here.
-  act3_screen_restart:
-    'Go ahead — flip Kairo Tutor on in that list. The second you do, macOS restarts me real quick. ' +
-    "Totally normal — I'll pick right back up where we left off.",
+  // Spoken right as the native prompt appears — points the user at the pop-up + the toggle, and
+  // carries the do-it-now instruction, so the caption that stays up was actually said. The grant
+  // needs a relaunch (macOS caches screen access per process); frame it as planned, not a crash.
+  act3_screen_grant:
+    'A little box just popped up — tap “Open System Settings,” flip Kairo Tutor on, and that’s it. ' +
+    'macOS restarts me the moment you do — totally normal, I’ll pick right back up.',
   // Spoken FIRST on the accessibility sub-step (incl. right after the Screen-Recording relaunch), so
-  // opening Settings never feels out of nowhere. Sets the context BEFORE the window appears.
+  // the prompt never feels out of nowhere. Sets the context BEFORE the OS prompt appears.
   act3_access_intro:
-    "Okay — last permission. Accessibility just lets me nudge the pointer to whatever I'm showing " +
-    "you, nothing more. Let me pull up the setting for you.",
-  // Spoken WHILE the vision call finds the toggle in the background — long + warm enough to fully
-  // cover the ~2-4s look-up, so the point lands right as this finishes (§Act 3b).
-  act3_access_find:
-    "Alright, it's open. Give me just a second — I'm finding that exact switch so I can point you " +
-    'right to it…',
-  // Spoken AS the pet lands on the real toggle (located).
-  act3_access_point: "There — see where I'm pointing? That's the one. Flip it on and we're done.",
-  // Fallback when vision can't box the tiny system toggle.
-  act3_access_fallback:
-    "It's the Kairo Tutor switch, right next to my name — flip it on and we're all set."
+    'Okay — last permission. Accessibility just lets me nudge the pointer to whatever I’m showing ' +
+    'you, nothing more.',
+  // Points at the same native pop-up → Settings → the toggle. No relaunch for this one.
+  act3_access_grant:
+    'Same thing — tap “Open System Settings” on the pop-up, then flip the Kairo Tutor switch on, ' +
+    'right next to my name. That’s the last one.'
 };
 
 export const act3ScreenLine: Segment[] = [
   { cacheKey: 'act3_screen', text: () => ACT3_LINES.act3_screen }
 ];
-export const act3ScreenRestartLine: Segment[] = [
-  { cacheKey: 'act3_screen_restart', text: () => ACT3_LINES.act3_screen_restart }
+export const act3ScreenGrantLine: Segment[] = [
+  { cacheKey: 'act3_screen_grant', text: () => ACT3_LINES.act3_screen_grant }
 ];
 export const act3AccessIntroLine: Segment[] = [
   { cacheKey: 'act3_access_intro', text: () => ACT3_LINES.act3_access_intro }
 ];
-export const act3AccessFindLine: Segment[] = [
-  { cacheKey: 'act3_access_find', text: () => ACT3_LINES.act3_access_find }
-];
-export const act3AccessPointLine: Segment[] = [
-  { cacheKey: 'act3_access_point', text: () => ACT3_LINES.act3_access_point }
-];
-export const act3AccessFallbackLine: Segment[] = [
-  { cacheKey: 'act3_access_fallback', text: () => ACT3_LINES.act3_access_fallback }
+export const act3AccessGrantLine: Segment[] = [
+  { cacheKey: 'act3_access_grant', text: () => ACT3_LINES.act3_access_grant }
 ];
 
 /** Seeded practice prompts — 2-3 concrete phrases per mode so the mic is never blank (spec §8).
