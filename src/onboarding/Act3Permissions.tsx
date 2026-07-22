@@ -6,13 +6,16 @@ import { act3ScreenLine, act3AccessLine } from './copy';
 import { nextPermissionStep, type Act3SubStep } from './act3SubStep';
 import type { ActProps } from './acts/actTypes';
 
-// Act 3 — "Earn the Eyes". Two permission moments (Screen Recording, then Accessibility). Each one:
-// say the WHY → fire the ONE native OS prompt → say the do-it-now line. The OS prompt is doing double
-// duty: it registers Kairo in the Settings list AND is the gateway to the toggle (its own "Open
-// System Settings" button opens the exact pane). So we deliberately do NOT open System Settings
-// ourselves — that just stacked a second, confusing window on top of the prompt. One prompt per
-// permission, no duplicates, no pet-pointing theatre (the toggle is self-evident). Status-driven, so
-// it's idempotent across the Screen-Recording quit+reopen.
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// How far into the spoken line to fire the OS pop-up. The instruction is front-loaded in the copy, so
+// the box appears while the user is still hearing the why — they can act immediately, not after ~15s.
+const BOX_DELAY_MS = 2500;
+
+// Act 3 — "Earn the Eyes". Two permission moments (Screen Recording, then Accessibility). Each: start
+// the spoken line, then fire the ONE native OS prompt ~2.5s in. The prompt does double duty — it
+// registers Kairo in the Settings list AND is the gateway to the toggle (its own "Open System
+// Settings" button). We deliberately do NOT open System Settings ourselves. Status-driven, so it's
+// idempotent across the Screen-Recording quit+reopen.
 export function Act3Permissions({ name, onAdvance }: ActProps) {
   const { say, bridge } = useCoach(name);
   const [sub, setSub] = useState<Act3SubStep | null>(null);
@@ -62,19 +65,22 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       if (sub === 'screen') {
         if (spoke.current.screen) return;
         spoke.current.screen = true;
-        // ONE spoken line (painted while Kairo is foreground → no stale notch), THEN the OS pop-up.
-        // Prompt-only: the pop-up's own "Open System Settings" button is the single path to the
-        // toggle — we never open System Settings ourselves.
-        await say(act3ScreenLine);
+        // Start the line (caption paints now, while Kairo is foreground → no stale notch), then fire
+        // the OS pop-up ~2.5s in — the instruction is front-loaded, so the user can start acting
+        // without sitting through the whole line. Prompt-only: the pop-up's own "Open System
+        // Settings" button is the single path; we never open System Settings ourselves.
+        void say(act3ScreenLine);
+        await delay(BOX_DELAY_MS);
         if (stop()) return;
         await bridge.requestScreenRecording(); // the OS pop-up (the only window)
         return;
       }
 
-      // sub === 'accessibility' — same shape: one line, then the pop-up.
+      // sub === 'accessibility' — same shape: start the line, pop the box 2.5s in.
       if (spoke.current.access) return;
       spoke.current.access = true;
-      await say(act3AccessLine);
+      void say(act3AccessLine);
+      await delay(BOX_DELAY_MS);
       if (stop()) return;
       await bridge.requestAccessibility(); // the OS pop-up (the only window)
     })().catch((e) =>

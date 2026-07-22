@@ -104,16 +104,19 @@ export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
  */
 // ONE line per permission (why + do-it-now in a single audio). Prompt-only: the spoken line points
 // the user at the OS pop-up's "Open System Settings" button — we never open Settings ourselves.
+// Instruction is FRONT-LOADED — the "a box is popping up now" + what-to-do lands in the first ~2.5s,
+// because we fire the OS pop-up 2.5s in (not after the whole line), so the user can act immediately
+// while the why/reassurance keeps playing. See BOX_DELAY_MS in Act3Permissions.
 export const ACT3_LINES: Record<'act3_screen' | 'act3_access', string> = {
   act3_screen:
-    'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
-    'and I never save it. I look, help, and forget. A box’s about to pop up: just tap “Open System ' +
-    'Settings,” flip Kairo Tutor on, and that’s it. macOS restarts me the moment you do — totally ' +
-    'normal, I’ll pick right back up.',
+    'Time to earn my eyes. A box is popping up now — tap “Open System Settings,” then flip Kairo ' +
+    'Tutor on. That lets me see your screen, but only while you hold Option and Control, and I never ' +
+    'save it — I look, help, and forget. macOS restarts me the moment you do, totally normal, I’ll ' +
+    'pick right back up.',
   act3_access:
-    'Okay, last one — Accessibility. It just lets me nudge the pointer to whatever I’m showing you, ' +
-    'nothing more. A box’s about to pop up: tap “Open System Settings,” then flip the Kairo Tutor ' +
-    'switch on, right next to my name. And that’s everything.'
+    'Last one — a box is popping up now for Accessibility. Tap “Open System Settings,” then flip the ' +
+    'Kairo Tutor switch on, right next to my name. It just lets me nudge the pointer to whatever I’m ' +
+    'showing you, nothing more. And that’s everything.'
 };
 
 export const act3ScreenLine: Segment[] = [
