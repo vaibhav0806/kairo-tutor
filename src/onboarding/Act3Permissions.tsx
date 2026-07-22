@@ -6,8 +6,9 @@ import { useCoach } from './useCoach';
 import {
   act3ScreenLine,
   act3ScreenRestartLine,
-  act3AccessLine,
-  act3AccessFillerLine,
+  act3AccessIntroLine,
+  act3AccessFindLine,
+  act3AccessPointLine,
   act3AccessFallbackLine
 } from './copy';
 import { nextPermissionStep, type Act3SubStep } from './act3SubStep';
@@ -59,6 +60,7 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       if (next === 'done') {
         if (!advanced.current) {
           advanced.current = true;
+          void bridge.closeSettings(); // clean stage: quit System Settings → only desktop + Kairo
           klog('onboarding', 'info', 'act3 done');
           onAdvance();
         }
@@ -102,7 +104,12 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       if (spoke.current.access) return;
       spoke.current.access = true;
 
-      // 1. Register Kairo in the AX list (so a toggle exists) + open the pane — THIS step's window.
+      // 1. CONTEXT FIRST (spoken). This is the fix for the confusing relaunch: after the
+      //    Screen-Recording grant bounces the app, we resume straight here — so set the scene BEFORE
+      //    the Settings window pops or any "finding it" line plays.
+      await say(act3AccessIntroLine);
+      if (stop()) return;
+      // 2. THEN register Kairo in the AX list (so a toggle exists) + open the pane.
       await bridge.requestAccessibility();
       await bridge.openPermissionSettings('accessibility');
       const settled = await waitForSettings(bridge);
@@ -112,21 +119,19 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
         return;
       }
 
-      // 2. Kick off the (slow) vision call in the BACKGROUND, and cover it with a spoken filler so
-      //    the pet's point lands at the perfect moment, not after an awkward silence (§Act 3b).
+      // 3. Find the toggle in the BACKGROUND while a warm, long-enough filler fully covers the
+      //    ~2-4s vision look-up — so the point lands right as the line finishes, no dead air (§Act 3b).
       const finding = findAccessibilityToggle(bridge);
-      await say(act3AccessFillerLine); // "Alright, let me find that switch — one sec."
+      await say(act3AccessFindLine);
       const { located, reveal } = await finding;
       if (stop()) return;
-      await delay(600); // a small beat so the point doesn't collide with the filler line
-
+      await delay(300);
       if (located) {
-        // 3. Say the reveal line (which itself ends "…flip it on") THEN fly the pet to the switch.
-        await say(act3AccessLine);
-        if (stop()) return;
-        await reveal();
+        // 4. Fly the pet to the real switch AS Kairo says "there — see where I'm pointing?".
+        void reveal();
+        await say(act3AccessPointLine);
       } else {
-        // Couldn't place a box on the small system toggle → the spoken guided fallback line.
+        // Couldn't place a box on the tiny system toggle → the spoken guided fallback.
         await say(act3AccessFallbackLine);
       }
     })().catch((e) =>

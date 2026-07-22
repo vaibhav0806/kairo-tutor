@@ -14,7 +14,7 @@ import type { ActProps } from './actTypes';
  * held by the orchestrator for the warm ending + the account save.
  */
 export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void }) {
-  const { say, clear } = useCoach('');
+  const { say, clear, bridge } = useCoach('');
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
@@ -38,6 +38,8 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
     if (!signedIn) return;
     void syncUserName().then((name) => {
       klog('onboarding', 'info', 'act5 signed in', { name_len: name.length });
+      // Pull focus back to Kairo from the OAuth browser BEFORE the next step starts talking.
+      void bridge.focusOnboarding();
       void clear();
       onSignedIn(name);
     });

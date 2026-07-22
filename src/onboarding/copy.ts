@@ -103,7 +103,12 @@ export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
  * "steer the pointer", never "control your Mac".
  */
 export const ACT3_LINES: Record<
-  'act3_screen' | 'act3_screen_restart' | 'act3_access' | 'act3_access_fallback' | 'act3_access_filler',
+  | 'act3_screen'
+  | 'act3_screen_restart'
+  | 'act3_access_intro'
+  | 'act3_access_find'
+  | 'act3_access_point'
+  | 'act3_access_fallback',
   string
 > = {
   act3_screen:
@@ -115,13 +120,21 @@ export const ACT3_LINES: Record<
   act3_screen_restart:
     'Go ahead — flip Kairo Tutor on in that list. The second you do, macOS restarts me real quick. ' +
     "Totally normal — I'll pick right back up where we left off.",
-  act3_access:
-    "One more — Accessibility. It's just how I move that little pointer to what I'm showing you, " +
-    'not to control your Mac, promise. Watch — I’ll point right at the switch, then flip it on.',
-  // Spoken WHILE the vision call runs in the background (buys time + holds attention, §Act 3b).
-  act3_access_filler: "Alright, let me find that switch for you — one sec.",
+  // Spoken FIRST on the accessibility sub-step (incl. right after the Screen-Recording relaunch), so
+  // opening Settings never feels out of nowhere. Sets the context BEFORE the window appears.
+  act3_access_intro:
+    "Okay — last permission. Accessibility just lets me nudge the pointer to whatever I'm showing " +
+    "you, nothing more. Let me pull up the setting for you.",
+  // Spoken WHILE the vision call finds the toggle in the background — long + warm enough to fully
+  // cover the ~2-4s look-up, so the point lands right as this finishes (§Act 3b).
+  act3_access_find:
+    "Alright, it's open. Give me just a second — I'm finding that exact switch so I can point you " +
+    'right to it…',
+  // Spoken AS the pet lands on the real toggle (located).
+  act3_access_point: "There — see where I'm pointing? That's the one. Flip it on and we're done.",
+  // Fallback when vision can't box the tiny system toggle.
   act3_access_fallback:
-    "Almost there — flip on Accessibility so I can steer the pointer. It's the switch right next to my name."
+    "It's the Kairo Tutor switch, right next to my name — flip it on and we're all set."
 };
 
 export const act3ScreenLine: Segment[] = [
@@ -130,14 +143,17 @@ export const act3ScreenLine: Segment[] = [
 export const act3ScreenRestartLine: Segment[] = [
   { cacheKey: 'act3_screen_restart', text: () => ACT3_LINES.act3_screen_restart }
 ];
-export const act3AccessLine: Segment[] = [
-  { cacheKey: 'act3_access', text: () => ACT3_LINES.act3_access }
+export const act3AccessIntroLine: Segment[] = [
+  { cacheKey: 'act3_access_intro', text: () => ACT3_LINES.act3_access_intro }
+];
+export const act3AccessFindLine: Segment[] = [
+  { cacheKey: 'act3_access_find', text: () => ACT3_LINES.act3_access_find }
+];
+export const act3AccessPointLine: Segment[] = [
+  { cacheKey: 'act3_access_point', text: () => ACT3_LINES.act3_access_point }
 ];
 export const act3AccessFallbackLine: Segment[] = [
   { cacheKey: 'act3_access_fallback', text: () => ACT3_LINES.act3_access_fallback }
-];
-export const act3AccessFillerLine: Segment[] = [
-  { cacheKey: 'act3_access_filler', text: () => ACT3_LINES.act3_access_filler }
 ];
 
 /** Seeded practice prompts — 2-3 concrete phrases per mode so the mic is never blank (spec §8).
