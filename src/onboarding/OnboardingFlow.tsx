@@ -1,50 +1,44 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { klog } from '../core/logger';
-import { pickSeededPrompt, STEPS, type StepId } from './copy';
+import { pickSeededPrompt, PRACTICE_RETRY, STEPS, type StepId } from './copy';
 import { runCircleTurn, runPointTurn, type DemoResult } from './demoController';
 import { playRecordingCue } from '../core/sound';
-import { createNativeBridge } from '../native/nativeBridge';
 import type { TimedPoint } from '../notch/gestureSegmenter';
-import { useVoice } from './useVoice';
-import { KairoOrb } from './OnboardingComponents';
-import '@fontsource/instrument-serif';
+import { useCoach } from './useCoach';
 import './onboarding.css';
 
 // Act 4 — the two practice beats, and ONLY those. Each runs the REAL Kairo pipeline (demoController):
 //   • point  — the user asks Kairo to point at something (gate → vision → pet points at it)
 //   • circle — the user draws around something (gesture → vision → Kairo describes it)
-// The ⌥⌃ chord is the only Next; a beat auto-advances when Kairo lands the answer, and retries on a
-// miss. Everything else in first-run (color / hearing / permissions / sign-in / source / ending) is
-// its own Act in OnboardingApp — none of it lives here.
+// Notch-driven, exactly like Act 2's say-hi drill: this renders nothing. The notch caption + the
+// live pet ARE the UI. The ⌥⌃ chord is the only Next; a beat auto-advances when Kairo lands the
+// answer, and speaks a retry on a miss. The notch caption tracks every spoken line, so it is never
+// stale — the whole reason this act moved onto useCoach.
 type DemoMode = 'point' | 'circle';
 const DEMO_MODE: Partial<Record<StepId, DemoMode>> = { learn_point: 'point', circle: 'circle' };
 
+// The silent "I'm listening" nudge shown WHILE the user holds ⌥⌃ (audio is impossible then — Kairo's
+// voice would land in the recording), per mode.
+const LISTEN_HINT: Record<DemoMode, string> = {
+  point: 'Ask me to point something out.',
+  circle: 'Draw a circle around anything.'
+};
+
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
+  const { say, thinking, caption, guide, bridge } = useCoach('');
   const [index, setIndex] = useState(0);
   const step = STEPS[index];
   const mode = DEMO_MODE[step.id] as DemoMode; // STEPS only ever holds the two practice beats
-  const voice = useVoice();
-  const bridge = useMemo(() => createNativeBridge(), []);
 
-  // Live status of the current practice turn (drives the orb + the status line).
-  const [demoState, setDemoState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
-  const [demoDone, setDemoDone] = useState(false);
-  const [demoLevel, setDemoLevel] = useState(0);
-  const [demoRetry, setDemoRetry] = useState<null | 'empty' | 'no_target'>(null);
-
-  const promptSeedRef = useRef(0);
   const indexRef = useRef(index);
   indexRef.current = index;
   const gestureBufferRef = useRef<TimedPoint[]>([]);
   const recordingRef = useRef(false);
   const demoDoneRef = useRef(false);
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // 0 on the first beat, full on the last.
-  const progress = STEPS.length > 1 ? index / (STEPS.length - 1) : 1;
 
   const go = useCallback((delta: number) => {
     setIndex((i) => Math.max(0, Math.min(STEPS.length - 1, i + delta)));
@@ -65,14 +59,14 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     void invoke('set_onboarding_step', { step: step.id }).catch(() => {});
   }, [step.id]);
 
-  // Speak this beat's instruction line when it opens.
+  // Speak this beat's instruction when it opens — notch caption == the voice, with a seeded chip.
   useEffect(() => {
-    void voice.speak(step.speech, '');
+    void say(step.speech, { chip: `try: “${pickSeededPrompt(mode, index)}”` });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index]);
 
-  // Practice steps hide the onboarding window so the real overlay + companion cursor own the screen
-  // (and the screenshot is clean), then bring it back to advance.
+  // Hide the onboarding window during a turn so the real overlay + companion cursor own the screen
+  // (and the screenshot is clean), then bring it back.
   const hideSelf = useCallback(async () => {
     try {
       await getCurrentWebviewWindow().hide();
@@ -82,23 +76,22 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   }, []);
   const showSelf = useCallback(async () => {
     try {
-      const w = getCurrentWebviewWindow();
-      await w.show();
-      await w.setFocus();
+      await getCurrentWebviewWindow().show();
     } catch {
       /* ignore */
     }
   }, []);
 
-  // Run one practice turn on the recorded audio, then auto-advance (or retry on a miss).
+  // Run one practice turn on the recorded audio, then auto-advance (or speak a retry on a miss).
   const runDemoTurn = useCallback(
     async (m: DemoMode, audioBase64: string) => {
       if (demoDoneRef.current) return; // stop once the beat is satisfied
-      setDemoLevel(0);
-      setDemoRetry(null);
+      await thinking(); // loading pulse while we transcribe + look
       const cb = {
-        onThinking: () => setDemoState('thinking'),
-        onSpeaking: () => setDemoState('speaking'),
+        onThinking: () => void thinking(),
+        onSpeaking: () => void emit('cursor:speaking'),
+        // Mirror every spoken line into the notch, in sync — the caption never goes stale.
+        onCaption: (text: string) => void caption(text)
       };
       let result: DemoResult = { ok: false, reason: 'empty' };
       try {
@@ -109,37 +102,34 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       } catch (error) {
         klog('onboarding', 'error', 'demo turn failed', { mode: m, error: String(error) });
       } finally {
-        setDemoState('idle');
         await bridge.hideOverlay();
         await showSelf();
         if (result.ok) {
           demoDoneRef.current = true;
-          setDemoDone(true);
-          setDemoRetry(null);
+          void emit('cursor:celebrate');
+          klog('onboarding', 'info', 'practice beat done', { mode: m });
           if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
           advanceTimerRef.current = setTimeout(() => {
             // Last beat → hand back to the orchestrator (Act 5); else the next beat.
             if (indexRef.current >= STEPS.length - 1) onComplete();
             else go(1);
-          }, 1200);
+          }, 1400);
         } else {
-          setDemoRetry(result.reason ?? 'empty'); // keep the beat open so the next ⌥⌃ hold retries
+          // Not satisfied — speak a nudge and keep the beat open so the next ⌥⌃ hold retries.
+          void say(PRACTICE_RETRY[result.reason ?? 'empty'], {
+            chip: `try: “${pickSeededPrompt(m, indexRef.current + 1)}”`
+          });
         }
       }
     },
-    [bridge, go, showSelf, onComplete],
+    [bridge, thinking, caption, say, go, showSelf, onComplete]
   );
 
   // Wire the beat: claim push-to-talk, listen for the ⌥⌃ hold + recorded audio (+ cursor points for
   // circle), and run the turn on release.
   useEffect(() => {
-    promptSeedRef.current += 1; // rotate the seeded chip once per mount
     let disposed = false;
     const unlisteners: Array<() => void> = [];
-    setDemoState('idle');
-    setDemoDone(false);
-    setDemoRetry(null);
-    setDemoLevel(0);
     demoDoneRef.current = false;
     gestureBufferRef.current = [];
     recordingRef.current = false;
@@ -147,15 +137,16 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
 
     const push = (u: () => void) => (disposed ? u() : unlisteners.push(u));
 
-    // ⌥⌃ hold confirmed / released (recording-truth for onboarding). On press we hide our window so
-    // the real screen is clean for the capture; circle also arms the gesture overlay.
+    // ⌥⌃ hold confirmed / released. On press: hide our window so the capture is clean, show the
+    // silent "listening" nudge (audio is impossible while the user talks), and arm the gesture
+    // overlay for circle.
     void listen<{ active?: boolean }>('onboarding:ptt', (e) => {
       const active = Boolean(e.payload?.active);
       recordingRef.current = active;
       playRecordingCue(active); // same "boop"/"toing" cues as the real product
       if (active) {
-        setDemoState('listening');
         gestureBufferRef.current = [];
+        void guide('Listening…', LISTEN_HINT[mode]);
         void hideSelf();
         if (mode === 'circle') {
           void bridge.getDisplayBounds().then((b) => bridge.showGestureOverlay(b));
@@ -170,11 +161,6 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         gestureBufferRef.current.push({ x: e.payload.x, y: e.payload.y, t: performance.now() });
       }).then(push);
     }
-
-    // Mic level → orb.
-    void listen<{ level?: number }>('cursor:level', (e) => {
-      if (recordingRef.current) setDemoLevel(Math.min(1, Number(e.payload?.level ?? 0)));
-    }).then(push);
 
     // The recorded WAV on release → run the practice turn. Dedicated event (NOT the notch's
     // `ptt:audio`, which broadcasts app-wide) so only onboarding reacts.
@@ -194,56 +180,5 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.id]);
 
-  const action = mode === 'point' ? 'hold & ask' : 'hold & circle';
-  const status =
-    demoState === 'listening'
-      ? 'listening…'
-      : demoState === 'thinking'
-        ? 'thinking…'
-        : demoState === 'speaking'
-          ? 'speaking…'
-          : demoDone
-            ? 'nice — you’ve got it!'
-            : demoRetry === 'no_target'
-              ? 'hmm, I couldn’t find that — try again'
-              : demoRetry === 'empty'
-                ? 'didn’t quite catch that — try again'
-                : 'ready when you are';
-
-  return (
-    <div className="ob">
-      <div className="ob-surface">
-        <div className="ob-aurora" aria-hidden />
-        <div className="ob-grain" aria-hidden />
-
-        <header className="ob-head">
-          {index > 0 ? (
-            <button type="button" className="ob-back" onClick={() => go(-1)} aria-label="Back">
-              ←
-            </button>
-          ) : (
-            <span />
-          )}
-        </header>
-
-        <KairoOrb mode={demoState} level={demoLevel} progress={progress} />
-
-        <div className="ob-stage" key={step.id}>
-          <h1 className="ob-title">{step.title('')}</h1>
-          <div className="ob-field">
-            <div className="ob-demo">
-              <div className="ob-demo-keys">
-                <kbd>⌥</kbd>
-                <span className="ob-demo-plus">+</span>
-                <kbd>⌃</kbd>
-                <span className="ob-demo-action">{action}</span>
-              </div>
-              <div className="ob-demo-hint">try: “{pickSeededPrompt(mode, promptSeedRef.current)}”</div>
-              <div className={`ob-demo-status is-${demoState}`}>{status}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  return null; // notch caption + the live pet are the whole UI (like Act 2's drill)
 }

@@ -26,9 +26,10 @@ const ACT = {
 } as const;
 const ACT_COUNT = 7;
 
-// Whether the window must catch clicks for that act (color wheel / practice card / sign-in / chips),
-// or stay click-through so the desktop + pet + System Settings receive input.
-const INTERACTIVE = [true, false, false, true, true, true, false];
+// Whether the window must catch clicks for that act (color wheel / sign-in / chips), or stay
+// click-through so the desktop + pet + System Settings receive input. Act 2 (hearing) and Act 4
+// (practice) are notch + chord driven, so they stay click-through — the user acts on the REAL screen.
+const INTERACTIVE = [true, false, false, false, true, true, false];
 
 /** Root of the full-screen, transparent, click-through onboarding orchestrator (#/onboarding). */
 export function OnboardingApp() {
@@ -98,12 +99,8 @@ export function OnboardingApp() {
       body = <Act3Permissions name="" onAdvance={advance} />;
       break;
     case ACT.PRACTICE:
-      // The legacy card (point + circle only) lives in the bounded temp panel.
-      body = (
-        <div className="ob-temp-panel">
-          <OnboardingFlow onComplete={advance} />
-        </div>
-      );
+      // Notch + chord driven (renders null); the caption + pet are the UI, like Act 2's drill.
+      body = <OnboardingFlow onComplete={advance} />;
       break;
     case ACT.SIGNIN:
       body = (

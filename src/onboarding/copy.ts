@@ -154,6 +154,14 @@ export function pickSeededPrompt(mode: 'talk' | 'point' | 'circle', seed: number
   return list[((seed % list.length) + list.length) % list.length];
 }
 
+/** Spoken retry nudges for a practice beat (chord stays the only Next). Live-synthesised (rare). */
+export const PRACTICE_RETRY: Record<'empty' | 'no_target', Segment[]> = {
+  empty: [{ text: () => "Didn’t catch that — hold Option and Control and ask me again." }],
+  no_target: [
+    { text: () => "Hmm, I couldn’t spot that one. Hold Option and Control and try another thing." }
+  ]
+};
+
 /** Act 5a — sign in (temp panel). Static line, cached. */
 export const ACT5_SIGNIN: Segment[] = [
   { cacheKey: 'act5_signin', text: () => "Almost there — let's save your setup. Sign in with Google and we're good." }

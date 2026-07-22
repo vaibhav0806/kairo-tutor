@@ -32,6 +32,9 @@ export type DemoCallbacks = {
   // The reply text, delivered exactly when its audio starts — so a caller can show it in the notch
   // in sync with the voice (never before). Used by the Act 2 say-hi drill.
   onReply?: (text: string) => void;
+  // Any line Kairo speaks (gate filler, each answer step), delivered welded to its audio start — the
+  // caller mirrors it into the notch so the caption is NEVER stale during a practice turn.
+  onCaption?: (text: string) => void;
 };
 
 // Outcome of one practice turn: `ok` → advance; otherwise show a retry nudge and let the user hold
@@ -56,19 +59,21 @@ async function speak(bridge: NativeBridge, text: string, onStart?: () => void): 
 }
 
 // Play each answer step, revealing its box + cursor exactly when that step starts speaking
-// (welded to TTS onplay, same as the notch). The first box is drawn; later ones glide.
+// (welded to TTS onplay, same as the notch). The first box is drawn; later ones glide. `onStepSpeak`
+// fires at the same instant with the step's text, so the notch caption tracks every line.
 async function playSteps(
   bridge: NativeBridge,
   steps: TutorStep[],
   revealStep: (step: TutorStep, transition?: RevealTransition) => Promise<void>,
-  onFirstSpeak?: () => void,
+  opts: { onFirstSpeak?: () => void; onStepSpeak?: (text: string) => void } = {},
 ): Promise<void> {
   for (let i = 0; i < steps.length; i += 1) {
     const step = steps[i];
     const first = i === 0;
     await speak(bridge, step.say, () => {
       void revealStep(step, first ? 'draw' : 'glide');
-      if (first) onFirstSpeak?.();
+      if (first) opts.onFirstSpeak?.();
+      opts.onStepSpeak?.(step.say);
     });
   }
 }
@@ -130,7 +135,11 @@ export async function runPointTurn(
 
   if (!needsScreen) {
     // Direct answer (greeting / general question) — speak the gate's reply, no overlay.
-    await speak(bridge, filler || 'Got it!', cb.onSpeaking);
+    const reply = filler || 'Got it!';
+    await speak(bridge, reply, () => {
+      cb.onSpeaking?.();
+      cb.onCaption?.(reply);
+    });
     return { ok: true };
   }
 
@@ -143,7 +152,11 @@ export async function runPointTurn(
     screenCapture: capture,
     spokenIntro: filler || undefined,
   });
-  if (filler) await speak(bridge, filler, cb.onSpeaking);
+  if (filler)
+    await speak(bridge, filler, () => {
+      cb.onSpeaking?.();
+      cb.onCaption?.(filler);
+    });
   const result = await visionPromise;
   // THE PEAK (§9): the instant the first box/pointer lands on the real target, fire the pet
   // celebration + the arrival cue — once, and only when there's an actual target.
@@ -157,7 +170,10 @@ export async function runPointTurn(
       klog('onboarding', 'info', 'point peak', {});
     }
   };
-  await playSteps(bridge, result.steps, revealWithPeak, filler ? undefined : cb.onSpeaking);
+  await playSteps(bridge, result.steps, revealWithPeak, {
+    onFirstSpeak: filler ? undefined : cb.onSpeaking,
+    onStepSpeak: cb.onCaption,
+  });
   await new Promise((r) => setTimeout(r, HIGHLIGHT_DWELL_MS));
   await releaseVisualTargets(bridge);
   const hasTarget = result.steps.some((s) => s.visualTargets.length > 0);
@@ -192,9 +208,13 @@ export async function runCircleTurn(
     screenCapture: capture,
   });
   // Gesture path has no gate filler — cover the vision wait with a short line.
-  await speak(bridge, 'Let me see what you circled.', cb.onSpeaking);
+  const cover = 'Let me see what you circled.';
+  await speak(bridge, cover, () => {
+    cb.onSpeaking?.();
+    cb.onCaption?.(cover);
+  });
   const result = await visionPromise;
-  await playSteps(bridge, result.steps, result.revealStep);
+  await playSteps(bridge, result.steps, result.revealStep, { onStepSpeak: cb.onCaption });
   await new Promise((r) => setTimeout(r, HIGHLIGHT_DWELL_MS));
   await releaseVisualTargets(bridge);
   // The gesture carries the intent, so an empty transcript is fine — only a no-target answer retries.
