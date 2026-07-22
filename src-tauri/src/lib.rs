@@ -429,6 +429,34 @@ fn restart_app(app: tauri::AppHandle) {
     app.restart();
 }
 
+/// Bring the Kairo onboarding window back to the front. Used after the OAuth browser hand-off so
+/// Kairo isn't narrating the next step while the user is still looking at the browser (Act 5).
+#[tauri::command]
+fn focus_onboarding(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    activate_frontmost(&app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
+/// Quit System Settings so only the desktop + Kairo remain after a permission grant (Act 3). No-op
+/// if it isn't running.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn close_settings() {
+    use objc2_app_kit::NSRunningApplication;
+    use objc2_foundation::NSString;
+    let id = NSString::from_str("com.apple.systempreferences");
+    let running = unsafe { NSRunningApplication::runningApplicationsWithBundleIdentifier(&id) };
+    for proc in running.iter() {
+        let ok = unsafe { proc.terminate() };
+        crate::klog!(app, info, ok = ok, "close settings: quit System Settings");
+    }
+}
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn close_settings() {}
+
 /// Create the macOS menu-bar (status-item) icon. Kairo runs as an `Accessory`
 /// app (no Dock icon), so this is the only always-visible affordance a user has
 /// to quit/restart the app or reopen the notch. Not gated to macOS — the tray is
@@ -817,6 +845,8 @@ pub fn run() {
             request_input_monitoring,
             get_input_monitoring_status,
             restart_app,
+            focus_onboarding,
+            close_settings,
             debug_log,
             debug_log_batch,
             get_display_bounds,

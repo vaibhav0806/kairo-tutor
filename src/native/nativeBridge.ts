@@ -144,6 +144,10 @@ export type NativeBridge = {
   requestScreenRecording(): Promise<NativePermissionState>;
   requestAccessibility(): Promise<NativePermissionState>;
   restartApp(): Promise<void>;
+  // Bring the Kairo onboarding window back to the foreground (e.g. after the OAuth browser hand-off).
+  focusOnboarding(): Promise<void>;
+  // Quit System Settings so only the desktop + Kairo remain after a permission grant (Act 3).
+  closeSettings(): Promise<void>;
   // True when the signed-in user is out of free requests (proxy mode). The notch calls this
   // on push-to-talk release BEFORE transcribing, to skip STT/gate/vision + play the cached
   // upgrade line instead of spending on a paywalled user. false when unknown / proxy off.
@@ -384,6 +388,22 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
         return await invoke<NativePermissionState>('request_accessibility');
       } catch {
         return 'unknown';
+      }
+    },
+
+    async focusOnboarding() {
+      try {
+        await invoke('focus_onboarding');
+      } catch {
+        /* browser preview / non-macOS: no-op */
+      }
+    },
+
+    async closeSettings() {
+      try {
+        await invoke('close_settings');
+      } catch {
+        /* no-op */
       }
     },
 
