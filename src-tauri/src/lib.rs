@@ -433,6 +433,21 @@ fn restart_app(app: tauri::AppHandle) {
 /// app (no Dock icon), so this is the only always-visible affordance a user has
 /// to quit/restart the app or reopen the notch. Not gated to macOS — the tray is
 /// cross-platform, so a future Windows build gets the same menu for free.
+/// Bring Kairo to the foreground and steal focus (macOS). Used at first-run launch so the onboarding
+/// window opens IN FRONT of whatever the user had focused (a launched app should come forward), not
+/// behind it. `activateIgnoringOtherApps` is the reliable way to steal focus; the modern `activate`
+/// deliberately won't take focus from another app, which is exactly what we DON'T want here.
+#[cfg(target_os = "macos")]
+fn activate_frontmost(app: &tauri::AppHandle) {
+    let _ = app.run_on_main_thread(|| {
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+            #[allow(deprecated)]
+            ns_app.activateIgnoringOtherApps(true);
+        }
+    });
+}
+
 fn screen_recording_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path()
         .app_config_dir()
@@ -649,9 +664,12 @@ pub fn run() {
             } else {
                 klog!(app, warn, "startup: main window was not created");
             }
-            // First run: show the dedicated borderless onboarding window instead of the dashboard.
+            // First run: show the dedicated borderless onboarding window instead of the dashboard,
+            // and pull the whole app to the foreground so it doesn't open behind the current window.
             if need_onboarding {
                 crate::onboarding::show_onboarding_window(app.handle());
+                #[cfg(target_os = "macos")]
+                activate_frontmost(app.handle());
             }
             // Pre-create the notch panel + webview at startup so the first
             // shortcut press shows it instantly instead of building it lazily.
