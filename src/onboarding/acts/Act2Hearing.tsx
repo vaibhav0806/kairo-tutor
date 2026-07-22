@@ -77,7 +77,6 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
         void tick();
       });
     const micGranted = async () => (await bridge.getPermissionStatus()).microphone === 'granted';
-    const imGranted = async () => (await bridge.getInputMonitoringStatus()) === 'granted';
 
     void (async () => {
       // STEP 1 — microphone only. Ask, then WAIT until it's genuinely granted before moving on.
@@ -91,24 +90,13 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
         klog('onboarding', 'info', 'act2 mic granted');
       }
 
-      // STEP 2 — input monitoring, only AFTER mic is done. Speak, open the pane, request, start the
-      // tap, then wait until it's flipped on.
-      if (!(await imGranted())) {
-        // 'inputMonitoring' isn't a typed NativePermissionKey — raw invoke (native accepts it).
-        await invoke('open_permission_settings', { permission: 'inputMonitoring' }).catch(() => {});
-        await coachSay(bridge, voice.speak, [ACT_LINES.act2_im], name, { title: 'Kairo' }); // …then explain
-        if (isCancelled()) return;
-        await bridge.requestInputMonitoring(); // registers Kairo + shows the keystroke prompt
-        await bridge.startPtt(); // creates the ⌥⌃ tap (retries until granted)
-        // Leave the SPOKEN act2_im line up ("…flip me on in that list") while we wait — no separate
-        // unspoken caption (that was the text that "wasn't said").
-        await waitUntil(imGranted);
-        if (isCancelled()) return;
-        klog('onboarding', 'info', 'act2 input-monitoring granted');
-      } else {
-        await bridge.startPtt();
-      }
-
+      // STEP 2 — start the ⌥⌃ tap and go. The push-to-talk tap only watches MODIFIER keys
+      // (FlagsChanged), which are EXEMPT from Input Monitoring — the tap goes live without that
+      // grant (verified in the logs). So we do NOT ask for Input Monitoring here: no extra prompt,
+      // no "flip me on" dead-end, no blocking on a permission the drill doesn't need.
+      await bridge.startPtt();
+      if (isCancelled()) return;
+      klog('onboarding', 'info', 'act2 → drill (ptt tap started; input monitoring not required)');
       if (!cancelled) setPhase('drill');
     })();
 

@@ -647,6 +647,10 @@ pub fn run() {
         .setup(|app| {
             let show_setup = should_show_setup_window(&get_permission_status());
             let need_onboarding = !crate::onboarding::is_onboarded(app.handle());
+            // Diagnostic: Input Monitoring raw access at launch (0=granted 1=denied 2=unknown). A
+            // stale 1 (denied) means a prior "Deny" that `tccutil reset` didn't clear.
+            #[cfg(target_os = "macos")]
+            klog!(app, info, hid = crate::permissions::input_monitoring_raw(), "startup IM raw access");
             // Activation policy. By default a Tauri app is `Regular` (Dock icon), so
             // launching it *activates* the app and macOS yanks the user off any
             // full-screen Space onto the desktop. Kairo is a background notch/cursor

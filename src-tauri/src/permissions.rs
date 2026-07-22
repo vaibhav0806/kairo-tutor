@@ -296,6 +296,12 @@ pub(crate) fn request_input_monitoring(app: tauri::AppHandle) {
     }
 }
 
+/// Raw IOHIDCheckAccess for Input Monitoring: 0=granted, 1=denied, 2=unknown. For diagnostics.
+#[cfg(target_os = "macos")]
+pub(crate) fn input_monitoring_raw() -> u32 {
+    unsafe { IOHIDCheckAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT) }
+}
+
 /// "granted" / "not_determined" / "unknown" — lets Act 2 poll the Input-Monitoring grant.
 #[tauri::command]
 pub(crate) fn get_input_monitoring_status() -> String {
