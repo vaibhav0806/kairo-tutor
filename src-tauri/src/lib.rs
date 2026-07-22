@@ -756,9 +756,16 @@ pub fn run() {
             // Context watcher: detect app/tab switches + scroll/click so stale
             // guidance is cleared when the user moves on. Threads idle-cheap until armed.
             let context_watch = app.state::<ContextWatch>().inner().clone();
-            let follow_watch = app.state::<FollowClickWatch>().inner().clone();
             spawn_context_poll(app.handle(), context_watch.clone());
-            spawn_context_input_tap(app.handle(), context_watch.clone(), follow_watch);
+            // The scroll/click reset uses a session CGEventTap — and macOS gates ANY session tap
+            // behind Input Monitoring (the "Keystroke Receiving" prompt), even a mouse-only one. So do
+            // NOT create it during first-run onboarding: that prompt-before-any-value is exactly what
+            // we're avoiding. Onboarded users (product) get it at launch; a first-run user gets it on
+            // their next launch, once onboarding is done.
+            if crate::onboarding::is_onboarded(app.handle()) {
+                let follow_watch = app.state::<FollowClickWatch>().inner().clone();
+                spawn_context_input_tap(app.handle(), context_watch.clone(), follow_watch);
+            }
             // Native mic capture for push-to-talk: spawn the audio thread and hand
             // its command sender to the managed AudioCapture state.
             {
