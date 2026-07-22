@@ -4,7 +4,6 @@ import { klog } from '../core/logger';
 import type { NativeBridge } from '../native/nativeBridge';
 import { useCoach } from './useCoach';
 import {
-  ACT3_COACH,
   act3ScreenLine,
   act3ScreenRestartLine,
   act3AccessLine,
@@ -39,7 +38,7 @@ async function waitForSettings(bridge: NativeBridge, timeoutMs = 4000): Promise<
 // spoken line goes through `say`, so the notch caption always matches Kairo's voice; the silent
 // `guide` caption only appears while the user flips the actual switch. One thing at a time.
 export function Act3Permissions({ name, onAdvance }: ActProps) {
-  const { say, guide, bridge } = useCoach(name);
+  const { say, bridge } = useCoach(name);
   const [sub, setSub] = useState<Act3SubStep | null>(null);
   const spoke = useRef<Record<string, boolean>>({});
   const advanced = useRef(false);
@@ -89,15 +88,13 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
         // 1. Say WHY (caption in sync with the voice) — this is the "to point things out…" line.
         await say(act3ScreenLine);
         if (stop()) return;
-        // 2. THEN the OS consent modal (also registers Kairo in the list) + open the pane.
+        // 2. THEN the OS consent dialog (main-thread — also registers Kairo in the list) + the pane.
         await bridge.requestScreenRecording();
         await bridge.openPermissionSettings('screenRecording');
         if (stop()) return;
-        // 3. The reopen heads-up (again, caption == voice).
+        // 3. Speak the do-it-now + reopen heads-up. This line itself carries the instruction, so the
+        //    caption that stays up while they toggle was actually SAID (never silent text).
         await say(act3ScreenRestartLine);
-        if (stop()) return;
-        // 4. Silent sticky nudge while they flip the switch (the poll above advances on grant).
-        await guide(ACT3_COACH.screen.title, ACT3_COACH.screen.detail);
         return;
       }
 
@@ -111,7 +108,7 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       const settled = await waitForSettings(bridge);
       if (stop()) return;
       if (!settled) {
-        await guide(ACT3_COACH.accessibility.title, ACT3_COACH.accessibility.detail);
+        await say(act3AccessFallbackLine); // spoken instruction (caption == voice)
         return;
       }
 
@@ -124,13 +121,12 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       await delay(600); // a small beat so the point doesn't collide with the filler line
 
       if (located) {
-        // 3. Say the reveal line (caption in sync — the fix), THEN fly the pet to the real switch.
-        await say(act3AccessLine); // "…watch — I'll point right at the switch."
+        // 3. Say the reveal line (which itself ends "…flip it on") THEN fly the pet to the switch.
+        await say(act3AccessLine);
         if (stop()) return;
         await reveal();
-        await guide(ACT3_COACH.accessibility.title, ACT3_COACH.accessibility.detail);
       } else {
-        // Couldn't place a box on the small system toggle → the guided fallback line.
+        // Couldn't place a box on the small system toggle → the spoken guided fallback line.
         await say(act3AccessFallbackLine);
       }
     })().catch((e) =>
@@ -140,7 +136,7 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
     return () => {
       cancelled = true;
     };
-  }, [sub, bridge, say, guide]);
+  }, [sub, bridge, say]);
 
   // Clear any pet highlight when we leave a sub-step / unmount.
   useEffect(() => () => void releaseVisualTargets(bridge), [bridge]);

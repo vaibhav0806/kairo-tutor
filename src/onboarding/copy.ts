@@ -108,14 +108,16 @@ export const ACT3_LINES: Record<
 > = {
   act3_screen:
     'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
-    "and I never save it. I look, help, forget. Flip on Screen Recording and we're set.",
-  // This grant genuinely needs a relaunch (macOS caches screen access per process). Frame it as
-  // planned, not a crash — resume lands the user straight back here.
+    'and I never save it. I look, help, forget.',
+  // Spoken AFTER the OS dialog + Settings open — carries the do-it-now instruction itself, so the
+  // caption that stays on screen was actually said. This grant needs a relaunch (macOS caches screen
+  // access per process); frame it as planned, not a crash — resume lands the user right back here.
   act3_screen_restart:
-    "Heads up — the second you flip it on, macOS bounces me real quick. Totally normal. I'll pick right up where we left off.",
+    'Go ahead — flip Kairo Tutor on in that list. The second you do, macOS restarts me real quick. ' +
+    "Totally normal — I'll pick right back up where we left off.",
   act3_access:
-    "One more — Accessibility. It's just how I move that little pointer to what I'm showing you. " +
-    "Not to control your Mac, promise. Watch — I'll point right at the switch.",
+    "One more — Accessibility. It's just how I move that little pointer to what I'm showing you, " +
+    'not to control your Mac, promise. Watch — I’ll point right at the switch, then flip it on.',
   // Spoken WHILE the vision call runs in the background (buys time + holds attention, §Act 3b).
   act3_access_filler: "Alright, let me find that switch for you — one sec.",
   act3_access_fallback:
@@ -137,19 +139,6 @@ export const act3AccessFallbackLine: Segment[] = [
 export const act3AccessFillerLine: Segment[] = [
   { cacheKey: 'act3_access_filler', text: () => ACT3_LINES.act3_access_filler }
 ];
-
-/** Silent, sticky instruction shown in the notch WHILE the user toggles the switch (not spoken —
- *  the "why" was already said via the Act 3 lines above; this is just the do-it-now nudge). */
-export const ACT3_COACH: Record<'screen' | 'accessibility', { title: string; detail: string }> = {
-  screen: {
-    title: 'Screen Recording',
-    detail: 'Flip Kairo Tutor on in the list — macOS will reopen me, that’s normal.'
-  },
-  accessibility: {
-    title: 'Accessibility',
-    detail: 'Flip Kairo Tutor on — the switch right next to my name.'
-  }
-};
 
 /** Seeded practice prompts — 2-3 concrete phrases per mode so the mic is never blank (spec §8).
  *  Point uses ALWAYS-PRESENT targets (menu bar / status icons) so it works on any screen. */
