@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { OnboardingFlow } from './OnboardingFlow';
 import { hasNativeBridge } from './config';
@@ -52,10 +52,11 @@ export function OnboardingApp() {
     };
   }, []);
 
-  const advance = () => {
-    klog('onboarding', 'info', 'act advance', { from: actIndex });
+  // Stable identity so acts' effects (e.g. Act 3's status poll keyed on onAdvance) don't re-run
+  // every render.
+  const advance = useCallback(() => {
     setActIndex((i) => Math.min(ACT_COUNT - 1, i + 1));
-  };
+  }, []);
 
   // The window catches clicks only when the current surface needs them.
   useEffect(() => {

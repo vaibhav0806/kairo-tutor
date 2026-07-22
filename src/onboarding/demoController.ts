@@ -29,6 +29,9 @@ export type DemoCallbacks = {
   onThinking?: () => void;
   // The reply's first audio is playing (drop the "thinking" state, show "speaking").
   onSpeaking?: () => void;
+  // The reply text, delivered exactly when its audio starts — so a caller can show it in the notch
+  // in sync with the voice (never before). Used by the Act 2 say-hi drill.
+  onReply?: (text: string) => void;
 };
 
 // Outcome of one practice turn: `ok` → advance; otherwise show a retry nudge and let the user hold
@@ -82,7 +85,10 @@ export async function runTalkTurn(
   const transcript = (text ?? '').trim();
   klog('onboarding', 'info', 'talk turn', { transcript_len: transcript.length });
   const reply = (await onboardingChat(transcript, name)) || "I hear you! Let's keep going.";
-  await speak(bridge, reply, cb.onSpeaking);
+  await speak(bridge, reply, () => {
+    cb.onSpeaking?.();
+    cb.onReply?.(reply); // hand the reply text up the instant its audio starts (notch caption)
+  });
   return { transcriptLen: transcript.length };
 }
 

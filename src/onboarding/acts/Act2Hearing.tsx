@@ -30,12 +30,15 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
         });
         return;
       }
-      await setCoachCaption(bridge, { title: 'Thinking…', detail: 'One sec…' });
+      // Loading pulse (empty detail) while we transcribe + think — no unspoken "Thinking…" text.
+      await setCoachCaption(bridge, { title: 'Kairo', detail: '' });
       let transcriptLen = 0;
       try {
         ({ transcriptLen } = await runTalkTurn(bridge, audioBase64, name, {
-          onThinking: () => void setCoachCaption(bridge, { title: 'Thinking…', detail: 'One sec…' }),
-          onSpeaking: () => void emit('cursor:speaking')
+          onThinking: () => void setCoachCaption(bridge, { title: 'Kairo', detail: '' }),
+          onSpeaking: () => void emit('cursor:speaking'),
+          // Show Kairo's reply in the notch, in sync with its voice.
+          onReply: (reply) => void setCoachCaption(bridge, { title: 'Kairo', detail: reply })
         }));
       } catch (error) {
         klog('onboarding', 'error', 'act2 talk turn failed', { error: String(error) });
