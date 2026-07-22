@@ -1,10 +1,9 @@
-// The coach surface: onboarding pushes Kairo's spoken caption into the REAL notch panel using the
-// Phase-0 'coach' state (rendered by the Phase-1 modern notch as a caption line + optional chip).
-// This is deliberately tiny — the notch is Kairo's real home, so by the end the user already knows
-// where Kairo lives (master spec §3).
+// The coach surface: the two low-level primitives that push Kairo's caption into the REAL notch
+// panel using the Phase-0 'coach' state (rendered by the Phase-1 modern notch as a caption line +
+// optional chip). The onboarding acts never call these directly — they go through `useCoach`, which
+// guarantees the caption stays in sync with the voice. Kept tiny on purpose.
 import type { NativeBridge } from '../native/nativeBridge';
 import type { NotchPayload } from '../notch/types';
-import type { Segment } from './copy';
 import { klog } from '../core/logger';
 
 export type CoachCaption = { title: string; detail: string; chip?: string };
@@ -25,37 +24,4 @@ export async function setCoachCaption(bridge: NativeBridge, c: CoachCaption): Pr
 /** Clear the caption (hide the notch) between acts. */
 export async function clearCoachCaption(bridge: NativeBridge): Promise<void> {
   await bridge.hideNotch();
-}
-
-export type CoachSpeak = (
-  segments: Segment[],
-  name: string,
-  onStart?: () => void
-) => Promise<void>;
-
-/**
- * Speak a scripted line via the passed `speak` (useVoice.speak) AND mirror it as the notch caption.
- * MANDATE: the words never appear before the voice. So we first show a loading pulse in the notch
- * (empty caption), synth the audio, and reveal the caption text at the exact moment audio starts
- * (`onStart`). `opts.onReady` also fires then — callers use it to reveal a panel in perfect sync.
- * Resolves when speech ends; the caption stays up (sticky) until the next set/clear.
- */
-export async function coachSay(
-  bridge: NativeBridge,
-  speak: CoachSpeak,
-  segments: Segment[],
-  name: string,
-  opts: { title: string; chip?: string; onReady?: () => void }
-): Promise<void> {
-  const detail = segments
-    .map((s) => s.text(name))
-    .join(' ')
-    .trim();
-  // Loading state first (empty detail → the notch renders an accent loading pulse, no text).
-  await setCoachCaption(bridge, { title: opts.title, detail: '' });
-  await speak(segments, name, () => {
-    // Audio just started → NOW show the words + any synced surface.
-    void setCoachCaption(bridge, { title: opts.title, detail, chip: opts.chip });
-    opts.onReady?.();
-  });
 }

@@ -1,21 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
-import { createNativeBridge } from '../../native/nativeBridge';
 import { klog } from '../../core/logger';
 import { playRecordingCue } from '../../core/sound';
-import { useVoice } from '../useVoice';
+import { useCoach } from '../useCoach';
 import { ACT_LINES, ACT2_CHIP } from '../copy';
-import { setCoachCaption, clearCoachCaption, coachSay } from '../coachSurface';
 import { runTalkTurn } from '../demoController';
 import type { ActProps } from './actTypes';
 
-// Act 2 — "Can you hear me?" (master spec §4). Primes Mic + Input Monitoring (NOT Screen
-// Recording), then the hold-⌥⌃-say-hi drill: the chord is the ONLY Next. Renders null — the coach
-// caption in the real notch + the live pet halo are the whole UI.
+// Act 2 — "Can you hear me?" (master spec §4). Primes the mic (Screen Recording + Input Monitoring
+// are NOT needed here — the ⌥⌃ tap watches modifier keys only, which are exempt), then the
+// hold-⌥⌃-say-hi drill: the chord is the ONLY Next. Renders null — the notch caption + the live pet
+// halo are the whole UI.
 export function Act2Hearing({ name, onAdvance }: ActProps) {
-  const bridge = useMemo(() => createNativeBridge(), []);
-  const voice = useVoice();
+  const { say, thinking, caption, guide, clear, bridge } = useCoach(name);
   const [phase, setPhase] = useState<'primer' | 'drill'>('primer');
   const recordingRef = useRef(false);
   const doneRef = useRef(false);
@@ -24,41 +22,35 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
     async (audioBase64: string) => {
       // Empty audio / too-short tap: nudge, stay on the drill (never blocks).
       if (!audioBase64) {
-        await coachSay(bridge, voice.speak, [ACT_LINES.act2_short], name, {
-          title: 'Kairo',
-          chip: ACT2_CHIP
-        });
+        await say([ACT_LINES.act2_short], { chip: ACT2_CHIP });
         return;
       }
-      // Loading pulse (empty detail) while we transcribe + think — no unspoken "Thinking…" text.
-      await setCoachCaption(bridge, { title: 'Kairo', detail: '' });
+      // Loading pulse while we transcribe + think — no unspoken "Thinking…" text.
+      await thinking();
       let transcriptLen = 0;
       try {
         ({ transcriptLen } = await runTalkTurn(bridge, audioBase64, name, {
-          onThinking: () => void setCoachCaption(bridge, { title: 'Kairo', detail: '' }),
+          onThinking: () => void thinking(),
           onSpeaking: () => void emit('cursor:speaking'),
           // Show Kairo's reply in the notch, in sync with its voice.
-          onReply: (reply) => void setCoachCaption(bridge, { title: 'Kairo', detail: reply })
+          onReply: (reply) => void caption(reply)
         }));
       } catch (error) {
         klog('onboarding', 'error', 'act2 talk turn failed', { error: String(error) });
       }
       if (transcriptLen === 0) {
         // heard nothing — retry
-        await coachSay(bridge, voice.speak, [ACT_LINES.act2_empty], name, {
-          title: 'Kairo',
-          chip: ACT2_CHIP
-        });
+        await say([ACT_LINES.act2_empty], { chip: ACT2_CHIP });
         return;
       }
       doneRef.current = true; // one successful reply → advance
       void emit('cursor:celebrate'); // Phase 2 subtle celebration
       klog('onboarding', 'info', 'act2 first wow');
       await new Promise((r) => setTimeout(r, 900));
-      await clearCoachCaption(bridge);
+      await clear();
       onAdvance();
     },
-    [bridge, name, voice.speak, onAdvance]
+    [bridge, say, thinking, caption, clear, onAdvance]
   );
 
   // 2a — primer, ONE permission at a time (spec: mic FIRST, wait until it's actually granted, THEN
@@ -84,7 +76,7 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
     void (async () => {
       // STEP 1 — microphone only. Ask, then WAIT until it's genuinely granted before moving on.
       if (!(await micGranted())) {
-        await coachSay(bridge, voice.speak, [ACT_LINES.act2_mic], name, { title: 'Kairo' });
+        await say([ACT_LINES.act2_mic]);
         if (isCancelled()) return;
         await bridge.requestMicrophone(); // mic-only OS prompt
         // Leave the SPOKEN mic line up while we wait (no unspoken "waiting…" text — mandate §).
@@ -114,10 +106,7 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
     if (phase !== 'drill') return;
     doneRef.current = false;
     void invoke('set_onboarding_ptt', { active: true }).catch(() => {});
-    void coachSay(bridge, voice.speak, [ACT_LINES.act2_drill], name, {
-      title: 'Kairo',
-      chip: ACT2_CHIP
-    });
+    void say([ACT_LINES.act2_drill], { chip: ACT2_CHIP });
 
     const uns: Array<() => void> = [];
     // ⌥⌃ hold edge (recording-truth). Native already drives the pet halo (cursor:listening/level).
@@ -125,12 +114,8 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
       const active = Boolean(e.payload?.active);
       recordingRef.current = active;
       playRecordingCue(active);
-      if (active)
-        void setCoachCaption(bridge, {
-          title: 'Listening…',
-          detail: 'Say hi — I hear you.',
-          chip: ACT2_CHIP
-        });
+      // Silent sticky nudge while they hold — no spoken line, so `guide` (not `say`).
+      if (active) void guide('Listening…', 'Say hi — I hear you.', ACT2_CHIP);
     }).then((u) => uns.push(u));
 
     // Recorded WAV on release → run the real talk turn (reuses demoController).

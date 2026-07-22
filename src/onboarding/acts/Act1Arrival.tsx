@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
-import { createNativeBridge } from '../../native/nativeBridge';
 import { DEFAULT_ACCENT, applyAccent, clampAccent, getAccent } from '../../core/accent'; // Phase 0 + 7
 import { klog } from '../../core/logger';
 import { playChime } from '../../core/sound';
-import { useVoice } from '../useVoice';
+import { useCoach } from '../useCoach';
 import { ACT_LINES } from '../copy';
-import { clearCoachCaption, coachSay } from '../coachSurface';
 import { TempPanel } from './TempPanel';
 import { ColorWheel } from './ColorWheel';
 import type { ActProps } from './actTypes';
@@ -15,8 +13,7 @@ import type { ActProps } from './actTypes';
 // Act 1 — Arrival + Color (master spec §4). The pet wakes (Phase 2 entrance), then the user picks
 // Kairo's color on a full HSV wheel with LIVE theming across every surface.
 export function Act1Arrival({ name, onAdvance }: ActProps) {
-  const bridge = useMemo(() => createNativeBridge(), []);
-  const voice = useVoice();
+  const { say, clear, bridge } = useCoach(name);
   const [phase, setPhase] = useState<'wake' | 'color'>('wake');
   // The wheel panel appears only when the color line's audio starts — so panel + caption + voice
   // all land at the same instant (perfectly synced), never text-then-voice.
@@ -32,20 +29,16 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
   useEffect(() => {
     klog('onboarding', 'info', 'act1 wake');
     void emit('cursor:entrance'); // Phase 2 signature entrance (pet)
-    void coachSay(bridge, voice.speak, [ACT_LINES.act1_wake], name, {
-      title: 'Kairo',
-      onReady: () => playChime('entrance') // warm tone in sync with the wake voice (audio unlocked)
+    void say([ACT_LINES.act1_wake], {
+      onStart: () => playChime('entrance') // warm tone in sync with the wake voice (audio unlocked)
     }).then(() => setPhase('color'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 1b — give me a color: the wheel panel reveals in sync with the caption + voice (onReady).
+  // 1b — give me a color: the wheel panel reveals in sync with the caption + voice (onStart).
   useEffect(() => {
     if (phase !== 'color') return;
-    void coachSay(bridge, voice.speak, [ACT_LINES.act1_color], name, {
-      title: 'Kairo',
-      onReady: () => setColorReady(true)
-    });
+    void say([ACT_LINES.act1_color], { onStart: () => setColorReady(true) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
@@ -66,9 +59,9 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
     applyAccent(clamped);
     void emit('accent:changed', { hex: clamped });
     await invoke('set_accent', { hex: clamped }).catch(() => {}); // Phase 0: persist natively
-    await clearCoachCaption(bridge);
+    await clear();
     onAdvance();
-  }, [hex, bridge, onAdvance]);
+  }, [hex, clear, onAdvance]);
 
   return (
     <>

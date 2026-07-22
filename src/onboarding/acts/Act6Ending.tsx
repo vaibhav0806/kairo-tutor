@@ -1,10 +1,8 @@
-import { useEffect, useMemo } from 'react';
-import { createNativeBridge } from '../../native/nativeBridge';
+import { useEffect } from 'react';
 import { getAccent } from '../../core/accent';
 import { klog } from '../../core/logger';
-import { useVoice } from '../useVoice';
+import { useCoach } from '../useCoach';
 import { act6Ending } from '../copy';
-import { setCoachCaption } from '../coachSurface';
 import { getBackendJwt } from '../authClient';
 import { saveOnboarding } from '../backendClient';
 
@@ -23,26 +21,26 @@ export function Act6Ending({
   source: string;
   onComplete: () => void;
 }) {
-  const bridge = useMemo(() => createNativeBridge(), []);
-  const voice = useVoice();
+  const { say, bridge } = useCoach(name);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      await setCoachCaption(bridge, { title: "You're all set", detail: '' });
-      void voice.speak(act6Ending(name), name);
+      // Persist name + accent + source in the background — it must not delay the sign-off.
+      void (async () => {
+        const jwt = await getBackendJwt();
+        const accent = await getAccent(); // Phase 0
+        if (jwt) {
+          const ok = await saveOnboarding(jwt, name || 'there', source || 'unknown', accent);
+          klog('onboarding', 'info', 'onboarding saved', { ok, name_len: name.length, accent });
+        }
+        await bridge.setUserName(name); // cache the name natively for the notch (§12)
+      })();
 
-      // Persist name + accent + source to the account; cache the name natively for the notch.
-      const jwt = await getBackendJwt();
-      const accent = await getAccent(); // Phase 0
-      if (jwt) {
-        const ok = await saveOnboarding(jwt, name || 'there', source || 'unknown', accent);
-        klog('onboarding', 'info', 'onboarding saved', { ok, name_len: name.length, accent });
-      }
-      await bridge.setUserName(name);
-
-      // Let the sign-off finish, then finish onboarding (drops to Accessory; product goes live).
-      await new Promise((r) => setTimeout(r, 2600));
+      // The warm sign-off: notch caption == the spoken line.
+      await say(act6Ending(name));
+      // Let it land (peak-end), then finish onboarding (drops to Accessory; product goes live).
+      await new Promise((r) => setTimeout(r, 1200));
       if (!cancelled) onComplete();
     })();
     return () => {

@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { createNativeBridge } from '../../native/nativeBridge';
+import { useEffect, useState } from 'react';
 import { klog } from '../../core/logger';
-import { useVoice } from '../useVoice';
+import { useCoach } from '../useCoach';
 import { ACT5_SIGNIN } from '../copy';
-import { setCoachCaption, clearCoachCaption } from '../coachSurface';
 import { getAuthStatus, onAuthChanged, startGoogleAuth } from '../authClient';
 import { syncUserName } from '../userName';
 import { TempPanel } from './TempPanel';
@@ -16,13 +14,11 @@ import type { ActProps } from './actTypes';
  * held by the orchestrator for the warm ending + the account save.
  */
 export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void }) {
-  const bridge = useMemo(() => createNativeBridge(), []);
-  const voice = useVoice();
+  const { say, clear } = useCoach('');
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
-    void setCoachCaption(bridge, { title: 'Save your setup', detail: 'Sign in with Google.' });
-    void voice.speak(ACT5_SIGNIN, '');
+    void say(ACT5_SIGNIN); // caption == the spoken line
     let un = () => {};
     void getAuthStatus().then((s) => s.signed_in && setSignedIn(true));
     void onAuthChanged((s) => s && setSignedIn(true)).then((u) => {
@@ -42,7 +38,7 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
     if (!signedIn) return;
     void syncUserName().then((name) => {
       klog('onboarding', 'info', 'act5 signed in', { name_len: name.length });
-      void clearCoachCaption(bridge);
+      void clear();
       onSignedIn(name);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -33,8 +33,10 @@ export function useCoach(name: string) {
   const voice = useVoice();
 
   // Speak a line AND mirror it as the notch caption, perfectly in sync. Resolves when speech ends.
+  // `opts.onStart` fires at the exact instant the voice begins — use it to reveal a panel or play a
+  // chime so everything lands together (never a panel/text before the audio).
   const say = useCallback(
-    async (line: CoachLine, opts: { chip?: string } = {}): Promise<void> => {
+    async (line: CoachLine, opts: { chip?: string; onStart?: () => void } = {}): Promise<void> => {
       const segments: Segment[] = typeof line === 'string' ? [{ text: () => line }] : line;
       const detail = segments
         .map((s) => s.text(name))
@@ -43,8 +45,9 @@ export function useCoach(name: string) {
       if (!detail) return;
       await setCoachCaption(bridge, { title: 'Kairo', detail: '' }); // loading pulse (no words yet)
       await voice.speak(segments, name, () => {
-        // Voice just started → reveal the exact words now.
+        // Voice just started → reveal the exact words now, plus any synced surface.
         void setCoachCaption(bridge, { title: 'Kairo', detail, ...(opts.chip ? { chip: opts.chip } : {}) });
+        opts.onStart?.();
       });
     },
     [bridge, voice.speak, name]
