@@ -20,7 +20,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 core-foundation = "0.10"
 core-graphics = "0.25"
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", features = ["NSWindow", "NSResponder"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSWindow", "NSResponder", "NSApplication", "NSRunningApplication"] }
 objc2-av-foundation = "0.3.2"
 objc2-foundation = { version = "0.3.2", features = ["NSData", "NSArray", "NSString", "NSDictionary", "NSValue", "NSGeometry"] }
 objc2-vision = "0.3.2"

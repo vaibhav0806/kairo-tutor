@@ -267,11 +267,19 @@ pub(crate) fn request_microphone(app: tauri::AppHandle) -> PermissionStatus {
 /// Fire the Input-Monitoring prompt (and register Kairo in the Settings list). The ⌥⌃ tap needs
 /// this SEPARATELY from Accessibility. No-op once granted.
 #[tauri::command]
-pub(crate) fn request_input_monitoring() {
+pub(crate) fn request_input_monitoring(app: tauri::AppHandle) {
     #[cfg(target_os = "macos")]
     {
-        ensure_input_monitoring_access();
-        crate::klog!(ptt, info, "onboarding input-monitoring primer");
+        // CGRequestListenEventAccess must run on the MAIN thread to actually show the prompt AND
+        // register Kairo in the Input Monitoring list. Off the main thread it silently no-ops — the
+        // list stays "No Items" and the user can't grant it. (Mic already dispatches to main, which
+        // is why the mic prompt worked but this one didn't.)
+        let _ = app.run_on_main_thread(ensure_input_monitoring_access);
+        crate::klog!(ptt, info, "onboarding input-monitoring primer (main thread)");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
     }
 }
 
