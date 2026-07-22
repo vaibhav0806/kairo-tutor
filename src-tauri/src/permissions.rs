@@ -198,16 +198,38 @@ pub(crate) fn request_required_permissions(app: tauri::AppHandle) -> PermissionS
 /// and shows the system dialog. macOS forces a quit+reopen once granted — the onboarding resume
 /// marker lands us back in Act 3 on relaunch. Screen-capture auth is cached per-process, so
 /// `get_permission_status` may keep reading NotDetermined in THIS process until that relaunch.
+///
+/// CRITICAL: `CGRequestScreenCaptureAccess()` MUST run on the main thread. Fired from a Tauri worker
+/// thread (the default for a #[command]) it silently no-ops — returns false, shows no dialog, and
+/// never registers Kairo in the list. Same main-thread rule the mic + Input-Monitoring prompts obey.
 #[tauri::command]
-pub(crate) fn request_screen_recording() -> PermissionState {
+pub(crate) fn request_screen_recording(app: tauri::AppHandle) -> PermissionState {
     #[cfg(target_os = "macos")]
     {
-        let state = request_screen_recording_permission();
-        crate::klog!(app, info, state = ?state, "act3: requested screen recording");
+        if unsafe { CGPreflightScreenCaptureAccess() } {
+            return PermissionState::Granted; // already granted (e.g. resumed after the relaunch)
+        }
+        // Prompt + list-registration on the MAIN thread. The call returns immediately (auth is
+        // cached per-process, so it reads the OLD value now — the real grant lands after relaunch).
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let dispatched = app.run_on_main_thread(move || {
+            let granted = unsafe { CGRequestScreenCaptureAccess() };
+            let _ = sender.send(granted);
+        });
+        if dispatched.is_err() {
+            crate::klog!(app, error, "act3: could not dispatch screen-recording prompt to main thread");
+            return PermissionState::Unknown;
+        }
+        let state = match receiver.recv_timeout(std::time::Duration::from_secs(3)) {
+            Ok(true) => PermissionState::Granted,
+            _ => PermissionState::NotDetermined, // dialog shown; grant takes effect on relaunch
+        };
+        crate::klog!(app, info, state = ?state, "act3: requested screen recording (main thread)");
         return state;
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = app;
         PermissionState::Unknown
     }
 }
