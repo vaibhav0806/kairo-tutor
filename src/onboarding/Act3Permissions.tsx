@@ -67,26 +67,29 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       if (sub === 'screen') {
         if (spoke.current.screen) return;
         spoke.current.screen = true;
-        // Speak BOTH captions while Kairo is still foreground (the notch paints them reliably), THEN
-        // fire the OS prompt LAST. Firing it earlier backgrounds Kairo (the prompt/Settings take
-        // focus) and a backgrounded webview defers the next caption → stale notch. And we NEVER open
-        // System Settings ourselves; the prompt's own "Open System Settings" button is the one path.
+        // Order matters. Speak BOTH captions while Kairo is still FOREGROUND (a backgrounded webview
+        // defers repaints → the stale-notch bug), THEN register + open Settings. Registration fires
+        // the OS prompt on a fresh Mac (once ever — it can't be re-shown), so it's NOT a reliable
+        // path; opening Settings is what actually gets the user to the toggle. Both happen AFTER the
+        // captions are painted, so backgrounding Kairo no longer strands a caption update.
         await say(act3ScreenLine); // WHY
         if (stop()) return;
-        await say(act3ScreenGrantLine); // what's about to happen + do-it-now
+        await say(act3ScreenGrantLine); // do-it-now (references the list + the box-if-it-appears)
         if (stop()) return;
-        await bridge.requestScreenRecording(); // NOW the OS prompt (registers + is the only window)
+        await bridge.requestScreenRecording(); // register Kairo in the list (one-time prompt on fresh)
+        await bridge.openPermissionSettings('screenRecording'); // the reliable path to the toggle
         return;
       }
 
-      // sub === 'accessibility' — same shape: captions first (foreground), OS prompt last.
+      // sub === 'accessibility' — same shape: captions first (foreground), register + open last.
       if (spoke.current.access) return;
       spoke.current.access = true;
       await say(act3AccessIntroLine); // WHY
       if (stop()) return;
-      await say(act3AccessGrantLine); // what's about to happen + do-it-now
+      await say(act3AccessGrantLine); // do-it-now
       if (stop()) return;
-      await bridge.requestAccessibility(); // NOW the OS prompt (the only window)
+      await bridge.requestAccessibility(); // register Kairo in the AX list
+      await bridge.openPermissionSettings('accessibility'); // the reliable path to the toggle
     })().catch((e) =>
       klog('onboarding', 'error', 'act3 sub-step failed', { sub, error: String(e) })
     );

@@ -109,21 +109,22 @@ export const ACT3_LINES: Record<
   act3_screen:
     'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
     'and I never save it. I look, help, and forget.',
-  // Spoken while Kairo is still foreground, RIGHT BEFORE the OS prompt fires. Future tense — the box
-  // pops right after this line. Carries the do-it-now instruction so the caption that stays up was
-  // actually said. The grant needs a relaunch (macOS caches screen access per process).
+  // Spoken while Kairo is still foreground; Settings opens right after. Covers BOTH machines: the box
+  // (fresh Mac, once) and no box (already-asked) — either way the goal is the toggle in the list.
+  // The grant needs a relaunch (macOS caches screen access per process); frame it as planned.
   act3_screen_grant:
-    'In a second a little box’ll pop up — just tap “Open System Settings,” flip Kairo Tutor on, and ' +
-    'that’s it. macOS restarts me the moment you do — totally normal, I’ll pick right back up.',
+    'I’m pulling up Screen Recording now — flip Kairo Tutor on in that list. If a little box shows ' +
+    'up first, just tap “Open System Settings.” macOS restarts me the moment you do — totally normal, ' +
+    'I’ll pick right back up.',
   // Spoken FIRST on the accessibility sub-step (incl. right after the Screen-Recording relaunch), so
-  // it never feels out of nowhere. Sets the context BEFORE the OS prompt fires.
+  // it never feels out of nowhere. Sets the context BEFORE Settings opens.
   act3_access_intro:
     'Okay — last permission. Accessibility just lets me nudge the pointer to whatever I’m showing ' +
     'you, nothing more.',
-  // Also spoken before the OS prompt fires. Future tense.
+  // Same shape as the screen line — references the list + the box-if-it-appears.
   act3_access_grant:
-    'One more box’ll pop up — tap “Open System Settings,” then flip the Kairo Tutor switch on, right ' +
-    'next to my name. That’s the last one.'
+    'I’m opening Accessibility now — flip the Kairo Tutor switch on, right next to my name. If a box ' +
+    'shows up first, tap “Open System Settings.” That’s the last one.'
 };
 
 export const act3ScreenLine: Segment[] = [
