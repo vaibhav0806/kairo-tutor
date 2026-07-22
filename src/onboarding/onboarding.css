@@ -185,56 +185,75 @@ body.onboarding-document {
     0 0 30px -6px color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
-.ob-panel-icon.is-done {
-  color: #7ef0b8;
-  background: rgba(80, 220, 160, 0.14);
-  border-color: rgba(126, 240, 184, 0.3);
-  box-shadow: 0 0 30px -6px rgba(80, 220, 160, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+/* Sign-in card — minimal per Google's guidance: a Kairo wordmark (the trust signal, NOT a shield/
+   tick), one line, and the official button. The notch already speaks the instruction. */
+.ob-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-width: 268px;
+  padding: 4px 2px;
 }
-.ob-panel-title {
-  margin: -6px 0 2px;
+.ob-signin-mark {
   font-family: 'Instrument Serif', Georgia, serif;
   font-weight: 400;
-  font-size: 26px;
+  font-size: 34px;
+  line-height: 1;
   color: #f6f2ff;
+  letter-spacing: 0.01em;
+}
+.ob-signin-sub {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(240, 236, 250, 0.55);
+}
+.ob-signin-done {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 40%, #ffffff 60%);
 }
 
-/* Google sign-in — the conventional white pill with the 4-colour mark; pops off the dark card. */
-.ob-google-btn {
-  margin-top: 4px;
-  display: inline-flex;
+/* Official "Sign in with Google" — Light theme (white). Google's 4-colour G may only sit on white
+   or their dark #131314; white is the always-safe, highest-contrast choice on a near-black card. */
+.google-signin-btn {
+  display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 12px 22px 12px 17px;
-  border: 0;
-  border-radius: 999px;
+  justify-content: center;
+  gap: 10px; /* Google spec: 10px between logo + text */
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  box-sizing: border-box;
   background: #ffffff;
-  color: #1f1f22;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  border: 1px solid #747775; /* official Light-theme stroke */
+  border-radius: 12px;
+  font-family: 'Roboto', -apple-system, system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: 0.25px;
+  color: #1f1f1f;
   cursor: pointer;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.6) inset,
-    0 10px 26px -10px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(0, 0, 0, 0.04);
-  transition: transform 120ms cubic-bezier(0.2, 0, 0, 1), box-shadow 180ms ease, filter 180ms ease;
+  user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: background-color 120ms ease, box-shadow 120ms ease, transform 60ms ease;
 }
-.ob-google-btn:hover {
-  filter: brightness(0.98);
-  transform: translateY(-1px);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.6) inset,
-    0 14px 30px -10px rgba(0, 0, 0, 0.66),
-    0 0 0 1px rgba(0, 0, 0, 0.05);
+.google-signin-btn svg {
+  display: block;
+  flex: 0 0 auto;
 }
-.ob-google-btn:active {
-  transform: translateY(0) scale(0.97);
+.google-signin-btn:hover {
+  background: #f7f8f8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.34), 0 2px 6px rgba(0, 0, 0, 0.2);
 }
-.ob-google-g {
-  display: inline-grid;
-  place-items: center;
+.google-signin-btn:active {
+  background: #f1f3f4;
+  transform: translateY(0.5px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 /* Source chips + the free-text "other" row. */
@@ -326,7 +345,7 @@ body.onboarding-document {
 @media (prefers-reduced-motion: reduce) {
   .ob-color-panel,
   .ob-color-confirm,
-  .ob-google-btn,
+  .google-signin-btn,
   .ob-source-go,
   .ob-source-chips .ob-chip,
   .ob-vignette {

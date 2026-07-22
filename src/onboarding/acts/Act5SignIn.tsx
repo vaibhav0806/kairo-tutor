@@ -48,38 +48,31 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
 
   return (
     <TempPanel>
-      {signedIn ? (
-        <div className="ob-panel-body">
-          <div className="ob-panel-icon is-done" aria-hidden>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <span className="ob-panel-kicker">you’re in</span>
-          <p className="ob-panel-title">Signed in</p>
-        </div>
-      ) : (
-        <div className="ob-panel-body">
-          <div className="ob-panel-icon" aria-hidden>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M12 3l7 3v5c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6l7-3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-              <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <span className="ob-panel-kicker">save your setup</span>
-          <button type="button" className="ob-google-btn" onClick={() => void startGoogleAuth()}>
-            <span className="ob-google-g" aria-hidden>
-              <svg width="18" height="18" viewBox="0 0 48 48">
-                <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.7-2 5-4.4 6.6v5.5h7.1c4.1-3.8 6.6-9.4 6.6-16.1z" />
-                <path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.4l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.1 15.4 46 24 46z" />
-                <path fill="#FBBC05" d="M11.8 28.2c-.4-1.3-.7-2.7-.7-4.2s.2-2.9.7-4.2v-5.7H4.5C3 17.1 2.1 20.4 2.1 24s.9 6.9 2.4 9.9l7.3-5.7z" />
-                <path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.1 29.9 2 24 2 15.4 2 8.1 6.9 4.5 14.1l7.3 5.7c1.7-5.2 6.5-9 12.2-9z" />
+      <div className="ob-signin">
+        <span className="ob-signin-mark">Kairo</span>
+        {signedIn ? (
+          <span className="ob-signin-done">Signed in — one sec…</span>
+        ) : (
+          <>
+            <span className="ob-signin-sub">Sign in to save your setup</span>
+            {/* Official "Sign in with Google" — Light theme (white) per Google's branding guidelines;
+                the crisp white button is the always-safe placement on a near-black card. */}
+            <button
+              type="button"
+              className="google-signin-btn"
+              onClick={() => void startGoogleAuth()}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
               </svg>
-            </span>
-            Continue with Google
-          </button>
-        </div>
-      )}
+              <span>Continue with Google</span>
+            </button>
+          </>
+        )}
+      </div>
     </TempPanel>
   );
 }
