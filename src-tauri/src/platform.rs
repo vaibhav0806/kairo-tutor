@@ -1,47 +1,40 @@
-//! Frontmost-app introspection (name, bundle id, window title, browser URL) and
-//! the sensitive-app guard, plus the `get_active_app` command.
+//! Frontmost-app introspection (name, bundle id, window title) and the sensitive-app guard, plus the
+//! `get_active_app` command.
+//!
+//! Name + bundle id come from `NSWorkspace.frontmostApplication` (a plain, prompt-free read). We
+//! deliberately do NOT use AppleScript against "System Events" — that trips the macOS Automation
+//! prompt ("Kairo Tutor wants access to control System Events"), which is a jarring extra permission
+//! ask for what should be a silent lookup.
 
 use crate::types::ActiveApp;
-use std::process::Command;
 
+// The frontmost application via NSWorkspace — no permission prompt, unlike the old System-Events
+// AppleScript. Returns name + bundle id; window title isn't exposed here (see frontmost_window_title).
 #[cfg(target_os = "macos")]
-pub(crate) fn run_osascript(script: &str) -> Option<String> {
-    let output = Command::new("osascript")
-        .arg("-e")
-        .arg(script)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let value = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+fn frontmost_running_app() -> Option<objc2::rc::Retained<objc2_app_kit::NSRunningApplication>> {
+    let ws = unsafe { objc2_app_kit::NSWorkspace::sharedWorkspace() };
+    ws.frontmostApplication()
 }
 
 #[cfg(target_os = "macos")]
 pub(crate) fn frontmost_app_name() -> Option<String> {
-    run_osascript(
-        r#"tell application "System Events" to get name of first process whose frontmost is true"#,
-    )
+    let app = frontmost_running_app()?;
+    app.localizedName().map(|s| s.to_string())
 }
 
 #[cfg(target_os = "macos")]
 pub(crate) fn frontmost_bundle_id() -> Option<String> {
-    run_osascript(
-        r#"tell application "System Events" to get bundle identifier of first process whose frontmost is true"#,
-    )
+    let app = frontmost_running_app()?;
+    app.bundleIdentifier().map(|s| s.to_string())
 }
 
 #[cfg(target_os = "macos")]
 pub(crate) fn frontmost_window_title() -> Option<String> {
-    run_osascript(
-        r#"tell application "System Events" to tell (first process whose frontmost is true) to get name of front window"#,
-    )
+    // Dropped on purpose: the only ways to read another app's window title are AppleScript against
+    // "System Events" (triggers the Automation prompt — see image the user flagged) or the
+    // Accessibility API. Not worth a permission prompt for optional gate context. A future AX-based
+    // reader (reusing the Accessibility grant, no prompt) could restore it.
+    None
 }
 
 #[tauri::command]
