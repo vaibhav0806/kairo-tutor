@@ -28,7 +28,7 @@ const LISTEN_HINT: Record<DemoMode, string> = {
 };
 
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
-  const { say, thinking, caption, guide, bridge } = useCoach('');
+  const { say, thinking, caption, guide, voice, bridge } = useCoach('');
   const [index, setIndex] = useState(0);
   const step = STEPS[index];
   const mode = DEMO_MODE[step.id] as DemoMode; // STEPS only ever holds the two practice beats
@@ -149,6 +149,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       recordingRef.current = active;
       playRecordingCue(active); // same "boop"/"toing" cues as the real product
       if (active) {
+        voice.stop(); // the user grabbed the chord mid-instruction → cut Kairo off, don't talk over them
         gestureBufferRef.current = [];
         void guide('Listening…', LISTEN_HINT[mode]);
         void hideSelf();

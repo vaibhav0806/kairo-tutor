@@ -88,6 +88,16 @@ export function useVoice() {
     [],
   );
 
+  // Interrupt whatever's being spoken RIGHT NOW (e.g. the user grabbed ⌥⌃ mid-instruction to just
+  // do the thing). Bumping the generation cancels the in-flight speak() loop; pausing kills the
+  // audio. Does NOT touch the notch caption — the caller keeps the text up while the user holds.
+  const stop = useCallback(() => {
+    genRef.current += 1;
+    audioRef.current?.pause();
+    pendingRef.current = null;
+    setSpeaking(false);
+  }, []);
+
   // First user gesture unlocks audio + replays any line that was blocked.
   useEffect(() => {
     const unlock = () => {
@@ -204,5 +214,5 @@ export function useVoice() {
     [teardown],
   );
 
-  return { speak, isSpeaking, startListening, stopListening, isListening, level };
+  return { speak, stop, isSpeaking, startListening, stopListening, isListening, level };
 }

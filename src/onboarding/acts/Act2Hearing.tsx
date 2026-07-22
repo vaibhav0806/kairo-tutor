@@ -13,7 +13,7 @@ import type { ActProps } from './actTypes';
 // hold-⌥⌃-say-hi drill: the chord is the ONLY Next. Renders null — the notch caption + the live pet
 // halo are the whole UI.
 export function Act2Hearing({ name, onAdvance }: ActProps) {
-  const { say, thinking, caption, guide, clear, bridge } = useCoach(name);
+  const { say, thinking, caption, guide, clear, voice, bridge } = useCoach(name);
   const [phase, setPhase] = useState<'primer' | 'drill'>('primer');
   const recordingRef = useRef(false);
   const doneRef = useRef(false);
@@ -114,8 +114,11 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
       const active = Boolean(e.payload?.active);
       recordingRef.current = active;
       playRecordingCue(active);
-      // Silent sticky nudge while they hold — no spoken line, so `guide` (not `say`).
-      if (active) void guide('Listening…', 'Say hi — I hear you.', ACT2_CHIP);
+      if (active) {
+        voice.stop(); // grabbed the chord mid-line → cut Kairo off so it isn't talking over them
+        // Silent sticky nudge while they hold — no spoken line, so `guide` (not `say`).
+        void guide('Listening…', 'Say hi — I hear you.', ACT2_CHIP);
+      }
     }).then((u) => uns.push(u));
 
     // Recorded WAV on release → run the real talk turn (reuses demoController).
