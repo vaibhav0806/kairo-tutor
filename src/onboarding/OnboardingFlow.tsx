@@ -133,6 +133,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     demoDoneRef.current = false;
     gestureBufferRef.current = [];
     recordingRef.current = false;
+    // Ensure the ⌥⌃ tap is live. Act 2's primer normally starts it, but a relaunch can resume STRAIGHT
+    // to this act (Screen-Recording grant → quit+reopen), skipping Act 2 — then the tap was never
+    // spawned and holding the chord does nothing. startPtt is idempotent, so this is safe either way.
+    void bridge.startPtt().catch(() => {});
     void invoke('set_onboarding_ptt', { active: true }).catch(() => {});
 
     const push = (u: () => void) => (disposed ? u() : unlisteners.push(u));
