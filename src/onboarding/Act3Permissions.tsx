@@ -2,12 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { klog } from '../core/logger';
 import { useCoach } from './useCoach';
-import {
-  act3ScreenLine,
-  act3ScreenGrantLine,
-  act3AccessIntroLine,
-  act3AccessGrantLine
-} from './copy';
+import { act3ScreenLine, act3AccessLine } from './copy';
 import { nextPermissionStep, type Act3SubStep } from './act3SubStep';
 import type { ActProps } from './acts/actTypes';
 
@@ -67,29 +62,21 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       if (sub === 'screen') {
         if (spoke.current.screen) return;
         spoke.current.screen = true;
-        // Order matters. Speak BOTH captions while Kairo is still FOREGROUND (a backgrounded webview
-        // defers repaints → the stale-notch bug), THEN register + open Settings. Registration fires
-        // the OS prompt on a fresh Mac (once ever — it can't be re-shown), so it's NOT a reliable
-        // path; opening Settings is what actually gets the user to the toggle. Both happen AFTER the
-        // captions are painted, so backgrounding Kairo no longer strands a caption update.
-        await say(act3ScreenLine); // WHY
+        // ONE spoken line (painted while Kairo is foreground → no stale notch), THEN the OS pop-up.
+        // Prompt-only: the pop-up's own "Open System Settings" button is the single path to the
+        // toggle — we never open System Settings ourselves.
+        await say(act3ScreenLine);
         if (stop()) return;
-        await say(act3ScreenGrantLine); // do-it-now (references the list + the box-if-it-appears)
-        if (stop()) return;
-        await bridge.requestScreenRecording(); // register Kairo in the list (one-time prompt on fresh)
-        await bridge.openPermissionSettings('screenRecording'); // the reliable path to the toggle
+        await bridge.requestScreenRecording(); // the OS pop-up (the only window)
         return;
       }
 
-      // sub === 'accessibility' — same shape: captions first (foreground), register + open last.
+      // sub === 'accessibility' — same shape: one line, then the pop-up.
       if (spoke.current.access) return;
       spoke.current.access = true;
-      await say(act3AccessIntroLine); // WHY
+      await say(act3AccessLine);
       if (stop()) return;
-      await say(act3AccessGrantLine); // do-it-now
-      if (stop()) return;
-      await bridge.requestAccessibility(); // register Kairo in the AX list
-      await bridge.openPermissionSettings('accessibility'); // the reliable path to the toggle
+      await bridge.requestAccessibility(); // the OS pop-up (the only window)
     })().catch((e) =>
       klog('onboarding', 'error', 'act3 sub-step failed', { sub, error: String(e) })
     );

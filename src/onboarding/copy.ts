@@ -102,42 +102,25 @@ export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
  * Screen Recording is spoken first (it forces the relaunch); Accessibility is reframed as
  * "steer the pointer", never "control your Mac".
  */
-export const ACT3_LINES: Record<
-  'act3_screen' | 'act3_screen_grant' | 'act3_access_intro' | 'act3_access_grant',
-  string
-> = {
+// ONE line per permission (why + do-it-now in a single audio). Prompt-only: the spoken line points
+// the user at the OS pop-up's "Open System Settings" button — we never open Settings ourselves.
+export const ACT3_LINES: Record<'act3_screen' | 'act3_access', string> = {
   act3_screen:
     'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
-    'and I never save it. I look, help, and forget.',
-  // Spoken while Kairo is still foreground; Settings opens right after. Covers BOTH machines: the box
-  // (fresh Mac, once) and no box (already-asked) — either way the goal is the toggle in the list.
-  // The grant needs a relaunch (macOS caches screen access per process); frame it as planned.
-  act3_screen_grant:
-    'I’m pulling up Screen Recording now — flip Kairo Tutor on in that list. If a little box shows ' +
-    'up first, just tap “Open System Settings.” macOS restarts me the moment you do — totally normal, ' +
-    'I’ll pick right back up.',
-  // Spoken FIRST on the accessibility sub-step (incl. right after the Screen-Recording relaunch), so
-  // it never feels out of nowhere. Sets the context BEFORE Settings opens.
-  act3_access_intro:
-    'Okay — last permission. Accessibility just lets me nudge the pointer to whatever I’m showing ' +
-    'you, nothing more.',
-  // Same shape as the screen line — references the list + the box-if-it-appears.
-  act3_access_grant:
-    'I’m opening Accessibility now — flip the Kairo Tutor switch on, right next to my name. If a box ' +
-    'shows up first, tap “Open System Settings.” That’s the last one.'
+    'and I never save it. I look, help, and forget. A box’s about to pop up: just tap “Open System ' +
+    'Settings,” flip Kairo Tutor on, and that’s it. macOS restarts me the moment you do — totally ' +
+    'normal, I’ll pick right back up.',
+  act3_access:
+    'Okay, last one — Accessibility. It just lets me nudge the pointer to whatever I’m showing you, ' +
+    'nothing more. A box’s about to pop up: tap “Open System Settings,” then flip the Kairo Tutor ' +
+    'switch on, right next to my name. And that’s everything.'
 };
 
 export const act3ScreenLine: Segment[] = [
   { cacheKey: 'act3_screen', text: () => ACT3_LINES.act3_screen }
 ];
-export const act3ScreenGrantLine: Segment[] = [
-  { cacheKey: 'act3_screen_grant', text: () => ACT3_LINES.act3_screen_grant }
-];
-export const act3AccessIntroLine: Segment[] = [
-  { cacheKey: 'act3_access_intro', text: () => ACT3_LINES.act3_access_intro }
-];
-export const act3AccessGrantLine: Segment[] = [
-  { cacheKey: 'act3_access_grant', text: () => ACT3_LINES.act3_access_grant }
+export const act3AccessLine: Segment[] = [
+  { cacheKey: 'act3_access', text: () => ACT3_LINES.act3_access }
 ];
 
 /** Seeded practice prompts — 2-3 concrete phrases per mode so the mic is never blank (spec §8).
