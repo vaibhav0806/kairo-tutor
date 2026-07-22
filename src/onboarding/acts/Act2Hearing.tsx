@@ -85,7 +85,7 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
         await coachSay(bridge, voice.speak, [ACT_LINES.act2_mic], name, { title: 'Kairo' });
         if (isCancelled()) return;
         await bridge.requestMicrophone(); // mic-only OS prompt
-        await setCoachCaption(bridge, { title: 'Waiting on your mic…', detail: "Hit Allow and we're good." });
+        // Leave the SPOKEN mic line up while we wait (no unspoken "waiting…" text — mandate §).
         await waitUntil(micGranted);
         if (isCancelled()) return;
         klog('onboarding', 'info', 'act2 mic granted');
@@ -100,10 +100,8 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
         if (isCancelled()) return;
         await bridge.requestInputMonitoring(); // registers Kairo + shows the keystroke prompt
         await bridge.startPtt(); // creates the ⌥⌃ tap (retries until granted)
-        await setCoachCaption(bridge, {
-          title: 'One quick toggle',
-          detail: 'Flip on Kairo Tutor in the Input Monitoring list — then we roll.'
-        });
+        // Leave the SPOKEN act2_im line up ("…flip me on in that list") while we wait — no separate
+        // unspoken caption (that was the text that "wasn't said").
         await waitUntil(imGranted);
         if (isCancelled()) return;
         klog('onboarding', 'info', 'act2 input-monitoring granted');
