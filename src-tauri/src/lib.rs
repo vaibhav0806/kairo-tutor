@@ -444,6 +444,9 @@ fn activate_frontmost(app: &tauri::AppHandle) {
         let mut activated = false;
         if let Some(mtm) = objc2::MainThreadMarker::new() {
             let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+            // Modern (macOS 14+) — the documented replacement; works for the current app.
+            ns_app.activate();
+            // Legacy — still honored on older macOS; ignored on Sonoma+ (harmless).
             #[allow(deprecated)]
             ns_app.activateIgnoringOtherApps(true);
             activated = true;
