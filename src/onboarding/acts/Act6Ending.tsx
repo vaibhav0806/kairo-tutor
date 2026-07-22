@@ -21,7 +21,7 @@ export function Act6Ending({
   source: string;
   onComplete: () => void;
 }) {
-  const { say, bridge } = useCoach(name);
+  const { say, clear, bridge } = useCoach(name);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,9 +39,12 @@ export function Act6Ending({
 
       // The warm sign-off: notch caption == the spoken line.
       await say(act6Ending(name));
-      // Let it land (peak-end), then finish onboarding (drops to Accessory; product goes live).
-      await new Promise((r) => setTimeout(r, 1200));
-      if (!cancelled) onComplete();
+      // Let it land (peak-end) ~1.5s, then the notch fades away (don't leave it hanging), and
+      // finish onboarding (drops to Accessory; product goes live).
+      await new Promise((r) => setTimeout(r, 1500));
+      if (cancelled) return;
+      await clear(); // notch disappears
+      onComplete();
     })();
     return () => {
       cancelled = true;

@@ -21,8 +21,17 @@ export function Act5Source({ onPick }: { onPick: (source: string) => void }) {
 
   return (
     <TempPanel>
-      <div className="ob-field-col">
-        <div className="ob-chips">
+      <div className="ob-panel-body">
+        <div className="ob-panel-icon" aria-hidden>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M20 11.5a8.5 8.5 0 0 1-12.2 7.6L4 20l1-3.6A8.5 8.5 0 1 1 20 11.5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+            <circle cx="8.5" cy="11.5" r="1.1" fill="currentColor" />
+            <circle cx="12" cy="11.5" r="1.1" fill="currentColor" />
+            <circle cx="15.5" cy="11.5" r="1.1" fill="currentColor" />
+          </svg>
+        </div>
+        <span className="ob-panel-kicker">one last thing</span>
+        <div className="ob-source-chips">
           {ONBOARDING_SOURCES.map((s) =>
             s === 'Other' ? null : (
               <button key={s} type="button" className="ob-chip" onClick={() => pick(s)}>
@@ -31,9 +40,8 @@ export function Act5Source({ onPick }: { onPick: (source: string) => void }) {
             )
           )}
         </div>
-        <div className="ob-chips">
+        <div className="ob-source-other">
           <input
-            className="ob-chip"
             value={other}
             placeholder="somewhere else…"
             onChange={(e) => setOther(e.target.value)}
@@ -41,11 +49,14 @@ export function Act5Source({ onPick }: { onPick: (source: string) => void }) {
           />
           <button
             type="button"
-            className="ob-cta"
+            className="ob-source-go"
             disabled={!other.trim()}
+            aria-label="Done"
             onClick={() => pick(other.trim())}
           >
-            Done
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         </div>
       </div>
