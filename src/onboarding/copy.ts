@@ -109,20 +109,21 @@ export const ACT3_LINES: Record<
   act3_screen:
     'To point things out, I need to see your screen — but only while you hold Option and Control, ' +
     'and I never save it. I look, help, and forget.',
-  // Spoken once Settings is open (references the LIST — reliable, since the one-time OS prompt may
-  // not re-appear). Carries the do-it-now instruction, so the caption that stays up was actually
-  // said. The grant needs a relaunch (macOS caches screen access per process); frame it as planned.
+  // Spoken while Kairo is still foreground, RIGHT BEFORE the OS prompt fires. Future tense — the box
+  // pops right after this line. Carries the do-it-now instruction so the caption that stays up was
+  // actually said. The grant needs a relaunch (macOS caches screen access per process).
   act3_screen_grant:
-    'I’ve pulled up Screen Recording — flip Kairo Tutor on in that list, and that’s it. ' +
-    'macOS restarts me the moment you do — totally normal, I’ll pick right back up.',
+    'In a second a little box’ll pop up — just tap “Open System Settings,” flip Kairo Tutor on, and ' +
+    'that’s it. macOS restarts me the moment you do — totally normal, I’ll pick right back up.',
   // Spoken FIRST on the accessibility sub-step (incl. right after the Screen-Recording relaunch), so
-  // it never feels out of nowhere. Sets the context BEFORE Settings opens.
+  // it never feels out of nowhere. Sets the context BEFORE the OS prompt fires.
   act3_access_intro:
     'Okay — last permission. Accessibility just lets me nudge the pointer to whatever I’m showing ' +
     'you, nothing more.',
-  // References the Settings list → the toggle. No relaunch for this one.
+  // Also spoken before the OS prompt fires. Future tense.
   act3_access_grant:
-    'I’ve opened it up — flip the Kairo Tutor switch on, right next to my name. That’s the last one.'
+    'One more box’ll pop up — tap “Open System Settings,” then flip the Kairo Tutor switch on, right ' +
+    'next to my name. That’s the last one.'
 };
 
 export const act3ScreenLine: Segment[] = [

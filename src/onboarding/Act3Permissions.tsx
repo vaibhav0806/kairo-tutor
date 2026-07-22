@@ -67,26 +67,26 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       if (sub === 'screen') {
         if (spoke.current.screen) return;
         spoke.current.screen = true;
+        // Speak BOTH captions while Kairo is still foreground (the notch paints them reliably), THEN
+        // fire the OS prompt LAST. Firing it earlier backgrounds Kairo (the prompt/Settings take
+        // focus) and a backgrounded webview defers the next caption → stale notch. And we NEVER open
+        // System Settings ourselves; the prompt's own "Open System Settings" button is the one path.
         await say(act3ScreenLine); // WHY
         if (stop()) return;
-        // Register Kairo in the list (fire-and-forget prompt) THEN open Settings — the reliable path
-        // to the toggle, since the OS prompt only ever fires once per install.
-        await bridge.requestScreenRecording();
-        await bridge.openPermissionSettings('screenRecording');
+        await say(act3ScreenGrantLine); // what's about to happen + do-it-now
         if (stop()) return;
-        await say(act3ScreenGrantLine); // do-it-now (references the Settings list + the restart)
+        await bridge.requestScreenRecording(); // NOW the OS prompt (registers + is the only window)
         return;
       }
 
-      // sub === 'accessibility'
+      // sub === 'accessibility' — same shape: captions first (foreground), OS prompt last.
       if (spoke.current.access) return;
       spoke.current.access = true;
-      await say(act3AccessIntroLine); // WHY (context first — no surprise)
+      await say(act3AccessIntroLine); // WHY
       if (stop()) return;
-      await bridge.requestAccessibility(); // registers Kairo in the AX list
-      await bridge.openPermissionSettings('accessibility'); // reliable path to the toggle
+      await say(act3AccessGrantLine); // what's about to happen + do-it-now
       if (stop()) return;
-      await say(act3AccessGrantLine); // do-it-now (references the Settings list + the toggle)
+      await bridge.requestAccessibility(); // NOW the OS prompt (the only window)
     })().catch((e) =>
       klog('onboarding', 'error', 'act3 sub-step failed', { sub, error: String(e) })
     );
