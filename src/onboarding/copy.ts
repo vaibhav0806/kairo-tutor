@@ -77,7 +77,7 @@ export const ACT_LINES: Record<string, Segment> = {
   act2_im: {
     cacheKey: 'act2_im',
     text: () =>
-      "Nice! One more — let me notice when you hold two keys. I just opened the settings for you; flip me on in that list."
+      "Nice! One more thing, to help me notice when you hold down keys to talk to me. I just opened the settings for you; flip me on in that list."
   },
   act2_drill: {
     cacheKey: 'act2_drill',

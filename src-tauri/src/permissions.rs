@@ -43,6 +43,19 @@ extern "C" {
     fn CGRequestListenEventAccess() -> bool;
 }
 
+// IOKit's HID access APIs are the RELIABLE way to register an app in the Input Monitoring list +
+// prompt (CGRequestListenEventAccess is known to sometimes prompt without listing the app — Apple
+// forums). `kIOHIDRequestTypeListenEvent = 1`. IOHIDCheckAccess returns an IOHIDAccessType:
+// 0 = granted, 1 = denied, 2 = unknown/not-determined. IOHIDRequestAccess prompts + registers.
+#[cfg(target_os = "macos")]
+const K_IOHID_REQUEST_TYPE_LISTEN_EVENT: u32 = 1;
+#[cfg(target_os = "macos")]
+#[link(name = "IOKit", kind = "framework")]
+extern "C" {
+    fn IOHIDCheckAccess(request: u32) -> u32;
+    fn IOHIDRequestAccess(request: u32) -> bool;
+}
+
 #[tauri::command]
 pub(crate) fn get_permission_status() -> PermissionStatus {
     #[cfg(target_os = "macos")]
@@ -288,10 +301,12 @@ pub(crate) fn request_input_monitoring(app: tauri::AppHandle) {
 pub(crate) fn get_input_monitoring_status() -> String {
     #[cfg(target_os = "macos")]
     {
-        return if unsafe { CGPreflightListenEventAccess() } {
-            "granted"
-        } else {
-            "not_determined"
+        // IOHIDCheckAccess: 0=granted, 1=denied, 2=unknown. Prefer it over CGPreflight (which can
+        // read "granted" off a modifier-only tap that never actually needed the grant).
+        return match unsafe { IOHIDCheckAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT) } {
+            0 => "granted",
+            1 => "not_determined", // denied → keep guiding the user to flip it on
+            _ => "not_determined",
         }
         .to_string();
     }
@@ -301,14 +316,32 @@ pub(crate) fn get_input_monitoring_status() -> String {
     }
 }
 
-// Ask for Input Monitoring so the ⌥⌃ push-to-talk tap can receive modifier events.
-// No-op (returns true) once granted; otherwise prompts + lists the app in Settings.
+// Ask for Input Monitoring so the ⌥⌃ push-to-talk tap can receive modifier events. Uses IOKit's
+// IOHIDRequestAccess (the reliable "prompt + LIST the app in Settings" path). Also nudges the
+// CoreGraphics variant for good measure. Must run on the MAIN thread.
 #[cfg(target_os = "macos")]
 pub(crate) fn ensure_input_monitoring_access() {
     unsafe {
-        if !CGPreflightListenEventAccess() {
+        let hid_access = IOHIDCheckAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT); // 0=granted 1=denied 2=unknown
+        // Request unconditionally unless already granted — this is what registers Kairo in the list.
+        let hid_requested = if hid_access == 0 {
+            true
+        } else {
+            IOHIDRequestAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT)
+        };
+        // Belt-and-suspenders CG call (some macOS builds only list via one path).
+        let cg_pre = CGPreflightListenEventAccess();
+        if !cg_pre {
             let _ = CGRequestListenEventAccess();
         }
+        crate::klog!(
+            ptt,
+            info,
+            hid_access = hid_access,
+            hid_requested = hid_requested,
+            cg_pre = cg_pre,
+            "ensure IM access (IOKit + CG)"
+        );
     }
 }
 
