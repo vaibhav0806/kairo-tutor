@@ -97,16 +97,6 @@ export const ACT_LINES: Record<string, Segment> = {
 /** The seeded-prompt chip shown during the Act 2 say-hi drill (master spec §8). */
 export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
 
-/** The permissions line spoken depends on what's already granted — only mention what's missing. */
-export const PERMISSION_LINES: Record<'perm_both' | 'perm_screen' | 'perm_access', string> = {
-  perm_both:
-    'Two last things. I need Screen Recording so I can see your screen, and Accessibility so I can point things out. Grant them below.',
-  // Accessibility already on → only Screen Recording missing.
-  perm_screen: 'Just one more. Turn on Screen Recording so I can see your screen.',
-  // Screen Recording already on → only Accessibility missing.
-  perm_access: 'Almost there. Turn on Accessibility so I can point things out for you.',
-};
-
 /**
  * Act 3 — "Earn the Eyes". Two separate moments, each: why + benefit + honest privacy line.
  * Screen Recording is spoken first (it forces the relaunch); Accessibility is reframed as
@@ -161,13 +151,6 @@ export const ACT3_COACH: Record<'screen' | 'accessibility', { title: string; det
   }
 };
 
-/** Which permission line to speak for the current grant state. null → both granted (say nothing). */
-export function permissionSpeech(screenOk: boolean, accessibilityOk: boolean): Segment[] | null {
-  if (screenOk && accessibilityOk) return null;
-  const key: keyof typeof PERMISSION_LINES = accessibilityOk ? 'perm_screen' : !screenOk ? 'perm_both' : 'perm_access';
-  return [{ cacheKey: key, text: () => PERMISSION_LINES[key] }];
-}
-
 /** Seeded practice prompts — 2-3 concrete phrases per mode so the mic is never blank (spec §8).
  *  Point uses ALWAYS-PRESENT targets (menu bar / status icons) so it works on any screen. */
 export const SEEDED_PROMPTS: Record<'talk' | 'point' | 'circle', string[]> = {
@@ -207,8 +190,6 @@ export const CACHED_LINES: { key: string; text: string }[] = [
   ...STEPS.flatMap((s) => s.speech)
     .filter((seg) => seg.cacheKey)
     .map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
-  // The permission variants aren't reachable via STEPS.speech (spoken dynamically), so add them.
-  ...Object.entries(PERMISSION_LINES).map(([key, text]) => ({ key, text })),
   // Act 1-2 coach lines (Phase 3).
   ...Object.values(ACT_LINES).map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
   // Act 3 permission lines (Phase 4).

@@ -26,37 +26,3 @@ export function KairoOrb({ mode, level, progress }: { mode: OrbMode; level: numb
     </div>
   );
 }
-
-export function VoiceInput(props: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  listening: boolean;
-  processing?: boolean;
-  onMic: () => void;
-  onSubmit: () => void;
-}) {
-  return (
-    <div className={`ob-input${props.processing ? ' is-processing' : ''}`}>
-      <input
-        value={props.value}
-        placeholder={props.processing ? 'thinking…' : props.listening ? 'listening…' : props.placeholder}
-        onChange={(e) => props.onChange(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && props.onSubmit()}
-        disabled={props.processing}
-        autoFocus
-        spellCheck={false}
-      />
-      <button type="button" className={`ob-mic${props.listening ? ' is-live' : ''}`} onClick={props.onMic} disabled={props.processing} aria-label={props.listening ? 'Stop' : 'Talk'}>
-        {props.processing ? (
-          <span className="ob-mic-spin" />
-        ) : (
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor" />
-            <path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        )}
-      </button>
-    </div>
-  );
-}
