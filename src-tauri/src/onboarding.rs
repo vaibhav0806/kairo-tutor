@@ -98,11 +98,22 @@ pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
         #[cfg(target_os = "macos")]
         {
             let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+            // Activate the APP (not just focus the window) — that's what pulls Kairo in FRONT of the
+            // browser after the Google hand-off. Plain window.set_focus doesn't front the app on
+            // Sonoma+, but the kairo:// deep-link open grants us activation rights, so
+            // NSApplication.activate() actually takes here. activateIgnoringOtherApps backs it up on
+            // older macOS. Without this, sign-in completes but the user is left staring at the browser.
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+                ns_app.activate();
+                #[allow(deprecated)]
+                ns_app.activateIgnoringOtherApps(true);
+            }
         }
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
-        crate::klog!(auth, info, "focused onboarding window after auth callback");
+        crate::klog!(auth, info, "activated Kairo + focused onboarding window after auth callback");
     });
 }
 
