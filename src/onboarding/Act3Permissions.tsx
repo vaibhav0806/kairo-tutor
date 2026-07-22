@@ -69,20 +69,24 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
         spoke.current.screen = true;
         await say(act3ScreenLine); // WHY
         if (stop()) return;
-        await bridge.requestScreenRecording(); // the ONE native prompt (registers + opens Settings)
+        // Register Kairo in the list (fire-and-forget prompt) THEN open Settings — the reliable path
+        // to the toggle, since the OS prompt only ever fires once per install.
+        await bridge.requestScreenRecording();
+        await bridge.openPermissionSettings('screenRecording');
         if (stop()) return;
-        await say(act3ScreenGrantLine); // do-it-now (references the pop-up + the restart)
+        await say(act3ScreenGrantLine); // do-it-now (references the Settings list + the restart)
         return;
       }
 
       // sub === 'accessibility'
       if (spoke.current.access) return;
       spoke.current.access = true;
-      await say(act3AccessIntroLine); // WHY (context first — no surprise prompt)
+      await say(act3AccessIntroLine); // WHY (context first — no surprise)
       if (stop()) return;
-      await bridge.requestAccessibility(); // the ONE native prompt (registers + opens Settings)
+      await bridge.requestAccessibility(); // registers Kairo in the AX list
+      await bridge.openPermissionSettings('accessibility'); // reliable path to the toggle
       if (stop()) return;
-      await say(act3AccessGrantLine); // do-it-now (references the pop-up + the toggle)
+      await say(act3AccessGrantLine); // do-it-now (references the Settings list + the toggle)
     })().catch((e) =>
       klog('onboarding', 'error', 'act3 sub-step failed', { sub, error: String(e) })
     );

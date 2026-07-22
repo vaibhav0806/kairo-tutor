@@ -447,9 +447,9 @@ fn close_settings() {
     use objc2_app_kit::NSRunningApplication;
     use objc2_foundation::NSString;
     let id = NSString::from_str("com.apple.systempreferences");
-    let running = unsafe { NSRunningApplication::runningApplicationsWithBundleIdentifier(&id) };
+    let running = NSRunningApplication::runningApplicationsWithBundleIdentifier(&id);
     for proc in running.iter() {
-        let ok = unsafe { proc.terminate() };
+        let ok = proc.terminate();
         crate::klog!(app, info, ok = ok, "close settings: quit System Settings");
     }
 }

@@ -209,23 +209,16 @@ pub(crate) fn request_screen_recording(app: tauri::AppHandle) -> PermissionState
         if unsafe { CGPreflightScreenCaptureAccess() } {
             return PermissionState::Granted; // already granted (e.g. resumed after the relaunch)
         }
-        // Prompt + list-registration on the MAIN thread. The call returns immediately (auth is
-        // cached per-process, so it reads the OLD value now — the real grant lands after relaunch).
-        let (sender, receiver) = std::sync::mpsc::channel();
-        let dispatched = app.run_on_main_thread(move || {
-            let granted = unsafe { CGRequestScreenCaptureAccess() };
-            let _ = sender.send(granted);
+        // Fire-and-forget on the MAIN thread: this REGISTERS Kairo in the Screen Recording list and,
+        // on a fresh install, shows the one-time OS prompt. We do NOT block on it — the caller opens
+        // System Settings right after (the reliable path to the toggle, since the prompt only ever
+        // fires once per install), and the real grant is detected by the Act 3 status poll after the
+        // relaunch. Blocking here previously stalled the main thread and froze the next notch caption.
+        let _ = app.run_on_main_thread(|| {
+            let _ = unsafe { CGRequestScreenCaptureAccess() };
         });
-        if dispatched.is_err() {
-            crate::klog!(app, error, "act3: could not dispatch screen-recording prompt to main thread");
-            return PermissionState::Unknown;
-        }
-        let state = match receiver.recv_timeout(std::time::Duration::from_secs(3)) {
-            Ok(true) => PermissionState::Granted,
-            _ => PermissionState::NotDetermined, // dialog shown; grant takes effect on relaunch
-        };
-        crate::klog!(app, info, state = ?state, "act3: requested screen recording (main thread)");
-        return state;
+        crate::klog!(app, info, "act3: requested screen recording (fire-and-forget)");
+        return PermissionState::NotDetermined;
     }
     #[cfg(not(target_os = "macos"))]
     {
