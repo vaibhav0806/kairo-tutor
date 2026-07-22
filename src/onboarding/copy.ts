@@ -148,10 +148,17 @@ export const act3AccessFillerLine: Segment[] = [
   { cacheKey: 'act3_access_filler', text: () => ACT3_LINES.act3_access_filler }
 ];
 
-/** Short coach-caption text pushed to the notch per Act 3 sub-step (title / detail). */
+/** Silent, sticky instruction shown in the notch WHILE the user toggles the switch (not spoken —
+ *  the "why" was already said via the Act 3 lines above; this is just the do-it-now nudge). */
 export const ACT3_COACH: Record<'screen' | 'accessibility', { title: string; detail: string }> = {
-  screen: { title: 'Let me see the screen', detail: 'Only while you hold ⌥⌃ — never saved' },
-  accessibility: { title: 'Steer the pointer', detail: "I'll point at the switch — flip it on" }
+  screen: {
+    title: 'Screen Recording',
+    detail: 'Flip Kairo Tutor on in the list — macOS will reopen me, that’s normal.'
+  },
+  accessibility: {
+    title: 'Accessibility',
+    detail: 'Flip Kairo Tutor on — the switch right next to my name.'
+  }
 };
 
 /** Which permission line to speak for the current grant state. null → both granted (say nothing). */
