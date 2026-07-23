@@ -57,8 +57,8 @@ mod panels;
 use panels::{
     configure_overlay_window, cursor_window, emit_overlay_payload, ensure_cursor_panel,
     ensure_notch_panel, ensure_overlay_panel, overlay_window, show_notch_with_payload,
-    spawn_mouse_tracker, spawn_notch_hit_tracker, store_notch_payload, store_overlay_payload,
-    typing_notch_payload,
+    spawn_mouse_tracker, spawn_notch_hit_tracker, spawn_onboarding_hit_tracker, store_notch_payload,
+    store_overlay_payload, typing_notch_payload,
 };
 
 mod input;
@@ -624,6 +624,14 @@ fn set_notch_hit_rect(state: State<'_, NotchState>, rect: Option<HitRect>) -> Re
     Ok(())
 }
 
+// The onboarding WELCOME card reports its rect (CSS px, viewport-relative) so the onboarding hit
+// tracker can make the full-screen window click-through EVERYWHERE except the card. `None` (card gone)
+// → the tracker idles and the per-act toggle owns the window (fail-safe; never traps the screen).
+#[tauri::command]
+fn set_onboarding_hit_rect(rect: Option<HitRect>) {
+    crate::panels::set_onboarding_hit_rect(rect.map(|r| (r.x, r.y, r.width, r.height)));
+}
+
 #[tauri::command]
 fn hide_notch(state: State<'_, NotchState>) -> Result<(), String> {
     store_notch_payload(&state, None)?;
@@ -749,6 +757,9 @@ pub fn run() {
             // and pull the whole app to the foreground so it doesn't open behind the current window.
             if need_onboarding {
                 crate::onboarding::show_onboarding_window(app.handle());
+                // Make the WELCOME card click-through-except-itself: the tracker reads the rect the
+                // FrontDoor reports and lets clicks around the card reach the desktop. Idle until then.
+                spawn_onboarding_hit_tracker(app.handle());
                 #[cfg(target_os = "macos")]
                 {
                     // Activate now AND again after the launch settles — macOS activation is finicky
@@ -916,6 +927,7 @@ pub fn run() {
             show_notch,
             get_current_notch_payload,
             set_notch_hit_rect,
+            set_onboarding_hit_rect,
             hide_notch,
             run_tutor_turn,
             run_gate_turn,

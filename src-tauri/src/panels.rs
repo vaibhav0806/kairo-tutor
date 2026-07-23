@@ -6,6 +6,7 @@ use crate::capture::main_display_bounds;
 use crate::constants;
 use crate::types::{CursorVisible, MousePoint, NotchPayload, OverlayPayload};
 use crate::{CursorPanel, CursorState, NotchPanel, NotchState, OverlayPanel, OverlayState};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
 use tauri_nspanel::{CollectionBehavior, PanelHandle, StyleMask, WebviewWindowExt};
@@ -443,6 +444,62 @@ pub(crate) fn spawn_notch_hit_tracker(app: &tauri::AppHandle) {
             let _ = window.set_ignore_cursor_events(!want_clickable);
             if last_logged != Some(want_clickable) {
                 crate::klog!(notch, debug, clickable = want_clickable, "notch hit state");
+                last_logged = Some(want_clickable);
+            }
+        }
+    });
+}
+
+// The onboarding card's rect (CSS px, viewport-relative) reported by the WELCOME step's FrontDoor.
+// `Some` → the full-screen onboarding window is click-through EVERYWHERE except this rect, so the user
+// can click the desktop around the hero/color card (founder: WELCOME must not "take over the screen").
+// `None` → the tracker idles and the per-act `set_onboarding_click_through` toggle owns the window
+// (so SIGNIN/SOURCE keep their whole-window catch, and non-interactive acts stay click-through).
+static ONBOARDING_HIT_RECT: Mutex<Option<(f64, f64, f64, f64)>> = Mutex::new(None);
+
+pub(crate) fn set_onboarding_hit_rect(rect: Option<(f64, f64, f64, f64)>) {
+    if let Ok(mut guard) = ONBOARDING_HIT_RECT.lock() {
+        *guard = rect;
+    }
+}
+
+// Poll the cursor and make the onboarding window click-through everywhere EXCEPT the reported card
+// rect. Mirrors spawn_notch_hit_tracker. Idle (touches nothing) when no rect is set, so the per-act
+// toggle controls the window then. Started once at setup; safe before the window exists.
+pub(crate) fn spawn_onboarding_hit_tracker(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut last_logged: Option<bool> = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(24));
+            let rect = ONBOARDING_HIT_RECT.lock().ok().and_then(|g| *g);
+            let Some(rect) = rect else {
+                // No rect → the per-act toggle owns the window; don't fight it.
+                last_logged = None;
+                continue;
+            };
+            let Ok(cursor) = app.cursor_position() else {
+                continue;
+            };
+            let Some(window) = app.get_webview_window("onboarding") else {
+                continue;
+            };
+            if !window.is_visible().unwrap_or(false) {
+                continue;
+            }
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let want_clickable = match window.outer_position() {
+                Ok(pos) => notch_hit_wants_clickable(
+                    Some(rect),
+                    (cursor.x, cursor.y),
+                    (pos.x as f64, pos.y as f64),
+                    scale,
+                ),
+                Err(_) => false,
+            };
+            let _ = window.set_ignore_cursor_events(!want_clickable);
+            if last_logged != Some(want_clickable) {
+                crate::klog!(app, debug, clickable = want_clickable, "onboarding hit state");
                 last_logged = Some(want_clickable);
             }
         }

@@ -34,6 +34,33 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
     klog('onboarding', 'info', 'front door: hero shown');
   }, []);
 
+  // Report the card's rect so the native hit-tracker makes the full-screen onboarding window
+  // click-through EVERYWHERE except the card — the user can click the desktop around the hero/color
+  // card (founder: WELCOME must not take over the whole screen). Cleared on unmount → the window
+  // returns to the per-act toggle (the next act owns click-through). Re-reported on the spring-entrance
+  // settle (transforms don't trip ResizeObserver) + on resize/reflow so the rect stays accurate.
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const report = () => {
+      const r = el.getBoundingClientRect();
+      void invoke('set_onboarding_hit_rect', {
+        rect: { x: r.left, y: r.top, width: r.width, height: r.height }
+      }).catch(() => {});
+    };
+    report();
+    const settle = window.setTimeout(report, 420);
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    window.addEventListener('resize', report);
+    return () => {
+      window.clearTimeout(settle);
+      ro.disconnect();
+      window.removeEventListener('resize', report);
+      void invoke('set_onboarding_hit_rect', { rect: null }).catch(() => {});
+    };
+  }, []);
+
   // The color step is SILENT (no spoken line) — jumping into speech before any greeting felt abrupt.
   // Kairo introduces itself LATER, at the collapse (the act1_wake line: "Hey — I'm Kairo. See that
   // notch… that's where I live!"), when the pet actually comes alive on the real desktop.
