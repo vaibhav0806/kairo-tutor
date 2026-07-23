@@ -391,6 +391,46 @@ body.onboarding-document {
   color: rgba(26, 22, 34, 0.45);
 }
 
+/* Curated accent preset swatches (replaces the color wheel). 4×2 grid; selected = white gap + ink ring. */
+.ob-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: 232px;
+  margin: 2px 0;
+}
+.ob-swatch {
+  aspect-ratio: 1;
+  border: none;
+  border-radius: 13px;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(20, 16, 28, 0.06),
+    0 6px 14px -6px rgba(30, 20, 45, 0.5);
+  transition:
+    transform 140ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 160ms ease;
+}
+.ob-swatch:hover {
+  transform: translateY(-2px) scale(1.05);
+}
+.ob-swatch:active {
+  transform: scale(0.98);
+}
+.ob-swatch--on {
+  transform: scale(1.08);
+  box-shadow:
+    0 0 0 2px #fdfbf7,
+    0 0 0 4px rgba(26, 22, 34, 0.55),
+    0 8px 18px -6px rgba(30, 20, 45, 0.5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-swatch {
+    transition: none;
+  }
+}
+
 .ob-hero-left {
   padding: 44px 40px 34px;
   display: flex;

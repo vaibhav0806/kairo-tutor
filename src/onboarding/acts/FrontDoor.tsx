@@ -7,7 +7,7 @@ import { klog } from '../../core/logger';
 import { playChime, playSound } from '../../core/sound';
 import { useCoach } from '../useCoach';
 import { ACT_LINES, HERO_COPY } from '../copy';
-import { ColorWheel } from './ColorWheel';
+import { ACCENT_PRESETS } from '../accentPresets';
 import { heroDemoSrc } from '../heroDemo';
 
 // The "front door" — the split card that greets the user (v2 Phase C, framer-motion revision). ONE
@@ -134,7 +134,26 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
                   <span className="ob-color-dot" style={{ background: hex }} aria-hidden />
                   <span className="ob-color-kicker">your color</span>
                 </div>
-                <ColorWheel value={hex} onChange={onWheel} size={236} />
+                {/* Curated presets (founder-approved) instead of a free wheel — every one reads well on
+                    any background. Clicking a swatch recolors everything live (onWheel → accent:changed). */}
+                <div className="ob-swatches" role="radiogroup" aria-label="Pick Kairo's color">
+                  {ACCENT_PRESETS.map((p) => {
+                    const on = hex.toLowerCase() === p.hex.toLowerCase();
+                    return (
+                      <button
+                        key={p.hex}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        aria-label={p.name}
+                        title={p.name}
+                        className={`ob-swatch${on ? ' ob-swatch--on' : ''}`}
+                        style={{ background: p.hex }}
+                        onClick={() => onWheel(p.hex)}
+                      />
+                    );
+                  })}
+                </div>
                 <button type="button" className="ob-color-confirm" onClick={(e) => void confirm(e)}>
                   {HERO_COPY.confirm}
                 </button>
