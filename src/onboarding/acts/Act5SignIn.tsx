@@ -5,7 +5,6 @@ import { ACT5_SIGNIN } from '../copy';
 import { getAuthStatus, onAuthChanged, startGoogleAuth } from '../authClient';
 import { syncUserName } from '../userName';
 import { TempPanel } from './TempPanel';
-import type { ActProps } from './actTypes';
 
 /**
  * Act 5a — sign in (master spec §4). The Google button opens the system browser; on the deep-link
@@ -76,7 +75,3 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
     </TempPanel>
   );
 }
-
-// Keep the ActProps contract available for typing at the mount site even though this act takes a
-// richer callback (the orchestrator renders it explicitly, not via the generic ACTS map).
-export type Act5SignInProps = Pick<ActProps, never> & { onSignedIn: (name: string) => void };

@@ -2,14 +2,7 @@
 // Static segments carry a `cacheKey` → we ship a pre-generated audio file for them (no Sarvam call
 // at runtime). Dynamic segments (with the user's name) are synthesized live.
 
-export type StepId =
-  | 'name'
-  | 'signin'
-  | 'source'
-  | 'permissions'
-  | 'learn_point'
-  | 'circle'
-  | 'done';
+export type StepId = 'learn_point' | 'circle';
 
 export interface Segment {
   text: (name: string) => string;

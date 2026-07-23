@@ -18,36 +18,6 @@ export async function onboardingTts(text: string): Promise<string | null> {
   }
 }
 
-/** Transcribe a spoken onboarding answer. Returns the text, or null. */
-export async function onboardingStt(audio: Blob): Promise<string | null> {
-  try {
-    const form = new FormData();
-    form.append('file', audio, 'audio.webm');
-    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding/stt`, { method: 'POST', body: form });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { transcript?: string; text?: string };
-    return json?.transcript ?? json?.text ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Extract a clean field value ("my name is Kairo" -> "Kairo") via the fast no-reasoning model. */
-export async function extractField(transcript: string, field: 'name' | 'source'): Promise<string> {
-  try {
-    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding/extract`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ transcript, field }),
-    });
-    if (!res.ok) return '';
-    const json = (await res.json()) as { value?: string };
-    return typeof json.value === 'string' ? json.value : '';
-  } catch {
-    return '';
-  }
-}
-
 /** "Talk to me" practice: send what the user said, get Kairo's dynamic spoken reply. */
 export async function onboardingChat(transcript: string, name: string): Promise<string> {
   try {
