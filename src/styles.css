@@ -312,13 +312,12 @@ input {
   position: absolute;
 }
 
-/* Purple to match the companion cursor (gradient #c79bff -> #7c3aed). */
-/* --box-rgb is the on-screen-aware accent (r g b, from color.rs → target.color),
-   set inline per box by VisualOverlay. The default here is the purple fallback for
-   the OCR path / tests. Border, fill, and glow all take the accent; only the
+/* The highlight box takes the USER'S chosen accent (--kairo-accent-rgb, set app-wide by
+   applyAccent on <html> in every webview) so it matches the companion cursor / pet. Falls back
+   to brand violet if the accent var is missing. Border, fill, and glow all take it; only the
    full-screen dimming vignette stays neutral so the accent pops. */
 .overlay-target.highlight_box {
-  --box-rgb: 139 92 246;
+  --box-rgb: var(--kairo-accent-rgb, 124 58 237);
   border: 3px dashed rgb(var(--box-rgb));
   border-radius: 14px;
   background: rgb(var(--box-rgb) / 0.07);

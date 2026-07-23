@@ -6,20 +6,6 @@ import {
   normalizeRegionToPercent
 } from './coordinates';
 
-// color.rs emits a 6-digit hex accent (#rrggbb) engineered to pop against the pixels
-// behind the target. Convert it to the "r g b" triplet the overlay CSS expects
-// (rgb(var(--box-rgb) / a)); null when absent/malformed → the CSS purple fallback wins.
-const HEX6_PATTERN = /^#?([0-9a-f]{6})$/i;
-
-function hexToRgbTriplet(hex: string): string | null {
-  const match = HEX6_PATTERN.exec(hex.trim());
-  if (!match) {
-    return null;
-  }
-  const value = Number.parseInt(match[1], 16);
-  return `${(value >> 16) & 255} ${(value >> 8) & 255} ${value & 255}`;
-}
-
 // Kairo guidance renders exactly two things: a companion-cursor pointer at the
 // click point, and a highlight_box rectangle around the target. No on-screen
 // labels — the spoken answer carries the meaning.
@@ -73,15 +59,14 @@ export function OverlayTarget({
     );
   }
 
-  // highlight_box: the accent rectangle. Border/fill/glow take the on-screen-aware
-  // color via --box-rgb (fallback purple when absent). The ink-trace sibling is a hot
-  // spot that rides the pen tip along the diagonal as the outline draws.
-  const rgb = target.color ? hexToRgbTriplet(target.color) : null;
-  const boxStyle = rgb ? ({ ...style, '--box-rgb': rgb } as CSSProperties) : style;
+  // highlight_box: the accent rectangle. Border/fill/glow take the USER'S chosen accent via
+  // --box-rgb (set from --kairo-accent-rgb in CSS) so the box matches the companion cursor / pet.
+  // We deliberately no longer override it with color.rs's per-box contrast color. The ink-trace
+  // sibling is a hot spot that rides the pen tip along the diagonal as the outline draws.
   return (
     <>
-      <div aria-label={target.label} className="overlay-target highlight_box" style={boxStyle} />
-      <div className="overlay-box-ink" style={boxStyle} aria-hidden="true" />
+      <div aria-label={target.label} className="overlay-target highlight_box" style={style} />
+      <div className="overlay-box-ink" style={style} aria-hidden="true" />
     </>
   );
 }
