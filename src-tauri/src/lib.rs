@@ -828,7 +828,13 @@ pub fn run() {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
-                    for url in event.urls() {
+                    // Phase B instrumentation: prove the deep link actually ARRIVED. If OAuth focus is
+                    // ever still flaky after the Regular-app switch, this line distinguishes "the link
+                    // never fired" (a routing bug) from "it fired but we failed to front" (an activation
+                    // race — the `focus onboarding: …` / `activated Kairo …` lines below then tell which).
+                    let urls = event.urls();
+                    crate::klog!(auth, info, count = urls.len(), "deep link on_open_url fired");
+                    for url in urls {
                         if url.scheme() != "kairo" {
                             continue;
                         }
