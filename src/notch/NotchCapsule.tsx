@@ -158,30 +158,26 @@ export function NotchCapsule(props: NotchCapsuleProps) {
   return (
     <main className="kairo-capsule-shell" aria-label="Kairo status">
       {mode === 'idle' ? null : (
-        <div className="kairo-capsule-stack">
-          {/* Onboarding progress dots sit ABOVE the pill (sibling, not inside) so the pill's morph
-              sizing + hit-rect stay untouched. Only during onboarding (progress != null). */}
+        <div
+          ref={capsuleRef}
+          className="kairo-capsule"
+          data-mode={mode}
+          data-progress={props.progress ? 'true' : undefined}
+          onPointerEnter={props.onCapsulePointer}
+          onPointerMove={props.onCapsulePointer}
+          onPointerLeave={props.onPointerLeave}
+          onPointerDown={props.onPointerDown}
+        >
+          {/* Onboarding progress dots pinned INSIDE the pill at its top-center (absolute; the pill
+              gets extra top padding via data-progress so the caption clears them). pointer-events
+              none + out of flow → the morph sizing + hit-rect stay untouched. */}
           {props.progress ? renderProgressDots(props.progress) : null}
-          <div
-            ref={capsuleRef}
-            className="kairo-capsule"
-            data-mode={mode}
-            onPointerEnter={props.onCapsulePointer}
-            onPointerMove={props.onCapsulePointer}
-            onPointerLeave={props.onPointerLeave}
-            onPointerDown={props.onPointerDown}
-          >
-            <div className="kairo-capsule-inner" ref={innerRef}>
-              {layers.map((layer) => (
-                <div
-                  key={String(layer.key)}
-                  className="kairo-capsule-layer"
-                  data-phase={layer.phase}
-                >
-                  {renderModeContent(layer.key, props)}
-                </div>
-              ))}
-            </div>
+          <div className="kairo-capsule-inner" ref={innerRef}>
+            {layers.map((layer) => (
+              <div key={String(layer.key)} className="kairo-capsule-layer" data-phase={layer.phase}>
+                {renderModeContent(layer.key, props)}
+              </div>
+            ))}
           </div>
         </div>
       )}

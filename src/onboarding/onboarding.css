@@ -570,37 +570,6 @@ body.onboarding-document {
   color: rgba(26, 22, 34, 0.45);
 }
 
-/* Live in-card preview: a faux notch capsule + a pet dot, both tinted by the current pick, so the
-   personalization is visible INSIDE the card (not just the swatch dot). */
-.ob-color-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(20, 16, 28, 0.04);
-}
-.ob-color-preview-notch {
-  width: 54px;
-  height: 16px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 22%, #14101c);
-  box-shadow: 0 0 16px -2px color-mix(in srgb, var(--kairo-accent, #7c3aed) 60%, transparent);
-  transition:
-    background 160ms ease,
-    box-shadow 160ms ease;
-}
-.ob-color-preview-pet {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background: var(--kairo-accent, #7c3aed);
-  box-shadow: 0 0 16px -1px var(--kairo-accent, #7c3aed);
-  transition:
-    background 160ms ease,
-    box-shadow 160ms ease;
-}
-
 /* Hero → color morph-in (crossfade-morph; pairs with .ob-morph-out on the hero). Defined AFTER
    .ob-card so it overrides the default ob-panel-in for the color card. */
 @keyframes ob-morph-in {

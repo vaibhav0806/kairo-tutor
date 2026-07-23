@@ -116,12 +116,6 @@ export function Act1Arrival({ name, onAdvance }: ActProps) {
           <span className="ob-color-kicker">your color</span>
         </div>
         <ColorWheel value={hex} onChange={onWheel} size={248} />
-        {/* Live in-card preview: a faux notch capsule + a pet dot, both tinted by the pick, so the user
-            SEES the personalization inside the card, not just a swatch. */}
-        <div className="ob-color-preview" aria-hidden>
-          <span className="ob-color-preview-notch" />
-          <span className="ob-color-preview-pet" />
-        </div>
         <button type="button" className="ob-color-confirm" onClick={(e) => void confirm(e)}>
           {HERO_COPY.confirm}
         </button>

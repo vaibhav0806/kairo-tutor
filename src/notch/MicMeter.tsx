@@ -20,7 +20,9 @@ export function MicMeter() {
   useEffect(() => {
     let raf = 0;
     const un = listen<{ level: number }>('cursor:level', (e) => {
-      target.current = Math.max(0, Math.min(1, e.payload.level ?? 0));
+      // Amplify the (already RMS-normalized) level so the bars visibly DANCE with speech volume —
+      // the raw value reads subtle on the small notch bars.
+      target.current = Math.max(0, Math.min(1, (e.payload.level ?? 0) * 1.7));
       lastAt.current = performance.now();
     });
     const tick = () => {
