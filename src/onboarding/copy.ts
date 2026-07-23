@@ -52,25 +52,10 @@ export const ACT_LINES: Record<string, Segment> = {
     cacheKey: 'act1_wake',
     text: () => "Hey — I'm Kairo. See that notch at the top of your screen? That's where I live!"
   },
-  act1_color: {
-    cacheKey: 'act1_color',
-    text: () => "Alright, fun part first — give me a color. Whatever you pick, that's officially me."
-  },
-  act2_primer: {
-    cacheKey: 'act2_primer',
-    text: () =>
-      "To actually hear you, I'll need your mic — plus permission to notice when you hold two keys. Give me permission to do so, takes two seconds."
-  },
   // Step 1 of 2 — mic only. Spoken first; we wait for the grant before the second ask.
   act2_mic: {
     cacheKey: 'act2_mic',
     text: () => "First up — I'll need your mic. That's how I hear you. Just hit Allow on the pop-up."
-  },
-  // Step 2 of 2 — input monitoring, ONLY after mic is granted. We open the settings pane for them.
-  act2_im: {
-    cacheKey: 'act2_im',
-    text: () =>
-      "Nice! One more thing, to help me notice when you hold down keys to talk to me. I just opened the settings for you; flip me on in that list."
   },
   act2_drill: {
     cacheKey: 'act2_drill',
@@ -78,13 +63,7 @@ export const ACT_LINES: Record<string, Segment> = {
       "Here's how you can talk to me. Hold Option and Control together, say something, then let go. I'm listening the whole time you're holding them."
   },
   act2_short: { cacheKey: 'act2_short', text: () => 'Hold the keys slightly longer for me.' },
-  act2_empty: { cacheKey: 'act2_empty', text: () => "Hmm, didn't catch that — give it another go." },
-  // Reassurance: the macOS Input-Monitoring prompt offers a "restart" — but the ⌥⌃ tap picks up the
-  // grant live (it retries), so the user can skip it. Keeps Act 2 reopen-free.
-  act2_im_skip: {
-    cacheKey: 'act2_im_skip',
-    text: () => "Oh — and if macOS asks to restart me, just skip it. I'm already listening."
-  }
+  act2_empty: { cacheKey: 'act2_empty', text: () => "Hmm, didn't catch that — give it another go." }
 } satisfies Record<string, Segment>;
 
 /** The seeded-prompt chip shown during the Act 2 say-hi drill (master spec §8). */

@@ -32,13 +32,9 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
     klog('onboarding', 'info', 'front door: hero shown');
   }, []);
 
-  // Speak the color line when we enter the color phase (caption == voice via useCoach.say).
-  useEffect(() => {
-    if (phase !== 'color') return;
-    void say([ACT_LINES.act1_color]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
-
+  // The color step is SILENT (no spoken line) — jumping into speech before any greeting felt abrupt.
+  // Kairo introduces itself LATER, at the collapse (the act1_wake line: "Hey — I'm Kairo. See that
+  // notch… that's where I live!"), when the pet actually comes alive on the real desktop.
   const goColor = () => {
     if (phase !== 'hero') return;
     klog('onboarding', 'info', 'hero get-started');
