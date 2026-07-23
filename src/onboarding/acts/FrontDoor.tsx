@@ -125,7 +125,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
         }
         transition={
           collapse
-            ? { type: 'tween', ease: [0.4, 0, 1, 1], duration: reduce ? 0 : 0.5 }
+            ? { type: 'tween', ease: [0.4, 0, 1, 1], duration: reduce ? 0 : 1.2 }
             : { type: 'spring', stiffness: 260, damping: 26 }
         }
         onAnimationComplete={() => void onCardAnimationComplete()}

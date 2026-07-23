@@ -74,6 +74,9 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
     const micGranted = async () => (await bridge.getPermissionStatus()).microphone === 'granted';
 
     void (async () => {
+      // A short beat after Kairo's intro line (act1_wake) so the mic line doesn't tread on its tail.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (isCancelled()) return;
       // STEP 1 — microphone only. Ask, then WAIT until it's genuinely granted before moving on.
       if (!(await micGranted())) {
         await say([ACT_LINES.act2_mic]);
