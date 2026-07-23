@@ -342,9 +342,227 @@ body.onboarding-document {
   cursor: default;
 }
 
+/* ---- Act 0 hero + the shared light "Editorial Light" card (v2 Phase C) -----------------------
+   Warm-white surface shared by the hero (Act 0) and the redesigned color card (Act 1) so the
+   Get-started morph is seamless (light→light, same center, same accent glow). */
+.ob-card {
+  pointer-events: auto;
+  position: relative;
+  background:
+    radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 8%, #fdfbf7) 0%, #faf7f2 55%, #f4efe7 100%);
+  border: 1px solid rgba(20, 16, 28, 0.06);
+  border-radius: 28px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 40px 90px -32px rgba(30, 20, 45, 0.35),
+    0 0 60px -24px color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, transparent);
+  animation: ob-panel-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  -webkit-font-smoothing: antialiased;
+  color: #1a1622;
+}
+
+.ob-card--hero {
+  width: min(880px, 92vw);
+  display: grid;
+  grid-template-columns: 42% 58%;
+  overflow: hidden;
+}
+
+.ob-hero-left {
+  padding: 44px 40px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+}
+.ob-hero-mark {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 22px;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, #1a1622);
+}
+.ob-hero-h1 {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 52px;
+  line-height: 1.02;
+  font-weight: 400;
+  margin: 6px 0 0;
+  color: #171320;
+}
+.ob-hero-sub {
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  color: #5a5266;
+  margin: 0;
+}
+.ob-hero-cta {
+  align-self: flex-start;
+  margin-top: 12px;
+  border: none;
+  border-radius: 14px;
+  padding: 13px 28px;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--kairo-accent, #7c3aed) 84%, #ffffff 16%),
+    var(--kairo-accent, #7c3aed)
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 12px 28px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 65%, transparent);
+  transition:
+    transform 120ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 160ms ease;
+}
+.ob-hero-cta:hover {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.3) inset,
+    0 16px 34px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 75%, transparent);
+}
+.ob-hero-cta:active {
+  transform: scale(0.97);
+}
+.ob-hero-legal {
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  color: #9a93a5;
+  margin: 8px 0 0;
+}
+
+.ob-hero-right {
+  position: relative;
+  overflow: hidden;
+  background: #0d0b13;
+  min-height: 420px;
+}
+.ob-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  filter: blur(18px) saturate(1.1);
+  transform: scale(1.08);
+  opacity: 0.7;
+}
+.ob-hero-demo {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.ob-hero-demo-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+}
+.ob-hero-value {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 26px;
+  color: #f4f0fa;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
+  padding: 0 24px;
+}
+
+/* Pure-CSS demo mock (until the real GIF lands): faux window + a drifting accent "pet". */
+.ob-hero-mock {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+.ob-hero-mock-window {
+  width: 78%;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #1b1826, #131019);
+  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+.ob-hero-mock-bar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.ob-hero-mock-bar span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.ob-hero-mock-body {
+  position: relative;
+  height: 100%;
+}
+.ob-hero-mock-target {
+  position: absolute;
+  top: 30%;
+  left: 62%;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid color-mix(in srgb, var(--kairo-accent, #7c3aed) 80%, transparent);
+  box-shadow: 0 0 30px -4px var(--kairo-accent, #7c3aed);
+}
+.ob-hero-mock-pet {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--kairo-accent, #7c3aed);
+  box-shadow: 0 0 22px -2px var(--kairo-accent, #7c3aed);
+  animation: ob-hero-drift 3.4s ease-in-out infinite;
+}
+@keyframes ob-hero-drift {
+  0% {
+    top: 68%;
+    left: 20%;
+    transform: scale(1);
+  }
+  45% {
+    top: 34%;
+    left: 64%;
+    transform: scale(1.15);
+  }
+  60% {
+    top: 34%;
+    left: 64%;
+    transform: scale(0.9);
+  }
+  100% {
+    top: 68%;
+    left: 20%;
+    transform: scale(1);
+  }
+}
+
+/* Hero → color morph-out (crossfade-morph; see the Phase C plan's library note). */
+@keyframes ob-morph-out {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(6px);
+  }
+}
+.ob-morph-out {
+  animation: ob-morph-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ob-color-panel,
   .ob-color-confirm,
+  .ob-card,
+  .ob-hero-cta,
+  .ob-hero-mock-pet,
+  .ob-morph-out,
   .google-signin-btn,
   .ob-source-go,
   .ob-source-chips .ob-chip,

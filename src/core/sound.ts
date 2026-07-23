@@ -21,13 +21,19 @@ import toingLoud from '../assets/sounds/toing-loud.wav';
 import bubblePop from '../assets/sounds/bubble-pop.wav';
 import errorBlip from '../assets/sounds/error-blip.wav';
 
-export type SoundName = 'stt-start' | 'stt-end' | 'arrive' | 'error';
+export type SoundName = 'stt-start' | 'stt-end' | 'arrive' | 'error' | 'morph' | 'settle';
 
 const URLS: Record<SoundName, string> = {
   'stt-start': echoPop, // feeble "boop" when a hold starts recording
   'stt-end': toingLoud, // the "toing" on release / recording end
   arrive: bubblePop, // the cursor lands on a pointed-at target
   error: errorBlip, // no speech heard / STT failure
+  // Onboarding v2 (Phase C). PLACEHOLDER cues — swap these two lines when the real morph/settle WAVs
+  // land (one-file change, mirrors heroDemo.ts). `morph` = hero→color whoosh (fires on Get-started,
+  // which also unlocks the shared AudioContext); `settle` = the soft landing as the card collapses
+  // into the pet.
+  morph: echoPop,
+  settle: bubblePop,
 };
 
 // Per-cue loudness (0..1). Kept low on purpose — these are subtle. Easy to retune.
@@ -36,6 +42,8 @@ const VOLUME: Record<SoundName, number> = {
   'stt-end': 0.28,
   arrive: 0.3, // plays under TTS, so needs presence to be heard; still subtle. Tunable.
   error: 0.35,
+  morph: 0.22,
+  settle: 0.26,
 };
 
 const STORAGE_KEY = 'kairo.sounds.enabled';

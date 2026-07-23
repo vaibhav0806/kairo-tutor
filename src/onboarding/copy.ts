@@ -97,6 +97,18 @@ export const ACT_LINES: Record<string, Segment> = {
 /** The seeded-prompt chip shown during the Act 2 say-hi drill (master spec §8). */
 export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
 
+/** Act 0 — the split "front door" hero. Locked copy (v2 spec §6). Strings live here so the founder
+ *  can tweak wording without touching layout/logic. `confirm` is also the color-step CTA (Act 1). */
+export const HERO_COPY = {
+  wordmark: 'Kairo',
+  h1: 'Meet Kairo',
+  sub: 'Your screen-native tutor.',
+  value: 'Points right at what you need.', // serif, over the demo
+  cta: 'Get started →',
+  legal: 'By continuing you agree to our Terms and Privacy Policy.',
+  confirm: "Let's get started", // color-step lock-in CTA (Act 1)
+} as const;
+
 /**
  * Act 3 — "Earn the Eyes". Two separate moments, each: why + benefit + honest privacy line.
  * Screen Recording is spoken first (it forces the relaunch); Accessibility is reframed as

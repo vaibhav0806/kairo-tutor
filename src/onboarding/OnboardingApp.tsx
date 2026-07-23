@@ -4,6 +4,7 @@ import { OnboardingFlow } from './OnboardingFlow';
 import { hasNativeBridge } from './config';
 import { klog } from '../core/logger';
 import { STEPS } from './copy';
+import { Act0Hero } from './acts/Act0Hero';
 import { Act1Arrival } from './acts/Act1Arrival';
 import { Act2Hearing } from './acts/Act2Hearing';
 import { Act3Permissions } from './Act3Permissions';
@@ -16,20 +17,21 @@ import { Act6Ending } from './acts/Act6Ending';
 // practice (point + circle) → sign-in → source → warm ending. Sign-in is LAST-but-one, so the first
 // "whoa" always precedes any account ask.
 const ACT = {
-  ARRIVAL: 0,
-  HEARING: 1,
-  PERMISSIONS: 2,
-  PRACTICE: 3, // legacy STEPS wizard, now just point + circle
-  SIGNIN: 4,
-  SOURCE: 5,
-  ENDING: 6
+  HERO: 0, // split "front door" — first-impression only, NEVER a resume target (see resume effect)
+  ARRIVAL: 1,
+  HEARING: 2,
+  PERMISSIONS: 3,
+  PRACTICE: 4, // legacy STEPS wizard, now just point + circle
+  SIGNIN: 5,
+  SOURCE: 6,
+  ENDING: 7
 } as const;
-const ACT_COUNT = 7;
+const ACT_COUNT = 8;
 
-// Whether the window must catch clicks for that act (color wheel / sign-in / chips), or stay
-// click-through so the desktop + pet + System Settings receive input. Act 2 (hearing) and Act 4
-// (practice) are notch + chord driven, so they stay click-through — the user acts on the REAL screen.
-const INTERACTIVE = [true, false, false, false, true, true, false];
+// Whether the window must catch clicks for that act (hero CTA / color wheel / sign-in / chips), or
+// stay click-through so the desktop + pet + System Settings receive input. Hearing and practice are
+// notch + chord driven, so they stay click-through — the user acts on the REAL screen.
+const INTERACTIVE = [true, true, false, false, false, true, true, false];
 
 /** Root of the full-screen, transparent, click-through onboarding orchestrator (#/onboarding). */
 export function OnboardingApp() {
@@ -73,6 +75,10 @@ export function OnboardingApp() {
     if (!hasNativeBridge) return;
     void invoke<string>('get_onboarding_step')
       .then((saved) => {
+        klog('onboarding', 'info', 'resume', { saved });
+        // Resume only ever lands on PERMISSIONS ('act3') or PRACTICE (a STEPS id). HERO(0) is a
+        // first-impression-only act and is intentionally NEVER a resume target, so a Screen-Recording
+        // quit+reopen never replays the hero. A fresh run (no marker) keeps useState(0) = HERO.
         if (saved === 'act3') setActIndex(ACT.PERMISSIONS);
         else if (saved && STEPS.some((s) => s.id === saved)) setActIndex(ACT.PRACTICE);
       })
@@ -89,6 +95,9 @@ export function OnboardingApp() {
 
   let body: React.ReactNode;
   switch (actIndex) {
+    case ACT.HERO:
+      body = <Act0Hero onGetStarted={advance} />;
+      break;
     case ACT.ARRIVAL:
       body = <Act1Arrival name="" onAdvance={advance} />;
       break;

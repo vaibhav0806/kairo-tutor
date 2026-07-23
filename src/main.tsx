@@ -8,6 +8,9 @@ import { OverlayApp } from './overlay/OverlayApp';
 import { installGlobalErrorLogging, klog } from './core/logger';
 import { applyAccent, getAccent, onAccentChanged } from './core/accent';
 import '@fontsource-variable/geist';
+// Instrument Serif — the display face for the onboarding hero + color card (v2 Phase C). The dep was
+// installed but never imported, so 'Instrument Serif' references were silently falling back to Georgia.
+import '@fontsource/instrument-serif';
 import './styles.css';
 
 // Record uncaught errors/rejections from this WebView into the shared Kairo log.
