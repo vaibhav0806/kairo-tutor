@@ -8,10 +8,11 @@ import { STEPS } from './copy';
 import { Act0Hero } from './acts/Act0Hero';
 import { Act1Arrival } from './acts/Act1Arrival';
 import { Act2Hearing } from './acts/Act2Hearing';
-import { Act3Permissions } from './Act3Permissions';
+import { Act3Permissions } from './acts/Act3Permissions';
 import { Act5SignIn } from './acts/Act5SignIn';
 import { Act5Source } from './acts/Act5Source';
 import { Act6Ending } from './acts/Act6Ending';
+import './onboarding.css';
 
 // The redesigned first-run is a sequence of "acts" over the full-screen transparent orchestrator
 // (Phase 0). Value-first ordering (spec §4): color → hearing → permissions → the real-screen

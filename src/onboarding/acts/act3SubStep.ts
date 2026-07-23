@@ -1,4 +1,4 @@
-import type { NativePermissionStatus } from '../native/nativeBridge';
+import type { NativePermissionStatus } from '../../native/nativeBridge';
 
 /** The Act 3 sub-steps, in dependency order (Screen Recording gates the Accessibility point). */
 export type Act3SubStep = 'screen' | 'accessibility' | 'done';

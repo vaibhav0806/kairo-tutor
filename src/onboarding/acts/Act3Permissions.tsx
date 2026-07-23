@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { klog } from '../core/logger';
-import { useCoach } from './useCoach';
-import { act3ScreenLine, act3AccessLine } from './copy';
+import { klog } from '../../core/logger';
+import { useCoach } from '../useCoach';
+import { act3ScreenLine, act3AccessLine } from '../copy';
 import { nextPermissionStep, type Act3SubStep } from './act3SubStep';
-import type { ActProps } from './acts/actTypes';
+import type { ActProps } from './actTypes';
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // How far into the spoken line to fire the OS pop-up. The instruction is front-loaded in the copy, so

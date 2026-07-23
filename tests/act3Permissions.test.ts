@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { nextPermissionStep } from '../src/onboarding/act3SubStep';
+import { nextPermissionStep } from '../src/onboarding/acts/act3SubStep';
 import type { NativePermissionStatus } from '../src/native/nativeBridge';
 
 const status = (

@@ -8,7 +8,6 @@ import { runCircleTurn, runPointTurn, type DemoResult } from './demoController';
 import { playRecordingCue } from '../core/sound';
 import type { TimedPoint } from '../notch/gestureSegmenter';
 import { useCoach } from './useCoach';
-import './onboarding.css';
 
 // Act 4 — the two practice beats, and ONLY those. Each runs the REAL Kairo pipeline (demoController):
 //   • point  — the user asks Kairo to point at something (gate → vision → pet points at it)
