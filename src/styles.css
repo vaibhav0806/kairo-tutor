@@ -1573,51 +1573,50 @@ input {
    the pill's morph sizing (measured from inner) and the hit-rect stay untouched. */
 .kairo-capsule[data-progress='true'] {
   padding-top: 20px;
+  min-width: 96px; /* narrow modes (e.g. thinking) still fit the pills — fixes the progress overflow */
 }
 
-/* Onboarding progress — a "comet track": a thin rail with a filled accent tail and a glowing comet
-   head at the current chapter. --accent-rgb is kept live by useNotchAccent() → re-tints for free. The
-   fill width + head position are set inline from (chapter+1)/total; both glide on advance. */
+/* Onboarding progress — 4 segmented pills, one per chapter. Current = wider + accent glow; past = accent
+   low opacity; future = faint neutral. --accent-rgb is kept live by useNotchAccent() → re-tints free. */
 .kairo-notch-progress {
   position: absolute;
-  top: 8px;
+  top: 7px;
   left: 0;
   right: 0;
   margin: 0 auto;
-  width: 64px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.16);
+  width: fit-content;
+  max-width: calc(100% - 20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   pointer-events: none; /* decorative; outside the reported hit-rect */
   z-index: 2;
   animation: kairo-capsule-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.kairo-progress-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+.kairo-progress-pill {
+  width: 13px;
+  height: 4px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.15), rgb(var(--accent-rgb)));
-  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  background: rgb(var(--accent-rgb) / 0.4);
+  transition:
+    width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 260ms ease,
+    box-shadow 260ms ease;
 }
-.kairo-progress-comet {
-  position: absolute;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin: -3.5px 0 0 -3.5px;
-  border-radius: 50%;
+.kairo-progress-pill[data-state='future'] {
+  background: rgb(255 255 255 / 0.18);
+}
+.kairo-progress-pill[data-state='current'] {
+  width: 20px;
   background: rgb(var(--accent-rgb));
-  box-shadow: 0 0 10px rgb(var(--accent-rgb));
-  transition: left 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.7);
 }
 @media (prefers-reduced-motion: reduce) {
   .kairo-notch-progress {
     animation: none;
   }
-  .kairo-progress-fill,
-  .kairo-progress-comet {
+  .kairo-progress-pill {
     transition: none;
   }
 }
@@ -1682,7 +1681,8 @@ input {
   /* Neutral dark, NOT liquid glass: near-opaque, no backdrop-filter. */
   background: linear-gradient(180deg, #1b1d23, #101216);
   border: 1px solid rgb(255 255 255 / 0.08);
-  border-radius: 20px; /* rounded-rect base; compact states go pill below */
+  border-radius: 14px; /* squarer, to better match the welcome card; compact modes = 18px below */
+  font-family: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
   box-shadow:
     0 10px 30px rgb(0 0 0 / 0.46),
     0 0 0 0.5px rgb(0 0 0 / 0.55),
@@ -1707,7 +1707,7 @@ input {
 .kairo-capsule[data-mode='listening'],
 .kairo-capsule[data-mode='thinking'],
 .kairo-capsule[data-mode='error'] {
-  border-radius: 999px;
+  border-radius: 18px;
 }
 
 @keyframes kairo-capsule-in {
@@ -1949,17 +1949,18 @@ input {
     animation: none;
   }
 }
+/* Seeded-prompt chip — a clean, subtle neutral pill (not a loud accent-filled one). */
 .kairo-capsule-chip {
   align-self: flex-start;
-  margin-left: 16px;
-  border: 1px solid rgb(var(--accent-rgb) / 0.5);
-  background: rgb(var(--accent-rgb) / 0.13);
-  color: color-mix(in srgb, rgb(var(--accent-rgb)) 50%, #ffffff 50%);
-  border-radius: 999px;
-  padding: 3px 11px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  margin-left: 22px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(255 255 255 / 0.045);
+  color: rgb(233 236 242 / 0.66);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.003em;
 }
 @media (prefers-reduced-motion: reduce) {
   .kairo-eyes,

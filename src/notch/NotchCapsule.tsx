@@ -37,12 +37,10 @@ type NotchCapsuleProps = {
   meter?: boolean;
 };
 
-// Notch progress — a "comet track" (Phase D + founder pick). A thin rail with a filled accent tail and
-// a glowing comet head at the current chapter. Pure + decorative; the fill width + head position come
-// from (chapter+1)/total and glide on advance (CSS transition). Accent-tinted via --accent-rgb.
+// Notch progress — 4 segmented pills (Phase D + founder pick), one per onboarding chapter. Pure +
+// decorative; current = wider + accent glow, past = accent low-opacity, future = faint neutral (CSS).
 function renderProgress(progress: { chapter: number; total: number }) {
   const { chapter, total } = progress;
-  const pct = Math.max(0, Math.min(1, (chapter + 1) / Math.max(1, total))) * 100;
   return (
     <div
       className="kairo-notch-progress"
@@ -52,8 +50,14 @@ function renderProgress(progress: { chapter: number; total: number }) {
       aria-valuemax={total}
       aria-valuenow={Math.min(chapter + 1, total)}
     >
-      <span className="kairo-progress-fill" style={{ width: `${pct}%` }} aria-hidden />
-      <span className="kairo-progress-comet" style={{ left: `${pct}%` }} aria-hidden />
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          className="kairo-progress-pill"
+          data-state={i < chapter ? 'past' : i === chapter ? 'current' : 'future'}
+          aria-hidden
+        />
+      ))}
     </div>
   );
 }
@@ -155,11 +159,12 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
       </div>
     );
   }
-  // thinking → the rotating accent cube (a small effect, not boring "Thinking…" text).
+  // thinking → the rotating accent cube + the status label beside it.
   if (mode === 'thinking') {
     return (
       <div className="kairo-capsule-status">
         <ThinkingCube />
+        <span className="kairo-capsule-label">{props.statusLabel}</span>
       </div>
     );
   }
