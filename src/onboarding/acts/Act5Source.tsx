@@ -1,13 +1,30 @@
-import { useEffect, useState } from 'react';
-import { ONBOARDING_SOURCES } from '@kairo/shared';
+import { useEffect } from 'react';
+import type { IconType } from 'react-icons';
+import { SiInstagram, SiX, SiReddit, SiGoogle, SiClaude } from 'react-icons/si';
+import { FaLinkedin } from 'react-icons/fa6';
+import { RiOpenaiFill } from 'react-icons/ri';
+import { LuUsers, LuEllipsis } from 'react-icons/lu';
 import { useCoach } from '../useCoach';
 import { ACT5_SOURCE } from '../copy';
-import { TempPanel } from './TempPanel';
 
-/** Act 5b — "where'd you hear about me?" one-tap chip row (+ free-text "Other"). */
+// "Where'd you hear about us?" (v2 redesign) — a light Editorial card with an icon grid. No messaging
+// icon, no free-text field; every source (incl. A friend / Other) is a one-tap button. The label string
+// is sent to the backend (free-form, so the list can change freely).
+const SOURCES: { label: string; Icon: IconType }[] = [
+  { label: 'Instagram', Icon: SiInstagram },
+  { label: 'X / Twitter', Icon: SiX },
+  { label: 'LinkedIn', Icon: FaLinkedin },
+  { label: 'Reddit', Icon: SiReddit },
+  { label: 'ChatGPT', Icon: RiOpenaiFill },
+  { label: 'Claude', Icon: SiClaude },
+  { label: 'Google', Icon: SiGoogle },
+  { label: 'A friend', Icon: LuUsers },
+  { label: 'Other', Icon: LuEllipsis }
+];
+
+/** Act 5b — "where'd you hear about me?" one-tap icon grid. */
 export function Act5Source({ onPick }: { onPick: (source: string) => void }) {
   const { say, clear } = useCoach('');
-  const [other, setOther] = useState('');
 
   useEffect(() => {
     void say(ACT5_SOURCE); // caption == the spoken line
@@ -20,46 +37,23 @@ export function Act5Source({ onPick }: { onPick: (source: string) => void }) {
   };
 
   return (
-    <TempPanel>
-      <div className="ob-panel-body">
-        <div className="ob-panel-icon" aria-hidden>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path d="M20 11.5a8.5 8.5 0 0 1-12.2 7.6L4 20l1-3.6A8.5 8.5 0 1 1 20 11.5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-            <circle cx="8.5" cy="11.5" r="1.1" fill="currentColor" />
-            <circle cx="12" cy="11.5" r="1.1" fill="currentColor" />
-            <circle cx="15.5" cy="11.5" r="1.1" fill="currentColor" />
-          </svg>
-        </div>
-        <span className="ob-panel-kicker">one last thing</span>
-        <div className="ob-source-chips">
-          {ONBOARDING_SOURCES.map((s) =>
-            s === 'Other' ? null : (
-              <button key={s} type="button" className="ob-chip" onClick={() => pick(s)}>
-                {s}
-              </button>
-            )
-          )}
-        </div>
-        <div className="ob-source-other">
-          <input
-            value={other}
-            placeholder="somewhere else…"
-            onChange={(e) => setOther(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && other.trim() && pick(other.trim())}
-          />
-          <button
-            type="button"
-            className="ob-source-go"
-            disabled={!other.trim()}
-            aria-label="Done"
-            onClick={() => pick(other.trim())}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
+    <>
+      <div className="ob-vignette" aria-hidden />
+      <div className="ob-card ob-card--source">
+        <span className="ob-source-kicker">one last thing</span>
+        <h1 className="ob-source-title">Where&apos;d you find us?</h1>
+        <p className="ob-source-sub">
+          We&apos;re a small team — knowing where you heard about us helps a ton.
+        </p>
+        <div className="ob-source-grid">
+          {SOURCES.map(({ label, Icon }) => (
+            <button key={label} type="button" className="ob-source-btn" onClick={() => pick(label)}>
+              <Icon className="ob-source-ico" aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
       </div>
-    </TempPanel>
+    </>
   );
 }

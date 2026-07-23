@@ -29,8 +29,8 @@ body.onboarding-document {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 50% 8%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 10%, transparent) 0%, transparent 55%),
-    radial-gradient(140% 120% at 50% 120%, rgba(0, 0, 0, 0.42) 0%, transparent 60%);
+    radial-gradient(120% 90% at 50% 8%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 7%, transparent) 0%, transparent 55%),
+    radial-gradient(140% 120% at 50% 120%, rgba(0, 0, 0, 0.2) 0%, transparent 62%);
   transition: background 200ms ease;
 }
 
@@ -427,6 +427,83 @@ body.onboarding-document {
 }
 @media (prefers-reduced-motion: reduce) {
   .ob-swatch {
+    transition: none;
+  }
+}
+
+/* Act 5 source card — light Editorial (v2 redesign): icon grid, no messaging icon, no free text. */
+.ob-card--source {
+  width: min(440px, 92vw);
+  padding: 32px 30px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 5px;
+}
+.ob-source-kicker {
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 62%, #9a93a5);
+}
+.ob-source-title {
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-weight: 400;
+  font-size: 32px;
+  line-height: 1.05;
+  margin: 4px 0 0;
+  color: #171320;
+}
+.ob-source-sub {
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  color: #6b6478;
+  margin: 0 0 18px;
+  max-width: 36ch;
+}
+.ob-source-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  width: 100%;
+}
+.ob-source-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px 8px;
+  border: 1px solid rgba(20, 16, 28, 0.1);
+  border-radius: 12px;
+  background: #fdfbf7;
+  color: #2a2435;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    transform 120ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.ob-source-btn:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, rgba(20, 16, 28, 0.12));
+  box-shadow: 0 8px 18px -10px color-mix(in srgb, var(--kairo-accent, #7c3aed) 60%, transparent);
+}
+.ob-source-btn:active {
+  transform: scale(0.97);
+}
+.ob-source-ico {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-source-btn {
     transition: none;
   }
 }
