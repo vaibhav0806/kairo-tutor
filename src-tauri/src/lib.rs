@@ -469,13 +469,19 @@ fn activate_frontmost(app: &tauri::AppHandle) {
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         let mut activated = false;
+        let mut is_active = false;
         if let Some(mtm) = objc2::MainThreadMarker::new() {
             let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+            // FOCUS = come to front ONLY. NEVER hideOtherApplications: — Act 3 needs System Settings
+            // visible while the pet points at the real toggle. Front this app; never minimize the world.
             // Modern (macOS 14+) — the documented replacement; works for the current app.
             ns_app.activate();
             // Legacy — still honored on older macOS; ignored on Sonoma+ (harmless).
             #[allow(deprecated)]
             ns_app.activateIgnoringOtherApps(true);
+            // Real foreground state, so the log distinguishes "activation took" from "ignored by the
+            // launch-time runloop" — exactly the failure the 700ms re-assert at first-run covers.
+            is_active = ns_app.isActive();
             activated = true;
         }
         // Also key the onboarding window itself (activation alone can leave it non-key).
@@ -483,7 +489,7 @@ fn activate_frontmost(app: &tauri::AppHandle) {
             let _ = win.show();
             let _ = win.set_focus();
         }
-        crate::klog!(app, info, activated = activated, "activate frontmost");
+        crate::klog!(app, info, activated = activated, is_active = is_active, "activate frontmost");
     });
 }
 
