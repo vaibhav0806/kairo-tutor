@@ -908,8 +908,28 @@ pub fn run() {
             auth::get_backend_jwt,
             auth::sign_out
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Kairo Tutor");
+        .build(tauri::generate_context!())
+        .expect("error while building Kairo Tutor")
+        .run(|app_handle, event| {
+            // Keep app_handle referenced on non-macOS builds (the only arm below is macOS-gated).
+            let _ = &app_handle;
+            match event {
+                // Dock-icon left-click (applicationShouldHandleReopen) → bring the home window forward.
+                // This is the must-have re-entry point now that Kairo is a Regular (Dock) app.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+                    crate::klog!(app, info, has_visible_windows = has_visible_windows, "dock reopen → show main");
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    } else {
+                        crate::klog!(app, warn, "dock reopen: main window missing");
+                    }
+                }
+                _ => {}
+            }
+        });
 }
 
 #[cfg(test)]
