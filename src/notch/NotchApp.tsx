@@ -1243,22 +1243,22 @@ export function NotchApp() {
       // resetPreviousTurn just opened this turn's controller (always non-null after it).
       const signal = turnAbortRef.current!.signal;
       const turnLog = (turnLogSeqRef.current += 1); // log-only correlation id
-      // Paywall FIRST — the instant PTT is released, check credits BEFORE any STT/gate/vision.
-      // Out of free requests → play the cached upgrade line (no provider spend, no wait).
+      // Show the thinking state IMMEDIATELY on release — do NOT block it behind the paywall credit
+      // check. That check is a native/backend round-trip, and awaiting it here was the multi-second
+      // stall where the notch stayed on "listening" after the user let go. Flip to thinking now; the
+      // credit check runs right after and swaps to the cached upgrade line only if out of requests.
+      const approxBytes = Math.floor((audioBase64.length * 3) / 4);
+      klog('notch', 'info', 'ptt audio received', { epoch: turnLog, mimeType, bytes: approxBytes });
+      updateVoiceCaptureState('transcribing');
+      setVoicePayload('transcribing');
+      void emit('cursor:thinking', {});
+      // Paywall — out of free requests → play the cached upgrade line (no provider spend, no STT).
       if (await nativeBridge.checkPaywalled()) {
         if (signal.aborted) return;
         klog('notch', 'info', 'paywalled on ptt release → cached upgrade line', { epoch: turnLog });
         await playUpgradeMessage(signal);
         return;
       }
-      // Approx WAV bytes from the base64 length (×3/4), so we can correlate a bad
-      // transcript with what the native mic actually delivered (see the native
-      // `captured audio` / `MIC LEAK` logs for held_s vs audio_s).
-      const approxBytes = Math.floor((audioBase64.length * 3) / 4);
-      klog('notch', 'info', 'ptt audio received', { epoch: turnLog, mimeType, bytes: approxBytes });
-      updateVoiceCaptureState('transcribing');
-      setVoicePayload('transcribing');
-      void emit('cursor:thinking', {});
       // Capture the screen IN PARALLEL with transcription — it isn't a blocker, so
       // the tutor turn never waits on a screenshot afterwards. submitQuery →
       // askTutorFromNotch reuses this captured frame.
