@@ -1575,44 +1575,49 @@ input {
   padding-top: 20px;
 }
 
-/* Chapter dots — no text. Filled = current chapter in the live accent; past = accent low opacity;
-   future = faint neutral. --accent-rgb is kept live by useNotchAccent() → dots re-tint for free. */
+/* Onboarding progress — a "comet track": a thin rail with a filled accent tail and a glowing comet
+   head at the current chapter. --accent-rgb is kept live by useNotchAccent() → re-tints for free. The
+   fill width + head position are set inline from (chapter+1)/total; both glide on advance. */
 .kairo-notch-progress {
   position: absolute;
-  top: 6px;
+  top: 8px;
   left: 0;
   right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
+  margin: 0 auto;
+  width: 64px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.16);
   pointer-events: none; /* decorative; outside the reported hit-rect */
   z-index: 2;
   animation: kairo-capsule-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.kairo-progress-dot {
-  width: 6px;
-  height: 6px;
+.kairo-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   border-radius: 999px;
-  background: rgb(255 255 255 / 0.18); /* future */
-  transition:
-    background 260ms ease,
-    box-shadow 260ms ease,
-    transform 260ms ease;
+  background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.15), rgb(var(--accent-rgb)));
+  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.kairo-progress-dot[data-state='past'] {
-  background: rgb(var(--accent-rgb) / 0.4);
-}
-.kairo-progress-dot[data-state='current'] {
+.kairo-progress-comet {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
   background: rgb(var(--accent-rgb));
-  box-shadow: 0 0 8px 1px rgb(var(--accent-rgb) / 0.7);
-  transform: scale(1.15);
+  box-shadow: 0 0 10px rgb(var(--accent-rgb));
+  transition: left 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .kairo-notch-progress {
     animation: none;
   }
-  .kairo-progress-dot {
+  .kairo-progress-fill,
+  .kairo-progress-comet {
     transition: none;
   }
 }
@@ -1842,25 +1847,39 @@ input {
   align-items: center;
   gap: 9px;
 }
-/* Live accent dot — Kairo's presence, gently breathing. */
-.kairo-capsule-dot {
+/* Kairo's little face — two eyes that blink every few seconds + slowly bob. The "Kairo is speaking"
+   mark beside the caption. Accent-tinted via --accent-rgb (kept live by useNotchAccent). */
+.kairo-eyes {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: rgb(var(--accent-rgb));
-  box-shadow: 0 0 10px 1px rgb(var(--accent-rgb) / 0.85);
-  animation: kairo-dot-breathe 2.6s ease-in-out infinite;
+  display: flex;
+  gap: 4px;
+  animation: kairo-eyes-bob 2.6s ease-in-out infinite;
 }
-@keyframes kairo-dot-breathe {
+.kairo-eyes i {
+  width: 5px;
+  height: 8px;
+  border-radius: 60%;
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.7);
+  animation: kairo-eyes-blink 3.4s infinite;
+}
+@keyframes kairo-eyes-blink {
+  0%,
+  90%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+@keyframes kairo-eyes-bob {
   0%,
   100% {
-    opacity: 0.7;
-    transform: scale(0.9);
+    transform: translateY(0);
   }
   50% {
-    opacity: 1;
-    transform: scale(1.1);
+    transform: translateY(-2px);
   }
 }
 .kairo-capsule-caption {
@@ -1943,7 +1962,8 @@ input {
   letter-spacing: 0.01em;
 }
 @media (prefers-reduced-motion: reduce) {
-  .kairo-capsule-dot {
+  .kairo-eyes,
+  .kairo-eyes i {
     animation: none;
   }
 }

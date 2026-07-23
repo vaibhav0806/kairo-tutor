@@ -37,10 +37,12 @@ type NotchCapsuleProps = {
   meter?: boolean;
 };
 
-// Notch progress dots (Phase D). Pure + decorative — a text-free row, one dot per onboarding chapter.
-// Filled = current chapter (live accent); past = accent low-opacity; future = faint neutral (CSS).
-function renderProgressDots(progress: { chapter: number; total: number }) {
+// Notch progress — a "comet track" (Phase D + founder pick). A thin rail with a filled accent tail and
+// a glowing comet head at the current chapter. Pure + decorative; the fill width + head position come
+// from (chapter+1)/total and glide on advance (CSS transition). Accent-tinted via --accent-rgb.
+function renderProgress(progress: { chapter: number; total: number }) {
   const { chapter, total } = progress;
+  const pct = Math.max(0, Math.min(1, (chapter + 1) / Math.max(1, total))) * 100;
   return (
     <div
       className="kairo-notch-progress"
@@ -50,15 +52,20 @@ function renderProgressDots(progress: { chapter: number; total: number }) {
       aria-valuemax={total}
       aria-valuenow={Math.min(chapter + 1, total)}
     >
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          className="kairo-progress-dot"
-          data-state={i < chapter ? 'past' : i === chapter ? 'current' : 'future'}
-          aria-hidden
-        />
-      ))}
+      <span className="kairo-progress-fill" style={{ width: `${pct}%` }} aria-hidden />
+      <span className="kairo-progress-comet" style={{ left: `${pct}%` }} aria-hidden />
     </div>
+  );
+}
+
+// Kairo's little face — two eyes that blink + slowly bob. The "Kairo is speaking" mark beside the coach
+// caption (replaces the old flat dot). Accent-tinted for free via --accent-rgb.
+function KairoEyes() {
+  return (
+    <span className="kairo-eyes" role="status" aria-label="Kairo is speaking">
+      <i />
+      <i />
+    </span>
   );
 }
 
@@ -91,8 +98,8 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
         {props.detail ? (
           <>
             <span className="kairo-capsule-caption-row">
-              {/* During Act 2's say-hi drill the breathing dot is replaced by the live mic meter. */}
-              {props.meter ? <MicMeter /> : <span className="kairo-capsule-dot" aria-hidden />}
+              {/* Kairo's eyes beside the caption — or the live mic meter during Act 2's say-hi drill. */}
+              {props.meter ? <MicMeter /> : <KairoEyes />}
               <span className="kairo-capsule-caption">{props.detail}</span>
             </span>
             {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}
@@ -193,7 +200,7 @@ export function NotchCapsule(props: NotchCapsuleProps) {
           {/* Onboarding progress dots pinned INSIDE the pill at its top-center (absolute; the pill
               gets extra top padding via data-progress so the caption clears them). pointer-events
               none + out of flow → the morph sizing + hit-rect stay untouched. */}
-          {props.progress ? renderProgressDots(props.progress) : null}
+          {props.progress ? renderProgress(props.progress) : null}
           <div className="kairo-capsule-inner" ref={innerRef}>
             {layers.map((layer) => (
               <div key={String(layer.key)} className="kairo-capsule-layer" data-phase={layer.phase}>
