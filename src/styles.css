@@ -1621,56 +1621,54 @@ input {
   }
 }
 
-/* Mic meter (Phase F) — the dancing-bars voice waveform shown in Act 2's say-hi drill. Mirrors the
-   existing .kairo-capsule-viz waveform (accent-tinted, driven by --mic-level, idle sway), rendered in
-   coach mode via <MicMeter>. Height follows the voice; goes flat on silence via the component decay. */
-.kairo-mic-meter {
+/* Mic meter (Phase F) — a radial spectrum shown in Act 2's say-hi drill: 8 accent bars around a circle
+   whose length rides the voice (--mic-level, kept live by <MicMeter>). Flat on silence via the decay. */
+.kairo-mic-radial {
   --mic-level: 0;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 28px;
+  position: relative;
+  width: 26px;
+  height: 26px;
 }
-.kairo-mic-meter i {
-  width: 3px;
-  border-radius: 999px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, rgb(var(--accent-rgb)) 65%, #fff 35%),
-    rgb(var(--accent-rgb))
-  );
-  /* per-bar base height varies so it reads as a waveform, not a bar chart */
-  height: calc(4px + var(--mic-level, 0) * 26px);
+.kairo-mic-radial i {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 5px rgb(var(--accent-rgb) / 0.55);
+  transform-origin: 1px 13px;
+  height: calc(3px + var(--mic-level, 0) * 10px);
   transition: height 70ms ease-out;
-  animation: kairo-viz-idle 1.4s ease-in-out infinite;
 }
-.kairo-mic-meter i:nth-child(odd) {
-  height: calc(3px + var(--mic-level, 0) * 20px);
+.kairo-mic-radial i:nth-child(1) {
+  transform: rotate(0deg);
 }
-.kairo-mic-meter i:nth-child(3n) {
-  height: calc(5px + var(--mic-level, 0) * 32px);
+.kairo-mic-radial i:nth-child(2) {
+  transform: rotate(45deg);
 }
-.kairo-mic-meter i:nth-child(2) {
-  animation-delay: 0.15s;
+.kairo-mic-radial i:nth-child(3) {
+  transform: rotate(90deg);
 }
-.kairo-mic-meter i:nth-child(3) {
-  animation-delay: 0.3s;
+.kairo-mic-radial i:nth-child(4) {
+  transform: rotate(135deg);
 }
-.kairo-mic-meter i:nth-child(4) {
-  animation-delay: 0.45s;
+.kairo-mic-radial i:nth-child(5) {
+  transform: rotate(180deg);
 }
-.kairo-mic-meter i:nth-child(5) {
-  animation-delay: 0.6s;
+.kairo-mic-radial i:nth-child(6) {
+  transform: rotate(225deg);
 }
-.kairo-mic-meter i:nth-child(6) {
-  animation-delay: 0.75s;
+.kairo-mic-radial i:nth-child(7) {
+  transform: rotate(270deg);
 }
-.kairo-mic-meter i:nth-child(7) {
-  animation-delay: 0.9s;
+.kairo-mic-radial i:nth-child(8) {
+  transform: rotate(315deg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .kairo-mic-meter i {
-    animation: none;
+  .kairo-mic-radial i {
+    transition: none;
   }
 }
 

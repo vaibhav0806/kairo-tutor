@@ -2,12 +2,12 @@ import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { klog } from '../core/logger';
 
-const BARS = 7;
+const BARS = 8;
 
-// Accent-tinted mic meter — the classic dancing-bars "we can hear you" waveform (the design pattern
-// Wispr/Siri/voice apps use). Fed by the EXISTING global `cursor:level` stream that native already
-// emits while the mic captures (audio.rs) — it NEVER grabs its own mic (no getUserMedia / MediaRecorder
-// / AudioContext), so it can't collide with native cpal or light a second mic indicator.
+// Accent-tinted mic meter — a RADIAL SPECTRUM (8 bars around a circle whose length rides the voice).
+// Fed by the EXISTING global `cursor:level` stream that native already emits while the mic captures
+// (audio.rs) — it NEVER grabs its own mic (no getUserMedia / MediaRecorder / AudioContext), so it can't
+// collide with native cpal or light a second mic indicator.
 //
 // It smooths toward the latest level and DECAYS to 0 when no level arrives (>120ms), so the bars go
 // reliably flat on silence or on ⌥⌃ release — native may never emit a final zero, so we don't rely on it.
@@ -42,7 +42,7 @@ export function MicMeter() {
   }, []);
 
   return (
-    <span ref={rootRef} className="kairo-mic-meter" aria-hidden>
+    <span ref={rootRef} className="kairo-mic-radial" aria-hidden>
       {Array.from({ length: BARS }, (_, i) => (
         <i key={i} />
       ))}
