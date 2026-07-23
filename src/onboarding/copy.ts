@@ -26,7 +26,7 @@ export const STEPS: StepDef[] = [
       {
         cacheKey: 'learn_point',
         text: () =>
-          'Now the fun part. Hold Option and Control together, and ask me to point something out on your screen — like the wifi icon, or the Apple menu. Watch me find it.',
+          'Now the fun part. Hold Option and Control together, and ask me to point something out on your screen — like the battery, or the time. Watch me find it.',
       },
     ],
   },
@@ -112,7 +112,7 @@ export const act3AccessLine: Segment[] = [
  *  Point uses ALWAYS-PRESENT targets (menu bar / status icons) so it works on any screen. */
 export const SEEDED_PROMPTS: Record<'talk' | 'point' | 'circle', string[]> = {
   talk: ["hey Kairo, what's up?", 'how are you today?', 'tell me a fun fact'],
-  point: ["where's the wifi icon?", 'point at the battery', "where's the Apple menu?"],
+  point: ["where's the battery?", 'point at the time', "where's the clock?"],
   circle: ['circle any icon and ask what it is', 'circle something and ask about it']
 };
 

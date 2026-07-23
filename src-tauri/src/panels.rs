@@ -540,12 +540,14 @@ pub(crate) fn configure_overlay_window(
         payload.mode.as_deref(),
         Some("annotate") | Some("annotation_preview")
     );
-    if is_gesture {
-        // The cosmetic gesture layer is on-screen only — the notch composites the
-        // truth marks in code. Never let it enter the tutor capture, regardless of
-        // the SHOW_IN_CAPTURE dev toggle.
+    if is_gesture && !constants::SHOW_IN_CAPTURE {
+        // Production: the cosmetic gesture comet is on-screen only — the notch composites the truth
+        // marks in code, so keep it OUT of the tutor's screenshot (no double marks / clean vision).
         exclude_window_from_screen_capture(window);
-    } else if shows_user_marks || constants::SHOW_IN_CAPTURE {
+    } else if is_gesture || shows_user_marks || constants::SHOW_IN_CAPTURE {
+        // Demo/dev (SHOW_IN_CAPTURE) shows the cosmetic comet trail in the user's recordings too —
+        // same as the notch + pet already are. `shows_user_marks` (pen) is always captured so the
+        // AI still sees the user's drawing.
         include_window_in_screen_capture(window);
     } else {
         exclude_window_from_screen_capture(window);
