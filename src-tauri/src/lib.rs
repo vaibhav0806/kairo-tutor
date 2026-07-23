@@ -926,17 +926,19 @@ pub fn run() {
             // Keep app_handle referenced on non-macOS builds (the only arm below is macOS-gated).
             let _ = &app_handle;
             match event {
-                // Dock-icon left-click (applicationShouldHandleReopen) → bring the home window forward.
-                // This is the must-have re-entry point now that Kairo is a Regular (Dock) app.
+                // Dock-icon left-click (applicationShouldHandleReopen). Kairo has NO designed "home"
+                // window yet — the legacy `main` dashboard is just the first-run permission-recovery
+                // screen, and the founder does not want that (or any) window popping here. So bring up
+                // the NOTCH — the real Kairo surface — exactly like the menu-bar "Show Notch" item. A
+                // proper minimal settings/account window comes later (with billing); wire it here then.
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { has_visible_windows, .. } => {
-                    crate::klog!(app, info, has_visible_windows = has_visible_windows, "dock reopen → show main");
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    } else {
-                        crate::klog!(app, warn, "dock reopen: main window missing");
+                    crate::klog!(app, info, has_visible_windows = has_visible_windows, "dock reopen → show notch");
+                    let state = app_handle.state::<NotchState>();
+                    if let Err(error) =
+                        show_notch_with_payload(app_handle, state.inner(), Some(typing_notch_payload()))
+                    {
+                        crate::klog!(app, error, "dock reopen: show notch failed: {error}");
                     }
                 }
                 _ => {}
