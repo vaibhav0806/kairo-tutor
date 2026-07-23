@@ -113,7 +113,21 @@ pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
-        crate::klog!(auth, info, "activated Kairo + focused onboarding window after auth callback");
+        // macOS Sequoia's cooperative activation frequently REFUSES to pull our window in front of
+        // the browser after the OAuth hand-off — NSApp.activate() reports success (is_active=true)
+        // while the browser stays visually on top. Force it: briefly pin the window on top (orders
+        // it above the browser regardless of app-activation policy), then release the pin ~600ms
+        // later so the window behaves normally again.
+        let _ = win.set_always_on_top(true);
+        let win_release = win.clone();
+        let app_release = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            let _ = app_release.run_on_main_thread(move || {
+                let _ = win_release.set_always_on_top(false);
+            });
+        });
+        crate::klog!(auth, info, "activated Kairo + focused onboarding window after auth callback (front-pulse)");
     });
 }
 
