@@ -65,65 +65,67 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
       return 1 - t * t * (3 - 2 * t);
     };
 
+    const px = (p: TimedPoint) => p.x / dpr - displayBounds.x;
+    const py = (p: TimedPoint) => p.y / dpr - displayBounds.y;
+
     const draw = () => {
       const now = performance.now();
       const maxAge = cfg.holdMs + cfg.fadeMs + cfg.windowMs + 200;
       bufferRef.current = bufferRef.current.filter((p) => now - p.t <= maxAge);
       ctx.clearRect(0, 0, cssW, cssH);
       const buf = bufferRef.current;
-      const color = `rgb(${accentRgb})`;
-      ctx.strokeStyle = color;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = cfg.trailWidthCssPx;
 
-      // The comet head = the newest point overall. Taper each segment toward it: newer (near the head)
-      // is thick + bright, older (down the tail) is thin + faint.
-      const newestT = buf.length ? buf[buf.length - 1].t : now;
       const strokes = segmentGesturePath(buf, cfg);
       for (const stroke of strokes) {
         const pts = stroke.points;
         if (pts.length < 2) continue;
         const overallFade = smoothFade(now - pts[pts.length - 1].t);
         if (overallFade <= 0.01) continue;
-        for (let i = 1; i < pts.length; i++) {
-          const p0 = pts[i - 1];
-          const p1 = pts[i];
-          // cf: 1 at the head, → 0 by cometMs back down the tail.
-          const cf = 1 - Math.min(1, Math.max(0, (newestT - p1.t) / cfg.cometMs));
-          const width = cfg.tailWidthCssPx + (cfg.headWidthCssPx - cfg.tailWidthCssPx) * cf;
-          const alpha = (cfg.tailOpacity + (cfg.headOpacity - cfg.tailOpacity) * cf) * overallFade;
-          if (alpha <= 0.01) continue;
-          ctx.globalAlpha = alpha;
-          ctx.lineWidth = width;
-          ctx.beginPath();
-          ctx.moveTo(p0.x / dpr - displayBounds.x, p0.y / dpr - displayBounds.y);
-          ctx.lineTo(p1.x / dpr - displayBounds.x, p1.y / dpr - displayBounds.y);
-          ctx.stroke();
+        // ONE smooth continuous stroke (quadratic through midpoints) — no per-segment round-cap beads.
+        // A head→tail alpha GRADIENT gives the comet fade (bright at the cursor → faint at the tail).
+        const head = pts[pts.length - 1];
+        const tail = pts[0];
+        const hx = px(head);
+        const hy = py(head);
+        const tx = px(tail);
+        const ty = py(tail);
+        if (Math.hypot(hx - tx, hy - ty) < 2) {
+          ctx.strokeStyle = `rgba(${accentRgb}, ${(cfg.headOpacity * overallFade).toFixed(3)})`;
+        } else {
+          const grad = ctx.createLinearGradient(hx, hy, tx, ty);
+          grad.addColorStop(0, `rgba(${accentRgb}, ${(cfg.headOpacity * overallFade).toFixed(3)})`);
+          grad.addColorStop(1, `rgba(${accentRgb}, ${(cfg.tailOpacity * overallFade).toFixed(3)})`);
+          ctx.strokeStyle = grad;
         }
+        ctx.beginPath();
+        ctx.moveTo(px(pts[0]), py(pts[0]));
+        for (let i = 1; i < pts.length - 1; i++) {
+          const mx = (px(pts[i]) + px(pts[i + 1])) / 2;
+          const my = (py(pts[i]) + py(pts[i + 1])) / 2;
+          ctx.quadraticCurveTo(px(pts[i]), py(pts[i]), mx, my);
+        }
+        ctx.lineTo(px(pts[pts.length - 1]), py(pts[pts.length - 1]));
+        ctx.stroke();
       }
 
       // The glowing comet head at the cursor — bright while active, fades out after release. Drawn last
-      // so the shadow glow doesn't bleed onto the tail segments.
+      // so the shadow glow doesn't bleed onto the tail.
       if (buf.length) {
         const last = buf[buf.length - 1];
         const headFade = smoothFade(now - last.t);
         if (headFade > 0.02) {
-          ctx.globalAlpha = cfg.headOpacity * headFade;
           ctx.shadowBlur = cfg.glowRadiusCssPx;
-          ctx.shadowColor = color;
-          ctx.fillStyle = color;
+          ctx.shadowColor = `rgb(${accentRgb})`;
+          ctx.fillStyle = `rgba(${accentRgb}, ${(cfg.headOpacity * headFade).toFixed(3)})`;
           ctx.beginPath();
-          ctx.arc(
-            last.x / dpr - displayBounds.x,
-            last.y / dpr - displayBounds.y,
-            cfg.headDotRadiusCssPx,
-            0,
-            Math.PI * 2
-          );
+          ctx.arc(px(last), py(last), cfg.headDotRadiusCssPx, 0, Math.PI * 2);
           ctx.fill();
           ctx.shadowBlur = 0;
         }
       }
 
-      ctx.globalAlpha = 1;
       // Keep animating only while there's something to draw or we're recording; otherwise stop the loop
       // (0 CPU) until the next point or hold.
       raf = buf.length > 0 || recordingRef.current ? requestAnimationFrame(draw) : 0;

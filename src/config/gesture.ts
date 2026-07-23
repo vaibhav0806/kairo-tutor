@@ -21,13 +21,11 @@ export const gestureConfig = {
   holdMs: 250, // holds this long after its last point, then fades
   fadeMs: 350, // fade-out duration after holdMs (gone by ≈0.6s), eased
   strokeColor: '#8b5cf6', // fallback tint if the accent var can't be read
-  headWidthCssPx: 8, // bright comet-head stroke width (CSS px)
-  tailWidthCssPx: 1.5, // thin tail width (CSS px)
-  cometMs: 500, // how far back from the head (ms) the head→tail taper spans
-  headOpacity: 0.42, // head alpha — translucent, see-through, not distracting
-  tailOpacity: 0.1, // tail alpha (fades along the taper to this)
-  glowRadiusCssPx: 12, // head glow (canvas shadowBlur)
-  headDotRadiusCssPx: 4, // the glowing head dot radius (CSS px)
+  trailWidthCssPx: 5, // comet body width — ONE smooth continuous stroke (no per-segment beads)
+  headOpacity: 0.5, // alpha at the head (cursor) — translucent, not distracting
+  tailOpacity: 0.08, // alpha the tail fades to (head→tail gradient)
+  glowRadiusCssPx: 13, // head glow (canvas shadowBlur)
+  headDotRadiusCssPx: 5, // the glowing head dot radius (CSS px)
 
   // Composite (image sent to the vision model) ---------------------------
   // Bolder + more opaque than the cosmetic on-screen stroke: gpt-5.6-sol was MISSING
