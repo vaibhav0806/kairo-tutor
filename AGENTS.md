@@ -249,6 +249,12 @@ Also - don't create branches unless i explicity tell u to, work on main branch o
 
 ## Fresh onboarding test — reset script
 
+> **ALWAYS reset permissions too — never a markers-only shortcut.** When the user asks for a reset /
+> fresh test, run the FULL script below (the `tccutil` grants **and** the on-disk markers). Do NOT skip
+> the `tccutil` lines to "save re-granting" — a markers-only reset makes Act 2/3 behave like a returning
+> user (permissions already granted → primers/prompts don't fire), so it is NOT a true first-run and
+> hides real bugs. Founder directive 2026-07-23.
+
 To rehearse a TRUE first-run (see the OS permission prompts + the full 6-act onboarding from the
 top), reset all TCC grants + the app's on-disk markers BEFORE launching. Run this, then rebuild +
 launch:

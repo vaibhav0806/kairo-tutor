@@ -116,6 +116,8 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
                 exit={reduce ? undefined : { opacity: 0, x: -14, filter: 'blur(4px)' }}
                 transition={{ duration: 0.2 }}
               >
+                {/* LOGO SLOT — the real Kairo logo drops in here (an <img>/inline SVG) beside or in
+                    place of the wordmark once the team ships it. */}
                 <div className="ob-hero-mark">{HERO_COPY.wordmark}</div>
                 <h1 className="ob-hero-h1">{HERO_COPY.h1}</h1>
                 <p className="ob-hero-sub">{HERO_COPY.sub}</p>
