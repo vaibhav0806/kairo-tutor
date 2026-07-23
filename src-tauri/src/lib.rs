@@ -302,16 +302,37 @@ fn get_current_overlay_payload(
 }
 
 #[tauri::command]
-fn hide_overlay(_app: tauri::AppHandle, state: State<'_, OverlayState>) -> Result<(), String> {
+fn hide_overlay(app: tauri::AppHandle, state: State<'_, OverlayState>) -> Result<(), String> {
     store_overlay_payload(&state, None)?;
-    if let Some(panel) = state
-        .panel
-        .lock()
-        .map_err(|_| "Failed to lock overlay panel state.".to_string())?
-        .clone()
-    {
-        panel.hide();
+    // Blank the overlay webview NOW (while it's still visible) so its last painted frame is empty.
+    // A hidden webview freezes its last frame (macOS throttles rAF while hidden), so without this the
+    // previous gesture strokes / box flash for a frame on the next show — the pen-mark flicker. Then
+    // order the panel out on a short delay so the blank actually paints; SKIP the hide if a new show
+    // re-stored a payload in the gap, so we never hide over fresh content (no race).
+    if let Ok(guard) = state.window.lock() {
+        if let Some(win) = guard.clone() {
+            let _ = win.emit("overlay:clear", ());
+        }
     }
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(90));
+        let _ = app2.clone().run_on_main_thread(move || {
+            let state = app2.state::<OverlayState>();
+            let superseded = state
+                .current_payload
+                .lock()
+                .map(|g| g.is_some())
+                .unwrap_or(false);
+            if superseded {
+                return; // a new show came in during the delay — don't hide over it
+            }
+            let panel = state.panel.lock().ok().and_then(|g| g.clone());
+            if let Some(panel) = panel {
+                panel.hide();
+            }
+        });
+    });
     Ok(())
 }
 

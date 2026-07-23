@@ -311,6 +311,21 @@ export function OverlayApp() {
     };
   }, [nativeBridge]);
 
+  // Pen-mark flicker fix: when the native side hides the overlay it emits `overlay:clear` FIRST (while
+  // we're still visible). Blank everything now so the last painted frame is empty — a hidden webview
+  // freezes its last frame and would otherwise flash the old strokes/box on the next show.
+  useEffect(() => {
+    let un = () => {};
+    void listen('overlay:clear', () => setPayload(null))
+      .then((next) => {
+        un = next;
+      })
+      .catch(() => {
+        /* browser preview / tests have no event bus */
+      });
+    return () => un();
+  }, []);
+
   return (
     <main className="overlay-shell" aria-label="Kairo visual overlay">
       {payload?.mode === 'gesture' ? (
