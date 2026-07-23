@@ -1871,37 +1871,58 @@ input {
   letter-spacing: -0.005em;
   text-wrap: pretty;
 }
-/* "Preparing" pulse — three dots in the USER'S accent, shown while the voice synthesizes so the
-   caption text never appears before the audio. */
-.kairo-capsule-loading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 4px;
+/* "Working" cube — a small rotating 3D cube in the USER'S accent (--accent-rgb, kept live by
+   useNotchAccent). Shown while Kairo thinks / while the voice synthesizes. Replaces the old 3-dot
+   pulse (which clashed with the progress dots) + the thinking shimmer. */
+.kairo-cube-stage {
+  display: grid;
+  place-items: center;
+  perspective: 90px;
+  width: 26px;
+  height: 26px;
 }
-.kairo-capsule-loading i {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: rgb(var(--accent-rgb));
-  box-shadow: 0 0 9px rgb(var(--accent-rgb) / 0.75);
-  animation: kairo-coach-load 1.15s ease-in-out infinite;
+.kairo-cube {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  transform-style: preserve-3d;
+  animation: kairo-cube-spin 2.6s linear infinite;
 }
-.kairo-capsule-loading i:nth-child(2) {
-  animation-delay: 0.16s;
+.kairo-cube i {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(var(--accent-rgb) / 0.9);
+  background: rgb(var(--accent-rgb) / 0.14);
 }
-.kairo-capsule-loading i:nth-child(3) {
-  animation-delay: 0.32s;
+.kairo-cube i:nth-child(1) {
+  transform: rotateY(0deg) translateZ(8px);
 }
-@keyframes kairo-coach-load {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: translateY(0) scale(0.9);
+.kairo-cube i:nth-child(2) {
+  transform: rotateY(90deg) translateZ(8px);
+  background: rgb(var(--accent-rgb) / 0.22);
+}
+.kairo-cube i:nth-child(3) {
+  transform: rotateY(180deg) translateZ(8px);
+}
+.kairo-cube i:nth-child(4) {
+  transform: rotateY(270deg) translateZ(8px);
+  background: rgb(var(--accent-rgb) / 0.22);
+}
+.kairo-cube i:nth-child(5) {
+  transform: rotateX(90deg) translateZ(8px);
+  background: rgb(var(--accent-rgb) / 0.3);
+}
+.kairo-cube i:nth-child(6) {
+  transform: rotateX(-90deg) translateZ(8px);
+}
+@keyframes kairo-cube-spin {
+  to {
+    transform: rotateX(-360deg) rotateY(360deg);
   }
-  50% {
-    opacity: 1;
-    transform: translateY(-3px) scale(1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .kairo-cube {
+    animation: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1988,29 +2009,9 @@ input {
   background: rgb(var(--accent-rgb) / 0.85);
   animation: kairo-viz-think 1s ease-in-out infinite;
 }
-.kairo-capsule[data-mode='thinking']::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(
-    100deg,
-    transparent 30%,
-    rgb(var(--accent-rgb) / 0.16) 50%,
-    transparent 70%
-  );
-  background-size: 220% 100%;
-  animation: kairo-accent-shimmer 1.6s linear infinite;
-}
-@keyframes kairo-accent-shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -20% 0;
-  }
-}
+/* (thinking shimmer removed — its sweep had a dead beat each cycle that read as a lag; the rotating
+   accent cube is now the thinking indicator. The dead thinking-viz rules below are harmless — thinking
+   no longer renders the bars.) */
 .kairo-capsule[data-mode='thinking'] .kairo-capsule-viz i:nth-child(2) {
   animation-delay: 0.1s;
 }

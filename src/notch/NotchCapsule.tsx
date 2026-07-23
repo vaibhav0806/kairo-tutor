@@ -62,6 +62,24 @@ function renderProgressDots(progress: { chapter: number; total: number }) {
   );
 }
 
+// The "working" cube — a small rotating 3D cube in the user's accent, shown while Kairo thinks / while
+// the voice synthesizes. Replaces the old 3-dot pulse (which clashed with the progress dots) + the
+// thinking text/shimmer. Accent-tinted for free via --accent-rgb.
+function ThinkingCube() {
+  return (
+    <span className="kairo-cube-stage" role="status" aria-label="Kairo is thinking">
+      <span className="kairo-cube" aria-hidden>
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+    </span>
+  );
+}
+
 // Per-mode content. The box morphs around whatever this returns; content swaps instantly
 // inside while the layers cross-fade.
 function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
@@ -80,11 +98,7 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
             {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}
           </>
         ) : (
-          <span className="kairo-capsule-loading" aria-label="Kairo is preparing" aria-hidden>
-            <i />
-            <i />
-            <i />
-          </span>
+          <ThinkingCube />
         )}
       </div>
     );
@@ -134,7 +148,15 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
       </div>
     );
   }
-  // listening / thinking (idle never reaches here — the capsule unmounts).
+  // thinking → the rotating accent cube (a small effect, not boring "Thinking…" text).
+  if (mode === 'thinking') {
+    return (
+      <div className="kairo-capsule-status">
+        <ThinkingCube />
+      </div>
+    );
+  }
+  // listening → the live mic waveform + label (idle never reaches here — the capsule unmounts).
   return (
     <div className="kairo-capsule-status">
       <span className="kairo-capsule-viz" aria-hidden="true">
