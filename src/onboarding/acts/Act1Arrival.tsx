@@ -1,87 +1,131 @@
-import { useCallback, useEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent
+} from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
-import { DEFAULT_ACCENT, applyAccent, clampAccent, getAccent } from '../../core/accent'; // Phase 0 + 7
+import { DEFAULT_ACCENT, applyAccent, clampAccent, getAccent } from '../../core/accent';
 import { klog } from '../../core/logger';
-import { playChime } from '../../core/sound';
+import { playChime, playSound } from '../../core/sound';
+import { prefersReducedMotion } from '../../core/reducedMotion';
 import { useCoach } from '../useCoach';
-import { ACT_LINES } from '../copy';
-import { TempPanel } from './TempPanel';
+import { ACT_LINES, HERO_COPY } from '../copy';
 import { ColorWheel } from './ColorWheel';
 import type { ActProps } from './actTypes';
 
-// Act 1 — Arrival + Color (master spec §4). The pet wakes (Phase 2 entrance), then the user picks
-// Kairo's color on a full HSV wheel with LIVE theming across every surface.
+// Act 1 — Color (v2 Phase C). The hero (Act 0) morphs INTO this card, so it's the light `.ob-card`
+// shell (light→light, seamless). The user picks Kairo's color on a full HSV wheel with LIVE theming
+// across every surface, then confirms — and the whole card COLLAPSES into the pet as the seam into the
+// windowless flow. The old "wake" beat moved to that collapse, where the pet actually comes alive on
+// the real desktop (a stronger moment than a pre-color line).
 export function Act1Arrival({ name, onAdvance }: ActProps) {
-  const { say, clear, bridge } = useCoach(name);
-  const [phase, setPhase] = useState<'wake' | 'color'>('wake');
-  // The wheel panel appears only when the color line's audio starts — so panel + caption + voice
-  // all land at the same instant (perfectly synced), never text-then-voice.
-  const [colorReady, setColorReady] = useState(false);
+  const { say, clear } = useCoach(name);
   const [hex, setHex] = useState<string>(DEFAULT_ACCENT);
+  // Non-null while the card is imploding toward the pet; holds the translate delta (card center → pet).
+  const [collapse, setCollapse] = useState<{ dx: number; dy: number } | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
   // Load the current accent as the wheel's starting value (getAccent is async in Phase 0).
   useEffect(() => {
     void getAccent().then(setHex);
   }, []);
 
-  // 1a — the wake-up: pet entrance (Phase 2) + coach caption, then auto-advance to color.
+  // The color card is the ONLY phase now. Speak the color line as the card morphs in; the panel reveals
+  // on MOUNT (not gated on audio-start anymore) so the hero→color morph is continuous with no blank
+  // frame. Caption↔voice sync is still guaranteed by useCoach.say (the caption lands with the voice).
   useEffect(() => {
-    klog('onboarding', 'info', 'act1 wake');
-    void emit('cursor:entrance'); // Phase 2 signature entrance (pet)
-    void say([ACT_LINES.act1_wake], {
-      onStart: () => playChime('entrance') // warm tone in sync with the wake voice (audio unlocked)
-    }).then(() => setPhase('color'));
+    klog('onboarding', 'info', 'act1 color shown');
+    void say([ACT_LINES.act1_color]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 1b — give me a color: the wheel panel reveals in sync with the caption + voice (onStart).
-  useEffect(() => {
-    if (phase !== 'color') return;
-    void say([ACT_LINES.act1_color], { onStart: () => setColorReady(true) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
-
-  // Live recolor: applyAccent paints THIS window's --kairo-accent vars instantly, and the emitted
-  // accent:changed reaches the other webviews (pet glow / notch caption) so everything recolors
-  // together in real time (Phase 0 + §5). No file write per move — set_accent persists on confirm.
+  // Live recolor on every wheel move: applyAccent paints this window's vars instantly, and the emitted
+  // accent:changed reaches the other webviews (pet glow / notch caption) + the in-card preview.
   const onWheel = useCallback((next: string) => {
     setHex(next);
     applyAccent(next);
     void emit('accent:changed', { hex: next });
   }, []);
 
-  const confirm = useCallback(async () => {
-    // Clamp the picked hue into a legible band so an extreme pick can never vanish (§5).
-    const clamped = clampAccent(hex);
-    klog('onboarding', 'info', 'act1 color confirmed', { picked: hex, clamped });
-    playChime('confirm'); // satisfying two-note rise on lock-in
-    applyAccent(clamped);
-    void emit('accent:changed', { hex: clamped });
-    await invoke('set_accent', { hex: clamped }).catch(() => {}); // Phase 0: persist natively
-    await clear();
-    onAdvance();
-  }, [hex, clear, onAdvance]);
+  // Collapse the whole card INTO the pet. The pet shadows the mouse, so at confirm it's on the button —
+  // we implode toward the click point (the full-monitor onboarding window means clientX/Y ARE screen
+  // coords). The pet wakes to "catch" it. Reduced-motion → a plain fade. Resolves when the settle lands.
+  const runCollapse = useCallback(
+    (pt: { x: number; y: number }) =>
+      new Promise<void>((resolve) => {
+        void emit('cursor:entrance'); // the pet wakes up to catch the card
+        if (prefersReducedMotion()) {
+          playSound('settle');
+          window.setTimeout(resolve, 160);
+          return;
+        }
+        const rect = cardRef.current?.getBoundingClientRect();
+        const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+        const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+        klog('onboarding', 'info', 'window→pet collapse', { x: Math.round(pt.x), y: Math.round(pt.y) });
+        setCollapse({ dx: pt.x - cx, dy: pt.y - cy });
+        window.setTimeout(() => {
+          playSound('settle'); // soft landing as it catches
+          resolve();
+        }, 360);
+      }),
+    []
+  );
+
+  const confirm = useCallback(
+    async (e: MouseEvent<HTMLButtonElement>) => {
+      // Capture the click point synchronously (before any await) for the collapse target.
+      const point = { x: e.clientX, y: e.clientY };
+      // Clamp the picked hue into a legible band so an extreme pick can never vanish (§5).
+      const clamped = clampAccent(hex);
+      klog('onboarding', 'info', 'act1 color confirmed', { picked: hex, clamped });
+      applyAccent(clamped);
+      void emit('accent:changed', { hex: clamped });
+      await invoke('set_accent', { hex: clamped }).catch(() => {}); // persist natively
+      playChime('confirm'); // satisfying two-note rise on lock-in
+      await runCollapse(point);
+      // The pet is now alive on the real desktop → the wake line, with the celebrate pop welded to its
+      // start. "Hey — I'm Kairo. See that notch… that's where I live!"
+      await say([ACT_LINES.act1_wake], { onStart: () => void emit('cursor:celebrate') });
+      await clear();
+      onAdvance();
+    },
+    [hex, clear, onAdvance, runCollapse, say]
+  );
+
+  const collapseStyle: CSSProperties | undefined = collapse
+    ? ({ ['--collapse-x']: `${collapse.dx}px`, ['--collapse-y']: `${collapse.dy}px` } as CSSProperties)
+    : undefined;
 
   return (
     <>
       <div className="ob-vignette" aria-hidden />
-      {phase === 'color' && colorReady && (
-        <TempPanel>
-          <div className="ob-color">
-            {/* The spoken notch caption carries the instruction — the card stays minimal (just a
-                live swatch + a small kicker) so the words aren't said twice. */}
-            <div className="ob-color-head">
-              <span className="ob-color-dot" style={{ background: hex }} aria-hidden />
-              <span className="ob-color-kicker">your color</span>
-            </div>
-            <ColorWheel value={hex} onChange={onWheel} />
-            <button type="button" className="ob-color-confirm" onClick={() => void confirm()}>
-              That&apos;s the one
-            </button>
-          </div>
-        </TempPanel>
-      )}
+      <div
+        ref={cardRef}
+        className={`ob-card ob-card--color ob-morph-in${collapse ? ' ob-collapsing' : ''}`}
+        style={collapseStyle}
+      >
+        {/* The spoken notch caption carries the instruction — the card stays minimal (a live swatch +
+            a small kicker) so the words aren't said twice. */}
+        <div className="ob-color-head">
+          <span className="ob-color-dot" style={{ background: hex }} aria-hidden />
+          <span className="ob-color-kicker">your color</span>
+        </div>
+        <ColorWheel value={hex} onChange={onWheel} size={248} />
+        {/* Live in-card preview: a faux notch capsule + a pet dot, both tinted by the pick, so the user
+            SEES the personalization inside the card, not just a swatch. */}
+        <div className="ob-color-preview" aria-hidden>
+          <span className="ob-color-preview-notch" />
+          <span className="ob-color-preview-pet" />
+        </div>
+        <button type="button" className="ob-color-confirm" onClick={(e) => void confirm(e)}>
+          {HERO_COPY.confirm}
+        </button>
+      </div>
     </>
   );
 }

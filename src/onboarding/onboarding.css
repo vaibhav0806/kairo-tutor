@@ -123,7 +123,7 @@ body.onboarding-document {
     0 0 44px -6px color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, transparent);
 }
 .ob-wheel-slider {
-  width: 208px;
+  width: 248px;
   border-radius: 999px;
   overflow: hidden;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
@@ -556,6 +556,76 @@ body.onboarding-document {
   animation: ob-morph-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
+/* ---- Act 1 color card (light, shares .ob-card) + morph-in + collapse (v2 Phase C) ------------ */
+.ob-card--color {
+  width: min(360px, 92vw);
+  padding: 26px 26px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+/* Light-surface override for the kicker (originally light-on-dark for the glassy panel). */
+.ob-card--color .ob-color-kicker {
+  color: rgba(26, 22, 34, 0.45);
+}
+
+/* Live in-card preview: a faux notch capsule + a pet dot, both tinted by the current pick, so the
+   personalization is visible INSIDE the card (not just the swatch dot). */
+.ob-color-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(20, 16, 28, 0.04);
+}
+.ob-color-preview-notch {
+  width: 54px;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 22%, #14101c);
+  box-shadow: 0 0 16px -2px color-mix(in srgb, var(--kairo-accent, #7c3aed) 60%, transparent);
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+.ob-color-preview-pet {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--kairo-accent, #7c3aed);
+  box-shadow: 0 0 16px -1px var(--kairo-accent, #7c3aed);
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* Hero → color morph-in (crossfade-morph; pairs with .ob-morph-out on the hero). Defined AFTER
+   .ob-card so it overrides the default ob-panel-in for the color card. */
+@keyframes ob-morph-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.ob-morph-in {
+  animation: ob-morph-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Window → pet collapse: the card implodes toward the confirm-click point (the pet). Defined last so
+   it overrides ob-morph-in when both classes are present. --collapse-x/y = delta from the card center
+   to the click point, set inline in Act1Arrival. */
+@keyframes ob-collapse {
+  to {
+    transform: translate(var(--collapse-x, 0), var(--collapse-y, 0)) scale(0.04);
+    opacity: 0;
+  }
+}
+.ob-collapsing {
+  animation: ob-collapse 360ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ob-color-panel,
   .ob-color-confirm,
@@ -563,6 +633,8 @@ body.onboarding-document {
   .ob-hero-cta,
   .ob-hero-mock-pet,
   .ob-morph-out,
+  .ob-morph-in,
+  .ob-collapsing,
   .google-signin-btn,
   .ob-source-go,
   .ob-source-chips .ob-chip,
