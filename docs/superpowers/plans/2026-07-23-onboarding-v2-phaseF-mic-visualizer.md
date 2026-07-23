@@ -1,4 +1,13 @@
-# Phase F — Mic Visualizer (Act 2)
+# Phase F — Mic Visualizer
+
+> **Founder direction (2026-07-23):** the OSS-vs-in-house *code* question is moot — what matters is the
+> **visual design**. Do NOT invent the look ourselves. At build time, **deep-dive online references** (how
+> Wispr Flow / Cluely / other voice apps render their mic-level meter) and **replicate a proven design**.
+> Implementation can be our own code fed by the existing `cursor:level` (no second mic grab), but the
+> *appearance* is modeled on good online examples. **Thread the user's chosen accent color** so it looks
+> personalized. Treat the "in-house `<MicMeter>`" below as the wiring skeleton; the styling comes from the
+> online research pass.
+ (Act 2)
 
 > **Status:** Ready to build.
 > **Parent spec:** [`2026-07-23-onboarding-ux-v2.md`](./2026-07-23-onboarding-ux-v2.md) — Phase F (§333–359),
