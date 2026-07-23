@@ -94,13 +94,11 @@ export const HERO_COPY = {
 export const ACT3_LINES: Record<'act3_screen' | 'act3_access', string> = {
   act3_screen:
     'Time to earn my eyes. A box is popping up now — tap “Open System Settings,” then flip Kairo ' +
-    'Tutor on. That lets me see your screen, but only while you hold Option and Control, and I never ' +
-    'save it — I look, help, and forget. macOS restarts me the moment you do, totally normal, I’ll ' +
-    'pick right back up.',
+    'Tutor on. I only see your screen while you hold Option and Control, and I never save it. ' +
+    'macOS may restart me — totally normal.',
   act3_access:
-    'Last one — a box is popping up now for Accessibility. Tap “Open System Settings,” then flip the ' +
-    'Kairo Tutor switch on, right next to my name. It just lets me nudge the pointer to whatever I’m ' +
-    'showing you, nothing more. And that’s everything.'
+    'Last one — a box is popping up now for Accessibility. Tap “Open System Settings,” then flip ' +
+    'Kairo Tutor on. It just lets me nudge the pointer to whatever I’m showing you. That’s everything.'
 };
 
 export const act3ScreenLine: Segment[] = [
