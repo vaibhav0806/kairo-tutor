@@ -14,12 +14,20 @@ export const gestureConfig = {
   minStrokePathPx: 60, // discard strokes whose total path is below this
   confidentDwellMs: 180, // a stroke lasting at least this long renders/composites as "confident"
 
-  // Cosmetic render — soft translucent marker, canvas-drawn ------------
-  baseOpacity: 0.28, // almost transparent while drawn, see-through
+  // Cosmetic render — a COMET trail, canvas-drawn -----------------------
+  // A bright glowing head at the cursor tapering to a thin faint tail (medium drama: clearly a comet,
+  // not distracting while pointing). Accent-tinted at runtime (falls back to strokeColor). The
+  // age-based hold+fade below is UNCHANGED — the comet dissipates after release exactly as before.
   holdMs: 250, // holds this long after its last point, then fades
   fadeMs: 350, // fade-out duration after holdMs (gone by ≈0.6s), eased
-  strokeColor: '#8b5cf6', // same blue/violet as fable's target boxes (--box-rgb 139 92 246)
-  strokeWidthCssPx: 9, // on-screen stroke width (CSS px)
+  strokeColor: '#8b5cf6', // fallback tint if the accent var can't be read
+  headWidthCssPx: 8, // bright comet-head stroke width (CSS px)
+  tailWidthCssPx: 1.5, // thin tail width (CSS px)
+  cometMs: 500, // how far back from the head (ms) the head→tail taper spans
+  headOpacity: 0.42, // head alpha — translucent, see-through, not distracting
+  tailOpacity: 0.1, // tail alpha (fades along the taper to this)
+  glowRadiusCssPx: 12, // head glow (canvas shadowBlur)
+  headDotRadiusCssPx: 4, // the glowing head dot radius (CSS px)
 
   // Composite (image sent to the vision model) ---------------------------
   // Bolder + more opaque than the cosmetic on-screen stroke: gpt-5.6-sol was MISSING
