@@ -57,6 +57,9 @@ export function NotchApp() {
   // Thread the user's chosen accent (Phase 0 pref) into the notch CSS vars, live.
   useNotchAccent();
   const [payload, setPayload] = useState<NotchPayload>(defaultPayload);
+  // Onboarding chapter progress for the notch dots (Phase D). Fed ONLY by 'onboarding:progress'
+  // (never the payload), so caption clears between acts don't wipe it. null = no dots.
+  const [progress, setProgress] = useState<{ chapter: number; total: number } | null>(null);
   // The answer body is held back until TTS playback actually starts, so the notch
   // never shows the answer text before it is spoken.
   const [detailHidden, setDetailHidden] = useState(false);
@@ -1130,6 +1133,29 @@ export function NotchApp() {
     };
   }, []);
 
+  // Onboarding progress dots (Phase D). A chapter < 0 sentinel (emitted by finish_onboarding) clears
+  // them, so the dots never appear during normal notch turns — a fresh notch webview starts null.
+  useEffect(() => {
+    let un = () => {};
+    void listen<{ chapter: number; total: number }>('onboarding:progress', (event) => {
+      const { chapter, total } = event.payload;
+      if (chapter < 0) {
+        klog('notch', 'info', 'onboarding progress cleared');
+        setProgress(null);
+        return;
+      }
+      klog('notch', 'info', 'onboarding progress', { chapter, total });
+      setProgress({ chapter, total });
+    })
+      .then((next) => {
+        un = next;
+      })
+      .catch(() => {
+        /* browser preview / tests have no event bus */
+      });
+    return () => un();
+  }, []);
+
   const setVoicePayload = useCallback(
     (state: VoiceCaptureState) => {
       const copy = voiceStatusCopy(state);
@@ -1529,6 +1555,7 @@ export function NotchApp() {
   return (
     <NotchCapsule
       mode={capsuleMode}
+      progress={progress}
       statusLabel={statusLabel}
       detail={payload.detail}
       title={payload.title}

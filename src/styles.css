@@ -1569,6 +1569,52 @@ input {
   pointer-events: none;
 }
 
+/* Notch progress dots (Phase D onboarding). A centered column stack lifts the dots row above the
+   pill without touching the pill's morph sizing or hit-rect (dots are a sibling, not inside). */
+.kairo-capsule-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Chapter dots — no text. Filled = current chapter in the live accent; past = accent low opacity;
+   future = faint neutral. --accent-rgb is kept live by useNotchAccent() → dots re-tint for free. */
+.kairo-notch-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  pointer-events: none; /* decorative; outside the reported hit-rect */
+  animation: kairo-capsule-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.kairo-progress-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.18); /* future */
+  transition:
+    background 260ms ease,
+    box-shadow 260ms ease,
+    transform 260ms ease;
+}
+.kairo-progress-dot[data-state='past'] {
+  background: rgb(var(--accent-rgb) / 0.4);
+}
+.kairo-progress-dot[data-state='current'] {
+  background: rgb(var(--accent-rgb));
+  box-shadow: 0 0 8px 1px rgb(var(--accent-rgb) / 0.7);
+  transform: scale(1.15);
+}
+@media (prefers-reduced-motion: reduce) {
+  .kairo-notch-progress {
+    animation: none;
+  }
+  .kairo-progress-dot {
+    transition: none;
+  }
+}
+
 .kairo-capsule {
   --mic-level: 0;
   align-items: center;

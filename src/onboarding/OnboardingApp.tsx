@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
 import { OnboardingFlow } from './OnboardingFlow';
 import { hasNativeBridge } from './config';
 import { klog } from '../core/logger';
@@ -27,6 +28,11 @@ const ACT = {
   ENDING: 7
 } as const;
 const ACT_COUNT = 8;
+
+// index = act (HERO:0 … ENDING:7); value = chapter (0..3). Chapters (internal names; the notch dots
+// show NO text): Welcome / Set up / Try it / Wrap up. Drives the notch progress dots (Phase D).
+const actToChapter = [0, 0, 1, 1, 2, 3, 3, 3] as const;
+const CHAPTER_TOTAL = 4;
 
 // Whether the window must catch clicks for that act (hero CTA / color wheel / sign-in / chips), or
 // stay click-through so the desktop + pet + System Settings receive input. Hearing and practice are
@@ -68,6 +74,16 @@ export function OnboardingApp() {
     void invoke('set_onboarding_click_through', { clickThrough: !interactive }).catch(() => {});
   }, [actIndex]);
 
+  // Drive the notch progress dots (Phase D): one dot per chapter, no text. Separate from the coach
+  // caption (which is cleared between acts) — the dots ride their own event + state in the notch, so a
+  // caption clear can't wipe them. Fires on mount (act 0 → chapter 0) and after every advance/resume.
+  useEffect(() => {
+    if (!hasNativeBridge) return;
+    const chapter = actToChapter[actIndex] ?? 0;
+    klog('onboarding', 'info', 'progress emit', { act: actIndex, chapter, total: CHAPTER_TOTAL });
+    void emit('onboarding:progress', { chapter, total: CHAPTER_TOTAL }).catch(() => {});
+  }, [actIndex]);
+
   // Resume after a permission-triggered relaunch (Screen Recording forces quit+reopen). Land on the
   // right macro-step BEFORE rendering anything; the live status drives Act 3's sub-step and
   // OnboardingFlow's own resume.
@@ -87,6 +103,9 @@ export function OnboardingApp() {
   }, []);
 
   const finish = () => {
+    // Clear the notch dots so they never show in normal product use (chapter < 0 = clear sentinel).
+    void emit('onboarding:progress', { chapter: -1, total: CHAPTER_TOTAL }).catch(() => {});
+    klog('onboarding', 'info', 'progress cleared (finish)');
     if (hasNativeBridge) void invoke('finish_onboarding').catch(() => {});
   };
 

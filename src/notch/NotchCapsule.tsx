@@ -30,7 +30,34 @@ type NotchCapsuleProps = {
   onCapsulePointer: () => void;
   onPointerLeave: () => void;
   onPointerDown: () => void;
+  // Onboarding chapter progress (Phase D). null outside onboarding → no dots rendered.
+  progress?: { chapter: number; total: number } | null;
 };
+
+// Notch progress dots (Phase D). Pure + decorative — a text-free row, one dot per onboarding chapter.
+// Filled = current chapter (live accent); past = accent low-opacity; future = faint neutral (CSS).
+function renderProgressDots(progress: { chapter: number; total: number }) {
+  const { chapter, total } = progress;
+  return (
+    <div
+      className="kairo-notch-progress"
+      role="progressbar"
+      aria-label="Onboarding progress"
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-valuenow={Math.min(chapter + 1, total)}
+    >
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          className="kairo-progress-dot"
+          data-state={i < chapter ? 'past' : i === chapter ? 'current' : 'future'}
+          aria-hidden
+        />
+      ))}
+    </div>
+  );
+}
 
 // Per-mode content. The box morphs around whatever this returns; content swaps instantly
 // inside while the layers cross-fade.
@@ -127,25 +154,30 @@ export function NotchCapsule(props: NotchCapsuleProps) {
   return (
     <main className="kairo-capsule-shell" aria-label="Kairo status">
       {mode === 'idle' ? null : (
-        <div
-          ref={capsuleRef}
-          className="kairo-capsule"
-          data-mode={mode}
-          onPointerEnter={props.onCapsulePointer}
-          onPointerMove={props.onCapsulePointer}
-          onPointerLeave={props.onPointerLeave}
-          onPointerDown={props.onPointerDown}
-        >
-          <div className="kairo-capsule-inner" ref={innerRef}>
-            {layers.map((layer) => (
-              <div
-                key={String(layer.key)}
-                className="kairo-capsule-layer"
-                data-phase={layer.phase}
-              >
-                {renderModeContent(layer.key, props)}
-              </div>
-            ))}
+        <div className="kairo-capsule-stack">
+          {/* Onboarding progress dots sit ABOVE the pill (sibling, not inside) so the pill's morph
+              sizing + hit-rect stay untouched. Only during onboarding (progress != null). */}
+          {props.progress ? renderProgressDots(props.progress) : null}
+          <div
+            ref={capsuleRef}
+            className="kairo-capsule"
+            data-mode={mode}
+            onPointerEnter={props.onCapsulePointer}
+            onPointerMove={props.onCapsulePointer}
+            onPointerLeave={props.onPointerLeave}
+            onPointerDown={props.onPointerDown}
+          >
+            <div className="kairo-capsule-inner" ref={innerRef}>
+              {layers.map((layer) => (
+                <div
+                  key={String(layer.key)}
+                  className="kairo-capsule-layer"
+                  data-phase={layer.phase}
+                >
+                  {renderModeContent(layer.key, props)}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
