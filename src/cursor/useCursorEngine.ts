@@ -327,6 +327,10 @@ export function useCursorEngine(): CursorEngineRefs {
       writeTransform();
     };
 
+    // Onboarding suppress: keep the pet fully hidden through the hero + color steps; it only appears at
+    // the collapse (cursor:entrance clears this). Set by cursor:suppress; the product never emits it.
+    let suppressed = false;
+
     // Decide whether the pet should be visible right now and fade it accordingly.
     // Auto-hide only while idly shadowing the mouse with nothing happening — never
     // while pointing/dragging or showing a status FX (listening/thinking/speaking),
@@ -342,7 +346,7 @@ export function useCursorEngine(): CursorEngineRefs {
       // guide (incl. the fly-to-target animation), not vanish on idle mid-turn.
       const eligible =
         !turnActiveRef.current && modeRef.current === 'shadow' && fxModeRef.current === 'none';
-      const hidden = eligible && (!sysVisibleRef.current || idle);
+      const hidden = suppressed || (eligible && (!sysVisibleRef.current || idle));
       if (hidden === hiddenAppliedRef.current) {
         return;
       }
@@ -377,7 +381,8 @@ export function useCursorEngine(): CursorEngineRefs {
       }
       const reduce = reduceMotionRef.current;
       if (beat === 'entrance') {
-        // The pet is "arriving" — cancel any hide and make it visible for the wake-up.
+        // The pet is "arriving" — clear onboarding suppress, cancel any hide, make it visible.
+        suppressed = false;
         lastActivityRef.current = globalThis.performance?.now?.() ?? 0;
         sysVisibleRef.current = true;
         hiddenAppliedRef.current = false;
@@ -646,6 +651,15 @@ export function useCursorEngine(): CursorEngineRefs {
           return;
         }
         runBeat('celebrate');
+      }),
+      // Onboarding suppress: hide the pet entirely through hero + color; the collapse's cursor:entrance
+      // clears it. Only used during onboarding; the product never emits this.
+      listen('cursor:suppress', () => {
+        if (!isMounted) {
+          return;
+        }
+        suppressed = true;
+        applyVisibility();
       })
     ])
       .then((next) => {

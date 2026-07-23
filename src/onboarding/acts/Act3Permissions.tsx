@@ -9,7 +9,7 @@ import type { ActProps } from './actTypes';
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // How far into the spoken line to fire the OS pop-up. The instruction is front-loaded in the copy, so
 // the box appears while the user is still hearing the why — they can act immediately, not after ~15s.
-const BOX_DELAY_MS = 2500;
+const BOX_DELAY_MS = 4000;
 
 // Act 3 — "Earn the Eyes". Two permission moments (Screen Recording, then Accessibility). Each: start
 // the spoken line, then fire the ONE native OS prompt ~2.5s in. The prompt does double duty — it

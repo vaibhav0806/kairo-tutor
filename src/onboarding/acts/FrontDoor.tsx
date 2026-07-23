@@ -29,6 +29,8 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
 
   useEffect(() => {
     void getAccent().then(setHex);
+    // Hide the pet through the hero + color steps — it's revealed at the collapse (cursor:entrance).
+    void emit('cursor:suppress', {});
     klog('onboarding', 'info', 'front door: hero shown');
   }, []);
 
