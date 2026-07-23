@@ -15,6 +15,7 @@
 import { Channel } from '@tauri-apps/api/core';
 import { klog } from '../core/logger';
 import { buildAudioDataUrl } from './audioPlayback';
+import { SPEECH_VOLUME_PRODUCT } from '../core/speechVolume';
 import type { NativeBridge, NativeTtsStreamMsg } from '../native/nativeBridge';
 
 // HTMLAudioElement-shaped surface used by NotchApp's playback functions.
@@ -85,6 +86,7 @@ class StreamingClip implements SpeechClip {
   private playFired = false;
 
   private ctx: AudioContext | null = null;
+  private gain: GainNode | null = null;
   private nextTime = 0;
   private readonly sources: AudioBufferSourceNode[] = [];
   private endTimer: ReturnType<typeof setTimeout> | null = null;
@@ -230,7 +232,7 @@ class StreamingClip implements SpeechClip {
     buffer.getChannelData(0).set(f32);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(ctx.destination);
+    source.connect(this.gain ?? ctx.destination);
     const startAt = Math.max(this.nextTime, ctx.currentTime + 0.02);
     source.start(startAt);
     this.nextTime = startAt + buffer.duration;
@@ -267,6 +269,8 @@ class StreamingClip implements SpeechClip {
       clearTimeout(this.endTimer);
       this.endTimer = null;
     }
+    this.gain?.disconnect();
+    this.gain = null;
     this.onended?.();
     this.resolveEnd?.();
   }
@@ -280,6 +284,8 @@ class StreamingClip implements SpeechClip {
       }
     }
     this.sources.length = 0;
+    this.gain?.disconnect();
+    this.gain = null;
   }
 
   async play(): Promise<void> {
@@ -300,6 +306,11 @@ class StreamingClip implements SpeechClip {
       return;
     }
     this.ctx = ctx;
+    // Level-match the product voice to the (louder) onboarding coach — Web Audio gain can exceed
+    // 1.0, unlike <audio>.volume. All PCM sources route through this node.
+    this.gain = ctx.createGain();
+    this.gain.gain.value = SPEECH_VOLUME_PRODUCT;
+    this.gain.connect(ctx.destination);
     this.started = true;
     this.nextTime = ctx.currentTime + 0.03;
     this.firePlay();
@@ -332,6 +343,7 @@ class StreamingClip implements SpeechClip {
         return;
       }
       const audio = new Audio(url);
+      audio.volume = Math.min(1, SPEECH_VOLUME_PRODUCT); // <audio> caps at 1.0 (streaming path boosts higher)
       this.fallbackAudio = audio;
       audio.onplay = () => this.firePlay();
       audio.onended = () => this.fireEnded();
@@ -398,6 +410,7 @@ class BufferedClip implements SpeechClip {
 
   constructor(url: string) {
     this.audio = new Audio(url);
+    this.audio.volume = Math.min(1, SPEECH_VOLUME_PRODUCT); // <audio> caps at 1.0 (fillers/paywall line)
     this.audio.onplay = () => this.onplay?.();
     this.audio.onended = () => this.onended?.();
     this.audio.onpause = () => this.onpause?.();

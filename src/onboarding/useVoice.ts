@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { onboardingTts } from './backendClient';
+import { SPEECH_VOLUME_ONBOARDING } from '../core/speechVolume';
 import type { Segment } from './copy';
 import {
   acquireMicrophoneStream,
@@ -44,6 +45,7 @@ export function useVoice() {
     new Promise<boolean>((resolve) => {
       const el = audioEl();
       el.src = url;
+      el.volume = SPEECH_VOLUME_ONBOARDING; // level-match to the product voice (this path is louder)
       // Fires the instant real audio begins — the caller reveals the caption text HERE so words
       // never precede the voice.
       el.onplaying = onStart ? () => onStart() : null;
