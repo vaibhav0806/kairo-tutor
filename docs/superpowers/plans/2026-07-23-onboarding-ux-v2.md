@@ -62,6 +62,16 @@ Keystone first — #1 unblocks the home window **and** is expected to fix #5.
 Each phase = its own small, revertible commits (per `AGENTS.md` commit discipline). Rebuild + manual
 onboarding walk after every phase (reset script in `AGENTS.md`).
 
+### Per-phase implementation plans (build-ready, written 2026-07-23)
+Each phase has its own detailed impl plan with real line numbers, per-file steps, and commit breakdowns:
+- **A** → [`…-phaseA-regular-app.md`](./2026-07-23-onboarding-v2-phaseA-regular-app.md)
+- **B** → [`…-phaseB-oauth-focus.md`](./2026-07-23-onboarding-v2-phaseB-oauth-focus.md)
+- **C** → [`…-phaseC-hero-color-collapse.md`](./2026-07-23-onboarding-v2-phaseC-hero-color-collapse.md)
+- **D** → [`…-phaseD-notch-progress-dots.md`](./2026-07-23-onboarding-v2-phaseD-notch-progress-dots.md)
+- **E** → [`…-phaseE-focus-grab.md`](./2026-07-23-onboarding-v2-phaseE-focus-grab.md)
+- **F** → [`…-phaseF-mic-visualizer.md`](./2026-07-23-onboarding-v2-phaseF-mic-visualizer.md)
+- **G** → [`…-phaseG-onboarding-cleanup.md`](./2026-07-23-onboarding-v2-phaseG-onboarding-cleanup.md)
+
 ---
 
 ## Phase A — Kairo becomes a Regular app
@@ -98,8 +108,10 @@ code-driven, so this is a code change only.
 - **Right-click Dock icon** → a **Dock menu** with the "bunch of options" the founder wants (e.g.
   *Open Kairo* / *Show Notch* / *Replay intro* / *Quit*). See A.6 — this needs `applicationDockMenu:`.
 - **Menu-bar item stays** (`create_menu_bar_tray`) → quick status + Quit. Dock **and** menu bar, both.
-- **Red close button** on `main` → hides the window, app keeps running (default Mac behavior; ensure we
-  don't `tauri::Exit` on last-window-close). **⌘Q** → real quit.
+- **Red close button** on `main` → `WindowEvent::CloseRequested → prevent_close()+hide()` (window stays
+  alive, app keeps running). **⌘Q** → real quit. ⚠️ Do **NOT** `prevent_exit()` — Tauri's
+  `RunEvent::ExitRequested` carries `code: None` for *both* ⌘Q and last-window-close, so blocking it would
+  make the app unquittable. *(Correction from Phase A research.)*
 - **App menu** (new, because Regular apps show one): minimal — About Kairo / Settings… / Hide / Quit.
   Tauri default menu is acceptable for v1; customize copy later.
 
@@ -296,10 +308,12 @@ persistent element — **not** hung off the caption (the caption is *cleared bet
 - `NotchApp` listens for `onboarding:progress`, stores `{chapter,total}` in state, renders a dots row in
   the capsule chrome. On `finish_onboarding` (or a `onboarding:progress {chapter:-1}` sentinel), clear it
   so the dots never show during normal product use.
-- **Accent tint for free:** the notch already threads `--kairo-accent` via `useNotchAccent` and live
-  `accent:changed`. Dots use `var(--kairo-accent)` for the filled state → they start default violet
-  (`#7c3aed`) and **re-tint the instant the user picks a color in Act 1**. Zero extra wiring — the
-  personalization is a side effect of the existing accent bus.
+- **Accent tint for free:** the notch threads its accent via `useNotchAccent` as **`--accent` /
+  `--accent-rgb`** (default `124 58 237`), kept live by `accent:changed`. Dots use
+  **`rgb(var(--accent-rgb))`** — **NOT `--kairo-accent`** (that var belongs to `core/accent.ts` and is
+  never set inside the notch webview; using it would render the dots invisible). They start default violet
+  and **re-tint the instant the user picks a color in Act 1**. Zero extra wiring. *(Correction from Phase D
+  research — the spec's original `--kairo-accent` was wrong.)*
 - Style: filled dot = accent, past dots = accent at lower opacity, future dots = faint neutral. Subtle,
   matching the "accent-threaded, Raycast+Arc, no glass" notch language.
 
@@ -343,11 +357,15 @@ hand-roll.**
 component and wiring the same event into Act 2's surface.
 
 ### F.3 Component sourcing (at build time)
-Look for a lightweight, dependency-light React/canvas mic-level visualizer (react-audio-visualize,
-wavesurfer, or a small canvas bars component). Constraints: MIT-ish license, works with a **numeric level
-input** (we already have `cursor:level` — we don't need it to grab the mic itself; feed it our value), no
-heavy deps, styleable to the accent. If nothing fits cleanly, a ~40-line canvas bars component driven by
-`--mic-level` is the fallback.
+⚠️ **Phase F research finding (overrides "source an OSS component"):** every mature OSS React visualizer
+(`react-audio-visualize`, `react-voice-visualizer`, `react-sound-visualizer`, `react-volume-meter`)
+**insists on grabbing its own mic stream** — a second capture in the WebView that fights our native mic.
+The only components that take a plain numeric level render a single progress bar, not a voice waveform. So
+there is **no clean OSS drop-in** for our architecture. Recommended path: a **~40-line in-house
+`<MicMeter>`** (CSS bars) fed by our existing `cursor:level` / `--mic-level` — it writes **zero**
+audio-analysis code (reuses the notch's existing waveform pattern), so it honors the "don't hand-roll"
+intent while not double-grabbing the mic. **Founder decision** — this overrides the "source OSS" note
+because no OSS option fits.
 
 ### F.4 Placement
 Act 2 (`acts/Act2Hearing.tsx`) is notch+chord driven today. The visualizer can render **in the notch**
@@ -367,8 +385,12 @@ targets already spotted:
 - **Naming drift** — files `Act5SignIn`/`Act5Source` map to ACT indices 4/5 (now 5/6 after the hero add),
   and comments say "Act 5" for two different acts. Rename act components to match their real ordinal (or
   to stable names: `SignInAct`, `SourceAct`, `EndingAct`) and fix the stale comments.
-- **Dead code** — `acts/TempPanel.tsx` ("Temp" scaffold) — inline or delete if it's just a wrapper;
-  `acts/actTypes.ts` / `act3SubStep.ts` — confirm still used.
+- **`acts/TempPanel.tsx`** — *(Phase G correction)* **NOT dead** (used 3×); **rename to `FloatingPanel`**,
+  don't delete. `acts/actTypes.ts` / `act3SubStep.ts` — confirmed **live**, keep.
+- **Newly-confirmed dead (Phase G research)** — `color.ts` (alive only via its own test),
+  `onboardingStt`/`extractField` (zero call sites), the recording half of `useVoice.ts`, an unused `klog`
+  import + `Act5SignInProps` export, dead `StepId` members, and dead `act2_primer`/`act2_im`/`act2_im_skip`
+  copy + wavs (deletion gated behind Phase F, in case the mic work wants them).
 - **Inconsistent placement** — `Act3Permissions.tsx` sits in `onboarding/` root while every other act is
   in `onboarding/acts/`. Move it into `acts/`.
 - **Shrink `OnboardingFlow.tsx`** — it self-describes as "legacy STEPS wizard, now just point + circle"
@@ -411,6 +433,13 @@ targets already spotted:
 6. **Don't regress the windowless thesis** — the hero and color are the *only* new windowed surface; Acts
    2/3/4 stay on the real desktop. The window→pet collapse is the seam; get it right so windowed→windowless
    feels like magic, not a context switch.
+7. **`@fontsource/instrument-serif` is a dependency but never imported** (found by Phase C research) — the
+   serif display lines silently fall back to Georgia today. Phase C's hero must add the import; the fix
+   rides in there.
+8. **No animation library in the repo** (Phase C research) — `framer-motion` is absent; the codebase
+   animates via CSS `@keyframes` + the rAF cursor engine. Phase C therefore ships a **CSS crossfade-morph**
+   (hero→color) and a CSS/`cursor:*`-driven collapse, not a true shared-element morph. Adding
+   `framer-motion` would enable a pixel-perfect morph/collapse — see the decision below.
 
 ---
 
@@ -444,6 +473,22 @@ backend running (`npm run server:dev`), watching `~/Library/Logs/Kairo/kairo-lat
 3. **Confirm-button copy** (color step) ✅ — **"Let's get started"**.
 4. **GIF asset** ✅ — founder produces later; **ship a placeholder now, wire the real GIF in as a one-file
    change** when delivered.
+
+---
+
+## 6b. New decisions surfaced by phase-plan research (need founder input)
+
+1. **Mic visualizer — OSS vs in-house.** Research found **no** OSS React visualizer that fits (all
+   self-grab the mic → double capture). Recommended: a ~40-line in-house `<MicMeter>` fed by our existing
+   `cursor:level`. This overrides the earlier "source an OSS component" call — *because no OSS option fits*,
+   not by preference. **OK to go in-house?** (Default: yes.)
+2. **Add `framer-motion` for the hero→color morph + window→pet collapse?** The repo has no animation lib
+   today (CSS `@keyframes` + rAF only). Phase C ships a **CSS crossfade-morph** with zero new deps. A true
+   *shared-element* morph (the card visibly reshaping into the wheel, then imploding into the pet) is much
+   slicker with `framer-motion`'s `layout`/`AnimatePresence`. You wanted "a really cool animation" here —
+   so this is a real fork: **ship CSS-only (no dep, good-not-perfect), or add `framer-motion` (one dep,
+   premium morph)?** (My lean: add `framer-motion` *for the hero/collapse only*, given you emphasized the
+   wow — but it's your call.)
 
 ---
 
