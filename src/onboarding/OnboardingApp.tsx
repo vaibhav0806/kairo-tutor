@@ -5,8 +5,7 @@ import { OnboardingFlow } from './OnboardingFlow';
 import { hasNativeBridge } from './config';
 import { klog } from '../core/logger';
 import { STEPS } from './copy';
-import { Act0Hero } from './acts/Act0Hero';
-import { Act1Arrival } from './acts/Act1Arrival';
+import { FrontDoor } from './acts/FrontDoor';
 import { Act2Hearing } from './acts/Act2Hearing';
 import { Act3Permissions } from './acts/Act3Permissions';
 import { Act5SignIn } from './acts/Act5SignIn';
@@ -19,26 +18,25 @@ import './onboarding.css';
 // practice (point + circle) → sign-in → source → warm ending. Sign-in is LAST-but-one, so the first
 // "whoa" always precedes any account ask.
 const ACT = {
-  HERO: 0, // split "front door" — first-impression only, NEVER a resume target (see resume effect)
-  ARRIVAL: 1,
-  HEARING: 2,
-  PERMISSIONS: 3,
-  PRACTICE: 4, // legacy STEPS wizard, now just point + circle
-  SIGNIN: 5,
-  SOURCE: 6,
-  ENDING: 7
+  WELCOME: 0, // the "front door" (hero → color in one card) — first-impression only, NEVER a resume target
+  HEARING: 1,
+  PERMISSIONS: 2,
+  PRACTICE: 3, // legacy STEPS wizard, now just point + circle
+  SIGNIN: 4,
+  SOURCE: 5,
+  ENDING: 6
 } as const;
-const ACT_COUNT = 8;
+const ACT_COUNT = 7;
 
-// index = act (HERO:0 … ENDING:7); value = chapter (0..3). Chapters (internal names; the notch dots
+// index = act (WELCOME:0 … ENDING:6); value = chapter (0..3). Chapters (internal names; the notch dots
 // show NO text): Welcome / Set up / Try it / Wrap up. Drives the notch progress dots (Phase D).
-const actToChapter = [0, 0, 1, 1, 2, 3, 3, 3] as const;
+const actToChapter = [0, 1, 1, 2, 3, 3, 3] as const;
 const CHAPTER_TOTAL = 4;
 
-// Whether the window must catch clicks for that act (hero CTA / color wheel / sign-in / chips), or
-// stay click-through so the desktop + pet + System Settings receive input. Hearing and practice are
+// Whether the window must catch clicks for that act (front door / sign-in / chips), or stay
+// click-through so the desktop + pet + System Settings receive input. Hearing and practice are
 // notch + chord driven, so they stay click-through — the user acts on the REAL screen.
-const INTERACTIVE = [true, true, false, false, false, true, true, false];
+const INTERACTIVE = [true, false, false, false, true, true, false];
 
 /** Root of the full-screen, transparent, click-through onboarding orchestrator (#/onboarding). */
 export function OnboardingApp() {
@@ -93,9 +91,9 @@ export function OnboardingApp() {
     void invoke<string>('get_onboarding_step')
       .then((saved) => {
         klog('onboarding', 'info', 'resume', { saved });
-        // Resume only ever lands on PERMISSIONS ('act3') or PRACTICE (a STEPS id). HERO(0) is a
+        // Resume only ever lands on PERMISSIONS ('act3') or PRACTICE (a STEPS id). WELCOME(0) is a
         // first-impression-only act and is intentionally NEVER a resume target, so a Screen-Recording
-        // quit+reopen never replays the hero. A fresh run (no marker) keeps useState(0) = HERO.
+        // quit+reopen never replays the front door. A fresh run (no marker) keeps useState(0) = WELCOME.
         if (saved === 'act3') setActIndex(ACT.PERMISSIONS);
         else if (saved && STEPS.some((s) => s.id === saved)) setActIndex(ACT.PRACTICE);
       })
@@ -115,11 +113,8 @@ export function OnboardingApp() {
 
   let body: React.ReactNode;
   switch (actIndex) {
-    case ACT.HERO:
-      body = <Act0Hero onGetStarted={advance} />;
-      break;
-    case ACT.ARRIVAL:
-      body = <Act1Arrival name="" onAdvance={advance} />;
+    case ACT.WELCOME:
+      body = <FrontDoor onComplete={advance} />;
       break;
     case ACT.HEARING:
       body = <Act2Hearing name="" onAdvance={advance} />;

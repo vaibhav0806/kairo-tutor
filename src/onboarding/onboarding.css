@@ -366,6 +366,29 @@ body.onboarding-document {
   display: grid;
   grid-template-columns: 42% 58%;
   overflow: hidden;
+  /* framer-motion (FrontDoor) drives the card entrance + collapse — disable the CSS entrance so the
+     two don't fight. */
+  animation: none;
+}
+
+/* FrontDoor left-panel content wrappers (swapped by AnimatePresence; the card frame + right demo
+   stay put, so only the left morphs between the hero pitch and the color picker). */
+.ob-front-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+.ob-front-color {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+/* The color kicker lives on the light hero card now → dark text (its default is light-on-dark). */
+.ob-card--hero .ob-color-kicker {
+  color: rgba(26, 22, 34, 0.45);
 }
 
 .ob-hero-left {
