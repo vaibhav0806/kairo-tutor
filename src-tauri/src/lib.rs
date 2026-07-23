@@ -5,7 +5,7 @@ use std::{
     },
     time::Instant,
 };
-use tauri::{Emitter, LogicalSize, Manager, State};
+use tauri::{Emitter, LogicalSize, Manager, State, WindowEvent};
 use tauri_nspanel::{tauri_panel, PanelHandle};
 
 mod prompts;
@@ -693,6 +693,21 @@ pub fn run() {
                 log_window_startup(&window);
                 let _ = window.set_size(LogicalSize::new(1180.0, 820.0));
                 let _ = window.center();
+                // Red close / ⌘W on the home window HIDES it — the app keeps running (Dock + menu bar
+                // remain). A Regular Mac app conventionally survives its last window closing; ⌘Q (app
+                // menu) / the tray "Quit Kairo" item are the real quit paths. Prevent the close and hide
+                // instead of destroy so the window (and its WebView) is instantly re-showable from the
+                // Dock with no rebuild. We deliberately do NOT guard RunEvent::ExitRequested with
+                // prevent_exit — its code:None bucket covers BOTH ⌘Q and last-window-close, so that would
+                // make the app unquittable. Hiding (never destroying) keeps the app alive on its own.
+                let hide_target = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = hide_target.hide();
+                        crate::klog!(app, info, window = "main", "close requested → hidden (app stays alive)");
+                    }
+                });
                 if show_setup && !need_onboarding {
                     let _ = window.unminimize();
                     let _ = window.show();
