@@ -4,6 +4,7 @@ import { activationStateToNotchPayload } from '../activation/activationState';
 import { loadBrowserEnv } from '../config/env';
 import { klog, type LogFields, type LogLevel } from '../core/logger';
 import { playSound, playRecordingCue } from '../core/sound';
+import { pickThinkingVerb } from './thinkingVerbs';
 import type { UserAnnotation, VisualTarget } from '../core/types';
 import {
   createNativeBridge,
@@ -1550,7 +1551,19 @@ export function NotchApp() {
     });
   };
 
-  const statusLabel = capsuleMode === 'listening' ? 'Listening' : 'Thinking';
+  // The busy label beside the spinning cube. Instead of a flat "Thinking", show a random playful
+  // gerund (Claude-Code style) — picked ONCE per thinking-spell and held stable so it doesn't
+  // re-roll every render. "Busy" = the thinking capsule, or the coach's empty "preparing" pulse
+  // (onboarding). Listening keeps its literal 'Listening'.
+  const busy = capsuleMode === 'thinking' || (capsuleMode === 'coach' && !payload.detail);
+  const [thinkingVerb, setThinkingVerb] = useState(pickThinkingVerb);
+  const wasBusyRef = useRef(false);
+  useEffect(() => {
+    if (busy && !wasBusyRef.current) setThinkingVerb(pickThinkingVerb());
+    wasBusyRef.current = busy;
+  }, [busy]);
+
+  const statusLabel = capsuleMode === 'listening' ? 'Listening' : thinkingVerb;
 
   return (
     <NotchCapsule

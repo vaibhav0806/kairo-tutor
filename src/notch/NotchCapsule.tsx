@@ -109,7 +109,11 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
             {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}
           </>
         ) : (
-          <ThinkingCube />
+          // Empty detail = the "preparing" pulse: the cube + a random busy verb beside it.
+          <span className="kairo-capsule-status">
+            <ThinkingCube />
+            <span className="kairo-capsule-label">{props.statusLabel}</span>
+          </span>
         )}
       </div>
     );
