@@ -97,7 +97,7 @@ pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
     let _ = app.clone().run_on_main_thread(move || {
         #[cfg(target_os = "macos")]
         {
-            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+            crate::klog!(auth, info, "focus onboarding: app already Regular, activating");
             // Activate the APP (not just focus the window) — that's what pulls Kairo in FRONT of the
             // browser after the Google hand-off. Plain window.set_focus doesn't front the app on
             // Sonoma+, but the kairo:// deep-link open grants us activation rights, so
@@ -183,7 +183,7 @@ pub(crate) fn set_onboarding_click_through(app: tauri::AppHandle, click_through:
 }
 
 /// Called when the onboarding flow completes: persist the marker (so we never onboard again), close
-/// the window, and drop back to the background (Accessory).
+/// the window; the app stays a Regular app (Dock + menu bar) — no policy flip.
 #[tauri::command]
 pub(crate) fn finish_onboarding(app: tauri::AppHandle) {
     if let Some(path) = onboarded_marker(&app) {
@@ -204,17 +204,14 @@ pub(crate) fn finish_onboarding(app: tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("onboarding") {
         let _ = win.close();
     }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-    }
+    // The app stays a Regular app (Dock + menu bar) after onboarding — no policy flip.
     crate::klog!(app, info, "onboarding finished");
 }
 
 /// Re-run first-run onboarding on demand ("Replay intro" tray item / `replay_onboarding_cmd`).
 /// The inverse of `finish_onboarding`: delete the onboarded marker + any stale resume step, drop
-/// PTT ownership, flip back to Regular so the window can take keyboard focus, then (re)open the
-/// onboarding window. Idempotent — safe to call while already onboarding.
+/// PTT ownership, then (re)open the onboarding window (the app is always Regular now). Idempotent —
+/// safe to call while already onboarding.
 pub(crate) fn replay_onboarding(app: &tauri::AppHandle) {
     if let Some(path) = onboarded_marker(app) {
         let _ = std::fs::remove_file(path);
@@ -223,10 +220,6 @@ pub(crate) fn replay_onboarding(app: &tauri::AppHandle) {
         let _ = std::fs::remove_file(path);
     }
     crate::input::ONBOARDING_PTT.store(false, Ordering::SeqCst);
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    }
     show_onboarding_window(app);
     crate::klog!(app, info, "replay intro: onboarding marker cleared + window reopened");
 }

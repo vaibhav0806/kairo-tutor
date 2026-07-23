@@ -456,9 +456,9 @@ fn close_settings() {
 #[tauri::command]
 fn close_settings() {}
 
-/// Create the macOS menu-bar (status-item) icon. Kairo runs as an `Accessory`
-/// app (no Dock icon), so this is the only always-visible affordance a user has
-/// to quit/restart the app or reopen the notch. Not gated to macOS — the tray is
+/// Create the macOS menu-bar (status-item) icon. Kairo is a Regular app (Dock icon
+/// + app menu), and ALSO keeps this menu-bar item as a quick, always-visible status/
+/// quit/reopen affordance alongside the Dock. Not gated to macOS — the tray is
 /// cross-platform, so a future Windows build gets the same menu for free.
 /// Bring Kairo to the foreground and steal focus (macOS). Used at first-run launch so the onboarding
 /// window opens IN FRONT of whatever the user had focused (a launched app should come forward), not
@@ -678,20 +678,16 @@ pub fn run() {
             // stale 1 (denied) means a prior "Deny" that `tccutil reset` didn't clear.
             #[cfg(target_os = "macos")]
             klog!(app, info, hid = crate::permissions::input_monitoring_raw(), "startup IM raw access");
-            // Activation policy. By default a Tauri app is `Regular` (Dock icon), so
-            // launching it *activates* the app and macOS yanks the user off any
-            // full-screen Space onto the desktop. Kairo is a background notch/cursor
-            // utility, so on a normal launch run it as an `Accessory` app instead: no
-            // Dock icon, and — crucially — no forced Space switch on launch. The only
-            // time we need a real, front-most, focusable window is the first-run setup
-            // (permissions) window, so keep the default `Regular` policy for that one
-            // launch. (Same idea as clicky's `LSUIElement=true` menu-bar-only design.)
+            // Kairo is now a Regular app ALWAYS: Dock icon + app menu + ⌘-Tab presence, even though it
+            // stays visually quiet (windows closed by default; the notch is the ambient tool). We used to
+            // flip to `Accessory` on a normal launch to avoid macOS yanking the user off a full-screen
+            // Space when a Regular app launches. We now accept that cold-launch-only Space switch (see the
+            // Phase A plan §A.7) in exchange for a real Dock/home window + reliable OAuth focus-return.
+            // Tauri defaults to Regular, but we set it explicitly so the intent is obvious and logged.
             #[cfg(target_os = "macos")]
             {
-                if !show_setup && !need_onboarding {
-                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                }
-                klog!(app, info, setup = show_setup, onboarding = need_onboarding, "activation policy set");
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                klog!(app, info, setup = show_setup, onboarding = need_onboarding, policy = "regular", "activation policy: regular (always)");
             }
             if let Some(window) = app.get_webview_window("main") {
                 log_window_startup(&window);
@@ -793,8 +789,8 @@ pub fn run() {
             if crate::onboarding::is_onboarded(app.handle()) {
                 spawn_ptt(app.handle());
             }
-            // Menu-bar status item: the only always-visible way to quit/restart
-            // Kairo or reopen the notch, since we run Dock-less (Accessory).
+            // Menu-bar status item: a quick always-visible way to quit/restart Kairo
+            // or reopen the notch, alongside the Dock icon (we run as a Regular app).
             if let Err(error) = create_menu_bar_tray(app) {
                 klog!(app, error, "failed to create menu bar tray: {error}");
             }
@@ -811,8 +807,8 @@ pub fn run() {
             // First front the onboarding window (if we're onboarding) so the browser's
             // "Return to Kairo" hand-off actually focuses the app — even a re-fired,
             // already-used code still fronts the window (the exchange just 400s harmlessly).
-            // Outside onboarding there is no window to focus, so normal re-auth keeps the
-            // Accessory / no-Space-switch design and never yanks the user's focus.
+            // Outside onboarding there is no window to focus, so normal re-auth just
+            // exchanges the code without fronting anything (the app is always Regular now).
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let handle = app.handle().clone();
