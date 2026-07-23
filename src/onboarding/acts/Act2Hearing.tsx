@@ -114,10 +114,12 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
       const active = Boolean(e.payload?.active);
       recordingRef.current = active;
       playRecordingCue(active);
+      klog('mic', 'info', 'act2 mic meter', { active });
       if (active) {
         voice.stop(); // grabbed the chord mid-line → cut Kairo off so it isn't talking over them
-        // Silent sticky nudge while they hold — no spoken line, so `guide` (not `say`).
-        void guide('Listening…', 'Say hi — I hear you.', ACT2_CHIP);
+        // Silent sticky nudge while they hold — no spoken line, so `guide` (not `say`). The 4th arg
+        // (meter:true) swaps the breathing dot for the live mic meter for the duration of the hold.
+        void guide('Listening…', 'Say hi — I hear you.', ACT2_CHIP, true);
       }
     }).then((u) => uns.push(u));
 

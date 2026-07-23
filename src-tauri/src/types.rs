@@ -116,6 +116,9 @@ pub(crate) struct NotchPayload {
     pub(crate) detail: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) chip: Option<String>,
+    // Phase F: when true, the coach caption shows the live mic meter (Act 2 drill). Mirrors `chip`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) meter: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

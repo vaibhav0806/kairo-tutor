@@ -1560,6 +1560,7 @@ export function NotchApp() {
       detail={payload.detail}
       title={payload.title}
       chip={payload.chip}
+      meter={payload.meter}
       query={query}
       capsuleRef={capsuleRef}
       onQueryChange={setQuery}

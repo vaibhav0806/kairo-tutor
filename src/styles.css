@@ -1615,6 +1615,59 @@ input {
   }
 }
 
+/* Mic meter (Phase F) — the dancing-bars voice waveform shown in Act 2's say-hi drill. Mirrors the
+   existing .kairo-capsule-viz waveform (accent-tinted, driven by --mic-level, idle sway), rendered in
+   coach mode via <MicMeter>. Height follows the voice; goes flat on silence via the component decay. */
+.kairo-mic-meter {
+  --mic-level: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+}
+.kairo-mic-meter i {
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, rgb(var(--accent-rgb)) 65%, #fff 35%),
+    rgb(var(--accent-rgb))
+  );
+  /* per-bar base height varies so it reads as a waveform, not a bar chart */
+  height: calc(4px + var(--mic-level, 0) * 15px);
+  transition: height 80ms ease-out;
+  animation: kairo-viz-idle 1.4s ease-in-out infinite;
+}
+.kairo-mic-meter i:nth-child(odd) {
+  height: calc(3px + var(--mic-level, 0) * 11px);
+}
+.kairo-mic-meter i:nth-child(3n) {
+  height: calc(5px + var(--mic-level, 0) * 18px);
+}
+.kairo-mic-meter i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.kairo-mic-meter i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.kairo-mic-meter i:nth-child(4) {
+  animation-delay: 0.45s;
+}
+.kairo-mic-meter i:nth-child(5) {
+  animation-delay: 0.6s;
+}
+.kairo-mic-meter i:nth-child(6) {
+  animation-delay: 0.75s;
+}
+.kairo-mic-meter i:nth-child(7) {
+  animation-delay: 0.9s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kairo-mic-meter i {
+    animation: none;
+  }
+}
+
 .kairo-capsule {
   --mic-level: 0;
   align-items: center;

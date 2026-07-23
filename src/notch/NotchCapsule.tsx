@@ -7,6 +7,7 @@
 
 import { useRef } from 'react';
 import { CloseIcon } from './NotchIcons';
+import { MicMeter } from './MicMeter';
 import type { NotchCapsuleMode } from './capsuleMode';
 import { useCapsuleMorph } from './useCapsuleMorph';
 import { useModePresence } from './useModePresence';
@@ -32,6 +33,8 @@ type NotchCapsuleProps = {
   onPointerDown: () => void;
   // Onboarding chapter progress (Phase D). null outside onboarding → no dots rendered.
   progress?: { chapter: number; total: number } | null;
+  // When true, the coach caption shows the live mic meter (Phase F — Act 2 drill).
+  meter?: boolean;
 };
 
 // Notch progress dots (Phase D). Pure + decorative — a text-free row, one dot per onboarding chapter.
@@ -70,7 +73,8 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
         {props.detail ? (
           <>
             <span className="kairo-capsule-caption-row">
-              <span className="kairo-capsule-dot" aria-hidden />
+              {/* During Act 2's say-hi drill the breathing dot is replaced by the live mic meter. */}
+              {props.meter ? <MicMeter /> : <span className="kairo-capsule-dot" aria-hidden />}
               <span className="kairo-capsule-caption">{props.detail}</span>
             </span>
             {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}

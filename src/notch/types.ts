@@ -8,4 +8,6 @@ export type NotchPayload = {
   detail: string;
   // Optional seeded-prompt chip shown under a coach caption (e.g. "try: 'hey Kairo, what's up?'").
   chip?: string;
+  // When true, a coach caption shows the live mic meter (Phase F — Act 2's say-hi drill only).
+  meter?: boolean;
 };

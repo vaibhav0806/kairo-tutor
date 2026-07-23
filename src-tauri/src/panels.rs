@@ -649,6 +649,7 @@ pub(crate) fn listening_notch_payload() -> NotchPayload {
         title: "Kairo is listening".to_string(),
         detail: "Capturing the current screen".to_string(),
         chip: None,
+        meter: None,
     }
 }
 
@@ -660,6 +661,7 @@ pub(crate) fn typing_notch_payload() -> NotchPayload {
         title: "Ask Kairo".to_string(),
         detail: "Type a question, or hold ⌥⌃ to talk".to_string(),
         chip: None,
+        meter: None,
     }
 }
 

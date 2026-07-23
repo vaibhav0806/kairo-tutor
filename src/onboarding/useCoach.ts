@@ -69,8 +69,8 @@ export function useCoach(name: string) {
 
   // A silent, sticky instruction while the user performs an action (no voice attached).
   const guide = useCallback(
-    (title: string, detail: string, chip?: string) =>
-      setCoachCaption(bridge, { title, detail, ...(chip ? { chip } : {}) }),
+    (title: string, detail: string, chip?: string, meter?: boolean) =>
+      setCoachCaption(bridge, { title, detail, ...(chip ? { chip } : {}), ...(meter ? { meter } : {}) }),
     [bridge]
   );
 

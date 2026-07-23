@@ -6,7 +6,7 @@ import type { NativeBridge } from '../native/nativeBridge';
 import type { NotchPayload } from '../notch/types';
 import { klog } from '../core/logger';
 
-export type CoachCaption = { title: string; detail: string; chip?: string };
+export type CoachCaption = { title: string; detail: string; chip?: string; meter?: boolean };
 
 /** Show (or update) the caption in the real notch. */
 export async function setCoachCaption(bridge: NativeBridge, c: CoachCaption): Promise<void> {
@@ -15,7 +15,8 @@ export async function setCoachCaption(bridge: NativeBridge, c: CoachCaption): Pr
     layout: 'compact',
     title: c.title,
     detail: c.detail,
-    ...(c.chip ? { chip: c.chip } : {})
+    ...(c.chip ? { chip: c.chip } : {}),
+    ...(c.meter ? { meter: true } : {})
   };
   klog('onboarding', 'info', 'coach caption', { detail_len: c.detail.length, chip: !!c.chip });
   await bridge.showNotch(payload);
