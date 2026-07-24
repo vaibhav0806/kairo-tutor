@@ -364,6 +364,9 @@ body.onboarding-document {
 }
 
 .ob-card--hero {
+  /* Fixed hero violet (landing accent). Act 0 is BEFORE the color step, so the hero is deliberately
+     decoupled from the user's chosen accent — burst / ink / note / CTA all read in this violet. */
+  --hero-violet: #665cff;
   width: min(880px, 92vw);
   display: grid;
   grid-template-columns: 42% 58%;
@@ -521,7 +524,7 @@ body.onboarding-document {
   font-family: 'Instrument Serif', Georgia, serif;
   font-size: 22px;
   letter-spacing: 0.01em;
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, #1a1622);
+  color: color-mix(in srgb, var(--hero-violet) 70%, #1a1622);
 }
 .ob-hero-h1 {
   font-family: 'Instrument Serif', Georgia, serif;
@@ -550,12 +553,12 @@ body.onboarding-document {
   color: #fff;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--kairo-accent, #7c3aed) 84%, #ffffff 16%),
-    var(--kairo-accent, #7c3aed)
+    color-mix(in srgb, var(--hero-violet) 84%, #ffffff 16%),
+    var(--hero-violet)
   );
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.25) inset,
-    0 12px 28px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 65%, transparent);
+    0 12px 28px -8px color-mix(in srgb, var(--hero-violet) 65%, transparent);
   transition:
     transform 120ms cubic-bezier(0.2, 0, 0, 1),
     box-shadow 160ms ease;
@@ -563,7 +566,7 @@ body.onboarding-document {
 .ob-hero-cta:hover {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.3) inset,
-    0 16px 34px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 75%, transparent);
+    0 16px 34px -8px color-mix(in srgb, var(--hero-violet) 75%, transparent);
 }
 .ob-hero-cta:active {
   transform: scale(0.97);
@@ -575,115 +578,207 @@ body.onboarding-document {
   margin: 8px 0 0;
 }
 
+/* Right half of the hero: a light "corner-burst" backdrop with a looping Blender demo
+   (tile → ink connector → "Kairo sees Blender" note). Coordinates match the 520×460 design box. */
 .ob-hero-right {
   position: relative;
   overflow: hidden;
-  background: #0d0b13;
-  min-height: 420px;
+  min-height: 460px;
+  background: radial-gradient(
+    120% 100% at 80% 0%,
+    color-mix(in srgb, var(--hero-violet) 7%, #ffffff) 0%,
+    #f5f3fb 60%,
+    #eceaf6 100%
+  );
 }
-.ob-hero-backdrop {
+/* Corner burst (built in JS into .ob-hero-burst-svg), masked to fade away from the corner so it
+   never crowds the tile/note. */
+.ob-hero-burst {
   position: absolute;
   inset: 0;
-  filter: blur(18px) saturate(1.1);
-  transform: scale(1.08);
-  opacity: 0.7;
+  z-index: 0;
+  overflow: hidden;
+  -webkit-mask-image: radial-gradient(135% 135% at 100% 0%, #000 55%, transparent 100%);
+          mask-image: radial-gradient(135% 135% at 100% 0%, #000 55%, transparent 100%);
 }
-.ob-hero-demo {
+.ob-hero-burst-svg {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-}
-.ob-hero-demo-media {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: cover;
-}
-.ob-hero-value {
-  position: absolute;
-  top: 26px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-size: 26px;
-  color: #f4f0fa;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
-  padding: 0 24px;
-}
-
-/* Pure-CSS demo mock (until the real GIF lands): faux window + a drifting accent "pet". */
-.ob-hero-mock {
   width: 100%;
   height: 100%;
-  display: grid;
-  place-items: center;
-  padding: 40px;
+  display: block;
 }
-.ob-hero-mock-window {
-  width: 78%;
-  aspect-ratio: 16 / 10;
+
+/* Soft focus glow that blooms on the object when the ink lands. */
+.ob-hero-focus {
+  position: absolute;
+  left: 214px;
+  top: 262px;
+  width: 150px;
+  height: 110px;
+  z-index: 3;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--hero-violet) 42%, transparent) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+.ob-hero-focus.is-live {
+  opacity: 1;
+}
+
+/* The single Blender app tile (real screenshot). */
+.ob-hero-tile {
+  position: absolute;
+  left: 34px;
+  top: 120px;
+  width: 336px;
+  z-index: 2;
   border-radius: 14px;
-  background: linear-gradient(160deg, #1b1826, #131019);
-  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.7);
   overflow: hidden;
+  background: #14121d;
+  box-shadow:
+    0 34px 66px -28px rgba(30, 20, 45, 0.5),
+    0 0 0 1px rgba(20, 16, 28, 0.07);
 }
-.ob-hero-mock-bar {
+.ob-hero-tile-bar {
   display: flex;
   gap: 6px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.04);
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.05);
 }
-.ob-hero-mock-bar span {
+.ob-hero-tile-bar span {
   width: 9px;
   height: 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.18);
 }
-.ob-hero-mock-body {
+.ob-hero-tile-shot {
   position: relative;
+}
+.ob-hero-tile-shot img {
+  width: 100%;
+  display: block;
+}
+.ob-hero-tile-name {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(10, 8, 16, 0.45);
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+/* The "Kairo sees Blender" reply note. */
+.ob-hero-note {
+  position: absolute;
+  left: 252px;
+  top: 40px;
+  z-index: 6;
+  width: 232px;
+  padding: 13px 15px 14px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(20, 16, 28, 0.08);
+  box-shadow: 0 18px 40px -18px rgba(30, 20, 45, 0.4);
+  transform: rotate(1.1deg) translateY(6px);
+  opacity: 0;
+  transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  backdrop-filter: blur(8px);
+}
+.ob-hero-note.is-live {
+  opacity: 1;
+  transform: rotate(1.1deg) translateY(0);
+}
+.ob-hero-note-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1622;
+}
+.ob-hero-note-glyph {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-family: 'Instrument Serif', Georgia, serif;
+  font-size: 14px;
+  color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--hero-violet) 82%, #fff 18%), var(--hero-violet));
+}
+.ob-hero-note-listen {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 12px;
+}
+.ob-hero-note-listen i {
+  width: 3px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--hero-violet);
+  animation: ob-hero-eq 1s ease-in-out infinite;
+}
+.ob-hero-note-listen i:nth-child(2) { animation-delay: 0.15s; }
+.ob-hero-note-listen i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ob-hero-eq {
+  0%, 100% { height: 4px; opacity: 0.5; }
+  50% { height: 12px; opacity: 1; }
+}
+.ob-hero-note-reply {
+  margin: 9px 0 0;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #5a5266;
+  min-height: 3.4em;
+}
+.ob-hero-note-reply .ob-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  vertical-align: -2px;
+  margin-left: 1px;
+  background: var(--hero-violet);
+  animation: ob-hero-blink 0.9s steps(1) infinite;
+}
+@keyframes ob-hero-blink { 50% { opacity: 0; } }
+
+/* The ink connector drawn from the object to the note. */
+.ob-hero-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   height: 100%;
+  z-index: 5;
+  pointer-events: none;
+  overflow: visible;
 }
-.ob-hero-mock-target {
-  position: absolute;
-  top: 30%;
-  left: 62%;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: 2px solid color-mix(in srgb, var(--kairo-accent, #7c3aed) 80%, transparent);
-  box-shadow: 0 0 30px -4px var(--kairo-accent, #7c3aed);
+.ob-hero-ink-path {
+  fill: none;
+  stroke: var(--hero-violet);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  opacity: 0;
 }
-.ob-hero-mock-pet {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: var(--kairo-accent, #7c3aed);
-  box-shadow: 0 0 22px -2px var(--kairo-accent, #7c3aed);
-  animation: ob-hero-drift 3.4s ease-in-out infinite;
+.ob-hero-ink-origin,
+.ob-hero-ink-end {
+  fill: var(--hero-violet);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
 }
-@keyframes ob-hero-drift {
-  0% {
-    top: 68%;
-    left: 20%;
-    transform: scale(1);
-  }
-  45% {
-    top: 34%;
-    left: 64%;
-    transform: scale(1.15);
-  }
-  60% {
-    top: 34%;
-    left: 64%;
-    transform: scale(0.9);
-  }
-  100% {
-    top: 68%;
-    left: 20%;
-    transform: scale(1);
-  }
+.ob-hero-ink-end {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--hero-violet) 70%, transparent));
 }
 
 /* Hero → color morph-out (crossfade-morph; see the Phase C plan's library note). */
@@ -742,7 +837,8 @@ body.onboarding-document {
   .ob-color-confirm,
   .ob-card,
   .ob-hero-cta,
-  .ob-hero-mock-pet,
+  .ob-hero-note-listen i,
+  .ob-hero-note-reply .ob-caret,
   .ob-morph-out,
   .ob-morph-in,
   .ob-collapsing,

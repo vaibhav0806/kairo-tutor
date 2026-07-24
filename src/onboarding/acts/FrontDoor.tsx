@@ -8,7 +8,52 @@ import { playChime, playSound } from '../../core/sound';
 import { useCoach } from '../useCoach';
 import { ACT_LINES, HERO_COPY } from '../copy';
 import { ACCENT_PRESETS } from '../accentPresets';
-import { heroDemoSrc } from '../heroDemo';
+import blenderShot from '../../assets/onboarding/blender-viewport.webp';
+
+// The fixed hero violet (landing accent). Act 0 shows BEFORE the color step, so the hero is
+// deliberately decoupled from the user's chosen accent — it always reads in this violet.
+const HERO_VIOLET = '#665cff';
+// The looping demo's reply (mirrors the landing's Blender beat). Kept here so the founder can tweak.
+const HERO_REPLY = 'The bevel is fine. Apply the object scale first and the shading artifact should clear.';
+
+// Paint the top-right "corner burst" into the given <svg> once: a soft corner glow + fanned rays +
+// concentric arcs (viewBox 520×460, origin = top-right corner). Purely decorative; masked to fade
+// toward the tile so it never competes with the demo.
+function buildHeroBurst(svg: SVGSVGElement) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const cx = 520, cy = 0;
+  const defs = document.createElementNS(NS, 'defs');
+  const rg = document.createElementNS(NS, 'radialGradient');
+  rg.id = 'obHeroGlow';
+  rg.innerHTML =
+    `<stop offset="0%" stop-color="${HERO_VIOLET}" stop-opacity="0.26"/>` +
+    `<stop offset="100%" stop-color="${HERO_VIOLET}" stop-opacity="0"/>`;
+  defs.appendChild(rg);
+  svg.appendChild(defs);
+  const glow = document.createElementNS(NS, 'circle');
+  glow.setAttribute('cx', String(cx)); glow.setAttribute('cy', String(cy));
+  glow.setAttribute('r', '300'); glow.setAttribute('fill', 'url(#obHeroGlow)');
+  svg.appendChild(glow);
+  const N = 26, L = 760;
+  for (let i = 0; i < N; i++) {
+    const a = (90 + i * (90 / (N - 1))) * Math.PI / 180;
+    const ln = document.createElementNS(NS, 'line');
+    ln.setAttribute('x1', String(cx)); ln.setAttribute('y1', String(cy));
+    ln.setAttribute('x2', (cx + Math.cos(a) * L).toFixed(1));
+    ln.setAttribute('y2', (cy + Math.sin(a) * L).toFixed(1));
+    ln.setAttribute('stroke', HERO_VIOLET);
+    ln.setAttribute('stroke-width', i % 2 ? '1.1' : '1.5');
+    ln.setAttribute('stroke-opacity', i % 2 ? '0.12' : '0.2');
+    svg.appendChild(ln);
+  }
+  [110, 190, 270, 350, 430].forEach((r, i) => {
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', String(cx)); c.setAttribute('cy', String(cy)); c.setAttribute('r', String(r));
+    c.setAttribute('fill', 'none'); c.setAttribute('stroke', HERO_VIOLET);
+    c.setAttribute('stroke-width', '1.3'); c.setAttribute('stroke-opacity', (0.2 - i * 0.025).toFixed(3));
+    svg.appendChild(c);
+  });
+}
 
 // The "front door" — the split card that greets the user (v2 Phase C, framer-motion revision). ONE
 // persistent card frame + right-hand demo; only the LEFT panel morphs from the hero pitch → the color
@@ -25,6 +70,14 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
   // Non-null once the card is imploding toward the pet; holds the translate delta (card center → pet).
   const [collapse, setCollapse] = useState<{ dx: number; dy: number } | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  // Right-side looping demo (Blender tile → ink connector → "Kairo sees Blender" streaming note).
+  const burstRef = useRef<SVGSVGElement | null>(null);
+  const inkPathRef = useRef<SVGPathElement | null>(null);
+  const inkOriginRef = useRef<SVGCircleElement | null>(null);
+  const inkEndRef = useRef<SVGCircleElement | null>(null);
+  const noteRef = useRef<HTMLElement | null>(null);
+  const replyRef = useRef<HTMLParagraphElement | null>(null);
+  const focusRef = useRef<HTMLDivElement | null>(null);
   const reduce = useReducedMotion();
 
   useEffect(() => {
@@ -111,6 +164,86 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
     onComplete();
   }, [collapse, say, clear, onComplete]);
 
+  // The right-side demo: paint the corner burst once, then loop origin→ink-draw→note→type reply.
+  // Under reduced motion it snaps to the finished frame (no loop). Cleaned up on unmount/collapse.
+  useEffect(() => {
+    const burst = burstRef.current;
+    if (burst && !burst.childNodes.length) buildHeroBurst(burst);
+    const path = inkPathRef.current;
+    const origin = inkOriginRef.current;
+    const end = inkEndRef.current;
+    const note = noteRef.current;
+    const reply = replyRef.current;
+    const focus = focusRef.current;
+    if (!path || !reply) return;
+
+    const len = path.getTotalLength();
+    path.style.strokeDasharray = String(len);
+
+    if (reduce) {
+      path.style.strokeDashoffset = '0';
+      path.style.opacity = '1';
+      if (origin) origin.style.opacity = '1';
+      if (end) end.style.opacity = '1';
+      focus?.classList.add('is-live');
+      note?.classList.add('is-live');
+      reply.textContent = HERO_REPLY;
+      return;
+    }
+
+    klog('onboarding', 'debug', 'front door: hero demo loop started');
+    let alive = true;
+    let timer = 0;
+    const wait = (ms: number) => new Promise<void>((r) => { timer = window.setTimeout(r, ms); });
+    const typeReply = async (text: string) => {
+      reply.textContent = '';
+      const caret = document.createElement('span');
+      caret.className = 'ob-caret';
+      reply.appendChild(caret);
+      for (let i = 0; i <= text.length && alive; i++) {
+        caret.remove();
+        reply.textContent = text.slice(0, i);
+        reply.appendChild(caret);
+        await wait(1000 / 56);
+      }
+      await wait(400);
+      caret.remove();
+    };
+
+    (async function loop() {
+      while (alive) {
+        path.style.transition = 'none';
+        path.style.strokeDashoffset = String(len);
+        path.style.opacity = '0';
+        if (origin) origin.style.opacity = '0';
+        if (end) { end.style.opacity = '0'; end.style.transform = 'scale(.6)'; }
+        note?.classList.remove('is-live');
+        focus?.classList.remove('is-live');
+        reply.textContent = '';
+        await wait(550); if (!alive) break;
+        focus?.classList.add('is-live');
+        await wait(160); if (!alive) break;
+        if (origin) { origin.style.transition = 'opacity .2s'; origin.style.opacity = '1'; }
+        await wait(210); if (!alive) break;
+        void path.getBoundingClientRect();
+        path.style.opacity = '1';
+        path.style.transition = 'stroke-dashoffset .6s cubic-bezier(.77,0,.175,1)';
+        path.style.strokeDashoffset = '0';
+        await wait(600); if (!alive) break;
+        if (end) {
+          end.style.transition = 'opacity .25s, transform .25s cubic-bezier(.2,.8,.2,1)';
+          end.style.opacity = '1'; end.style.transform = 'scale(1)';
+        }
+        note?.classList.add('is-live');
+        await wait(220); if (!alive) break;
+        await typeReply(HERO_REPLY); if (!alive) break;
+        await wait(2400);
+      }
+    })();
+
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [reduce]);
+
   return (
     <>
       <div className="ob-vignette" aria-hidden />
@@ -190,48 +323,45 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
             )}
           </AnimatePresence>
         </div>
-        <div className="ob-hero-right">
-          {/* Depth layer: the same demo frame, blurred + scaled up, behind the crisp one. */}
-          <div className="ob-hero-backdrop" aria-hidden>
-            <HeroDemoInner />
+        {/* Right half: looping "Kairo sees Blender" demo on a light corner-burst backdrop. Purely
+            decorative → aria-hidden; the left panel carries the real content. */}
+        <div className="ob-hero-right" aria-hidden="true">
+          <div className="ob-hero-burst">
+            <svg
+              ref={burstRef}
+              className="ob-hero-burst-svg"
+              viewBox="0 0 520 460"
+              preserveAspectRatio="xMidYMid slice"
+            />
           </div>
-          <div className="ob-hero-demo">
-            <HeroDemoInner />
-            <div className="ob-hero-value">{HERO_COPY.value}</div>
+
+          <div ref={focusRef} className="ob-hero-focus" />
+
+          <div className="ob-hero-tile">
+            <div className="ob-hero-tile-bar"><span /><span /><span /></div>
+            <div className="ob-hero-tile-shot">
+              <img src={blenderShot} alt="" />
+              <span className="ob-hero-tile-name">first-scene.blend</span>
+            </div>
           </div>
+
+          <aside ref={noteRef} className="ob-hero-note">
+            <div className="ob-hero-note-head">
+              <span className="ob-hero-note-glyph">k</span>
+              <span>Kairo sees Blender</span>
+              <span className="ob-hero-note-listen"><i /><i /><i /></span>
+            </div>
+            <p ref={replyRef} className="ob-hero-note-reply" />
+          </aside>
+
+          <svg className="ob-hero-ink">
+            <path ref={inkPathRef} className="ob-hero-ink-path" d="M 236 214 C 300 208, 268 188, 300 182" />
+            <circle ref={inkOriginRef} className="ob-hero-ink-origin" cx="236" cy="214" r="4" />
+            <circle ref={inkEndRef} className="ob-hero-ink-end" cx="300" cy="182" r="5" />
+          </svg>
         </div>
       </motion.div>
     </>
   );
 }
 
-// The looping demo: the real curated GIF once it lands (heroDemoSrc), else the pure-CSS mock so the
-// layout is fully testable with zero image asset. Both the crisp foreground and the blurred backdrop
-// render this, so swapping in the GIF fills both.
-function HeroDemoInner() {
-  return heroDemoSrc ? (
-    <img className="ob-hero-demo-media" src={heroDemoSrc} alt="" />
-  ) : (
-    <HeroDemoMock />
-  );
-}
-
-// Pure-CSS stand-in for the hero demo: a faux app window with an accent "pet" glyph that drifts to a
-// target on a loop. Decorative only; the real GIF replaces it via heroDemo.ts.
-function HeroDemoMock() {
-  return (
-    <div className="ob-hero-mock" aria-hidden>
-      <div className="ob-hero-mock-window">
-        <div className="ob-hero-mock-bar">
-          <span />
-          <span />
-          <span />
-        </div>
-        <div className="ob-hero-mock-body">
-          <div className="ob-hero-mock-target" />
-          <div className="ob-hero-mock-pet" />
-        </div>
-      </div>
-    </div>
-  );
-}
