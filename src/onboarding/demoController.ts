@@ -152,11 +152,26 @@ export async function runPointTurn(
     screenCapture: capture,
     spokenIntro: filler || undefined,
   });
+  // Track when the answer lands so that, once the filler stops, we only fall back to the
+  // thinking state if the vision turn is still in flight (no thinking flash if it already landed).
+  let answerReady = false;
+  void visionPromise.then(
+    () => {
+      answerReady = true;
+    },
+    () => {
+      answerReady = true;
+    },
+  );
   if (filler)
     await speak(bridge, filler, () => {
       cb.onSpeaking?.();
       cb.onCaption?.(filler);
     });
+  // Filler finished but the answer may still be computing → return the notch to the thinking
+  // state (spinning cube + a freshly-picked random verb) so the wait never sits on the stale
+  // filler caption.
+  if (!answerReady) cb.onThinking?.();
   const result = await visionPromise;
   // THE PEAK (§9): the instant the first box/pointer lands on the real target, fire the pet
   // celebration + the arrival cue — once, and only when there's an actual target.
@@ -207,12 +222,24 @@ export async function runCircleTurn(
     annotations: [],
     screenCapture: capture,
   });
+  let answerReady = false;
+  void visionPromise.then(
+    () => {
+      answerReady = true;
+    },
+    () => {
+      answerReady = true;
+    },
+  );
   // Gesture path has no gate filler — cover the vision wait with a short line.
   const cover = 'Let me see what you circled.';
   await speak(bridge, cover, () => {
     cb.onSpeaking?.();
     cb.onCaption?.(cover);
   });
+  // Cover line done but the answer may still be computing → back to the thinking state
+  // (cube + fresh random verb) so the wait isn't stuck on the stale cover caption.
+  if (!answerReady) cb.onThinking?.();
   const result = await visionPromise;
   await playSteps(bridge, result.steps, result.revealStep, { onStepSpeak: cb.onCaption });
   await new Promise((r) => setTimeout(r, HIGHLIGHT_DWELL_MS));
