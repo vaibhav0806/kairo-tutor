@@ -12,7 +12,7 @@ use tauri::AppHandle;
 
 use crate::auth::fetch_jwt;
 use crate::constants;
-use crate::env::provider_env_optional;
+use crate::env::{provider_env, provider_env_optional};
 use crate::tutor::shared_http_client;
 
 // Mirrors `ASK_ID_HEADER` in packages/shared (Rust can't import the TS constant).
@@ -47,10 +47,16 @@ async fn proxy_post_builder(
     if onboarding_active() {
         let sibling = onboarding_sibling(path);
         crate::klog!(app, debug, path = sibling, "onboarding turn → unauthenticated proxy route");
-        let url = format!("{}{}", constants::KAIRO_BACKEND_URL, sibling);
+        let url = format!("{}{}", backend_url(), sibling);
         return Ok(shared_http_client().post(&url).timeout(timeout));
     }
     authed_post(app, path, timeout).await
+}
+
+/// The Kairo backend base URL. Runtime-overridable via `KAIRO_BACKEND_URL` (no rebuild);
+/// otherwise the compiled default. Both auth and the provider proxy resolve through this.
+pub(crate) fn backend_url() -> String {
+    provider_env("KAIRO_BACKEND_URL", constants::KAIRO_BACKEND_URL)
 }
 
 /// True when provider calls should route through the backend proxy. Runtime-overridable
@@ -89,7 +95,7 @@ async fn authed_post(
     timeout: Duration,
 ) -> Result<reqwest::RequestBuilder, ProxyError> {
     let jwt = fetch_jwt(app).await.ok_or(ProxyError::NoAuth)?;
-    let url = format!("{}{}", constants::KAIRO_BACKEND_URL, path);
+    let url = format!("{}{}", backend_url(), path);
     Ok(shared_http_client().post(&url).bearer_auth(jwt).timeout(timeout))
 }
 
@@ -188,7 +194,7 @@ pub(crate) async fn over_free_limit(app: &AppHandle) -> bool {
     let Some(jwt) = fetch_jwt(app).await else {
         return false;
     };
-    let url = format!("{}/v1/me", constants::KAIRO_BACKEND_URL);
+    let url = format!("{}/v1/me", backend_url());
     let response = match shared_http_client()
         .get(&url)
         .bearer_auth(jwt)
