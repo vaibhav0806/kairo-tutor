@@ -217,7 +217,10 @@ export async function runCircleTurn(
   await playSteps(bridge, result.steps, result.revealStep, { onStepSpeak: cb.onCaption });
   await new Promise((r) => setTimeout(r, HIGHLIGHT_DWELL_MS));
   await releaseVisualTargets(bridge);
-  // The gesture carries the intent, so an empty transcript is fine — only a no-target answer retries.
-  const hasTarget = result.steps.some((s) => s.visualTargets.length > 0);
-  return { ok: hasTarget, reason: hasTarget ? undefined : 'no_target' };
+  // Circle's deliverable is the spoken DESCRIPTION — a box is optional (circling "all of this"
+  // correctly answers with no single target). So the beat is satisfied as long as Kairo produced
+  // an answer; only a genuinely empty/failed vision (no spoken step) retries. Contrast runPointTurn,
+  // where a target box IS the point and its absence rightly retries.
+  const answered = result.steps.some((s) => (s.say ?? '').trim().length > 0);
+  return { ok: answered, reason: answered ? undefined : 'empty' };
 }
