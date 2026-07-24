@@ -1,0 +1,24 @@
+# Kairo backend deploy (Hetzner). Joins the existing `tech-digest-net` so the shared
+# Caddy on that box can `reverse_proxy kairo-server:8787`. Publishes NO host ports —
+# 80/443 belong to that Caddy. Secrets live in ./.env (gitignored, created on the box).
+services:
+  kairo-server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: kairo-server:latest
+    container_name: kairo-server
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - tech-digest-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+networks:
+  tech-digest-net:
+    external: true

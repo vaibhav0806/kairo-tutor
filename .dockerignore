@@ -1,0 +1,22 @@
+# Docker build context = repo root, but the backend image only needs the server
+# workspace + @kairo/shared. Exclude the desktop app, build outputs, and ALL secrets.
+**/node_modules
+**/dist
+.git
+.github
+src
+src-tauri
+public
+docs
+scripts
+tests
+index.html
+vite.config.*
+*.log
+.DS_Store
+
+# Never bake secrets into the image.
+.env
+.env.*
+server/.env
+server/.env.*
