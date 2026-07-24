@@ -1,0 +1,20 @@
+# Kairo uptime monitor — a free Cloudflare Worker on a cron trigger. Pings the backend
+# health endpoints every 5 min; emails on failure via the Email Routing send binding.
+name = "kairo-uptime"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false # cron-only; no public HTTP endpoint
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Send-email binding — restricted to the verified Email Routing destination.
+[[send_email]]
+name = "SEB"
+destination_address = "prasadjs178@gmail.com"
+
+[vars]
+TARGETS = "https://api.meetkairo.xyz/healthz,https://api.meetkairo.xyz/readyz"
+ALERT_FROM = "alerts@meetkairo.xyz"
+ALERT_TO = "prasadjs178@gmail.com"

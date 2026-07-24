@@ -1,0 +1,13 @@
+{
+  "name": "kairo-uptime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "mimetext": "^3"
+  }
+}
