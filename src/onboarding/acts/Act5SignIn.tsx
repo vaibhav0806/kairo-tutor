@@ -55,7 +55,7 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
           <>
             <span className="ob-signin-sub">Sign in to save your setup</span>
             {/* Official "Sign in with Google" — Light theme (white) per Google's branding guidelines;
-                the crisp white button is the always-safe placement on a near-black card. */}
+                the crisp white button + neutral stroke sits cleanly on the light card. */}
             <button
               type="button"
               className="google-signin-btn"
