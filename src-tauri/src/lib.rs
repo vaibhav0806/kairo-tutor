@@ -959,20 +959,16 @@ pub fn run() {
             // Keep app_handle referenced on non-macOS builds (the only arm below is macOS-gated).
             let _ = &app_handle;
             match event {
-                // Dock-icon left-click (applicationShouldHandleReopen). Kairo has NO designed "home"
-                // window yet — the legacy `main` dashboard is just the first-run permission-recovery
-                // screen, and the founder does not want that (or any) window popping here. So bring up
-                // the NOTCH — the real Kairo surface — exactly like the menu-bar "Show Notch" item. A
-                // proper minimal settings/account window comes later (with billing); wire it here then.
+                // Re-activating Kairo (dock-icon click, Cmd-Tab, clicking a Kairo surface) fires
+                // `applicationShouldHandleReopen` because Kairo has no normal visible window — its
+                // panels skip the taskbar. This used to auto-open the TYPING notch, which popped the
+                // input box + grabbed the key window on every window select. The founder wants
+                // activation to do NOTHING: typing is opened deliberately via the ⌥⌃ tap or the
+                // menu-bar "Show Notch" item, never by focusing the app. So this is intentionally a
+                // no-op (log only).
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { has_visible_windows, .. } => {
-                    crate::klog!(app, info, has_visible_windows = has_visible_windows, "dock reopen → show notch");
-                    let state = app_handle.state::<NotchState>();
-                    if let Err(error) =
-                        show_notch_with_payload(app_handle, state.inner(), Some(typing_notch_payload()))
-                    {
-                        crate::klog!(app, error, "dock reopen: show notch failed: {error}");
-                    }
+                    crate::klog!(app, debug, has_visible_windows = has_visible_windows, "dock reopen → ignored (no auto-notch)");
                 }
                 _ => {}
             }
