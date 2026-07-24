@@ -1,0 +1,35 @@
+name: server-ci
+
+# Verify the backend on every change to server/ (typecheck + build). Zero secrets, no DB:
+# the full test suite needs a Postgres (shared Neon in dev). To add it in CI, wire a Neon
+# CI-branch DATABASE_URL secret (+ run migrations first) — see server/AGENTS.md.
+# DEPLOY is intentionally NOT here — it stays manual + user-confirmed (server/AGENTS.md).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'packages/shared/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/server-ci.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'packages/shared/**'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install workspace
+        run: npm ci
+      - name: Typecheck (server)
+        run: npm run typecheck -w @kairo/server
+      - name: Build (server)
+        run: npm run build -w @kairo/server

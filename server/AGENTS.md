@@ -46,3 +46,12 @@ Secrets never reach the browser or the desktop bundle.
 ## Verify gate (before "done")
 
 - `npm run typecheck -w @kairo/server` + `npm run test -w @kairo/server` + a migration dry-run.
+
+## Deploying backend changes
+
+Changes under `server/` are NOT live until deployed to the prod box (Hetzner). After ANY
+backend change, **OFFER to deploy — but ASK the user and get explicit confirmation BEFORE
+deploying. Never auto-deploy.** The deploy runs `server/deploy.sh` on the box (build →
+forward-only migrate → restart → `/readyz` gate). CI (typecheck + build) runs automatically on
+push via `.github/workflows/server-ci.yml`; the deploy itself is manual + confirmed. (Box host +
+SSH details live in the agent's local memory, not this public repo.)
