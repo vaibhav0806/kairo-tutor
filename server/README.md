@@ -37,14 +37,34 @@ npm run test -w @kairo/server        # vitest against the Neon dev branch
 npm run typecheck -w @kairo/server
 ```
 
-## Deploy (Hetzner, later)
+## Deploy (Hetzner)
+
+Live at **`https://api.meetkairo.xyz`**. Runs as a Docker container behind the box's existing
+shared **Caddy** (which owns :80/:443 and terminates TLS). The container publishes no host ports;
+it joins the `tech-digest-net` docker network so Caddy can `reverse_proxy kairo-server:8787`.
+See `Dockerfile` + `docker-compose.yml` here.
+
+First-time setup (done — kept for the record / a fresh box):
+
+1. Clone this repo on the box (public). Compose v2 lives user-local at `~/.docker/cli-plugins/`.
+2. `server/.env` on the box holds prod secrets (**keys only**, never committed): prod-branch
+   **pooled** `DATABASE_URL`, `PUBLIC_BASE_URL=https://api.meetkairo.xyz`, a fresh
+   `BETTER_AUTH_SECRET`, Google client, provider keys, Dodo (test until live keys land).
+3. Add the prod redirect URI `https://api.meetkairo.xyz/api/auth/callback/google` to the Google
+   web client.
+4. Add a vhost to the box's shared Caddyfile, then graceful `caddy reload`:
+   ```
+   api.meetkairo.xyz {
+       encode zstd gzip
+       reverse_proxy kairo-server:8787
+   }
+   ```
+
+Redeploy (build → forward-only migrate → restart → `/readyz` gate):
 
 ```bash
-npm run build -w @kairo/server       # tsup -> dist/index.js (self-contained bundle)
-node dist/db/migrate.js              # run migrations as a release step (never auto-migrate on boot)
-node dist/index.js                   # or via systemd/pm2
+ssh era@<box> 'cd ~/kairo && git pull --ff-only && bash server/deploy.sh'
 ```
 
-Live keys live **only** in the box env. Add the prod redirect URI
-`https://api.<domain>/api/auth/callback/google` to the Google client, and set
-`PUBLIC_BASE_URL=https://api.<domain>`.
+Live keys live **only** in the box `.env`. `deploy.sh` runs migrations as a release step (never
+auto-migrate on boot).
