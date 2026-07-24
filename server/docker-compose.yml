@@ -10,6 +10,12 @@ services:
     container_name: kairo-server
     restart: unless-stopped
     env_file: .env
+    # Cap container logs (shared box) — 3 x 10MB rolling, never fills the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - tech-digest-net
     healthcheck:
