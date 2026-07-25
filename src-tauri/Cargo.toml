@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Screen-native AI tutor for software labs"
 authors = ["Kairo Tutor"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "kairo_tutor_lib"
