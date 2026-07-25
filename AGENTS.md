@@ -5,8 +5,8 @@ Two packages in this repo:
   "Desktop app rules" heading are the DESKTOP rules.
 - **`server/` = the Fastify backend** (auth + AI proxy + billing) — see [`server/AGENTS.md`](./server/AGENTS.md).
 
-`AGENTS.md` is the source of truth (Codex reads it natively); each `CLAUDE.md` is a one-line
-`@AGENTS.md` stub so Claude Code loads the same rules.
+`AGENTS.md` is the source of truth; each `CLAUDE.md` is a one-line `@AGENTS.md` stub so
+Claude Code loads the same rules.
 
 ## Open-source secret hygiene
 The whole repo is public. `.env` (gitignored) holds ONLY API keys. NEVER commit secrets/tokens.

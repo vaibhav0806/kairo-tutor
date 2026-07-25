@@ -5,7 +5,7 @@
 **Scope:** Add Google-only auth, usage metering + paid billing, and a first-run onboarding
 flow to the Kairo Tutor macOS app, plus the backend spine that makes metering possible,
 a monorepo restructure, a focused frontend refactor, and agent-rules files for Claude
-Code + Codex.
+Code.
 
 > Source research: six parallel deep-dive agents (2026-07-19) covering Rust/native,
 > frontend, monorepo, Fastify backend, billing/metering, and agent-rules. This doc is the
@@ -36,7 +36,7 @@ consequence of that spine.
 | ORM | **Drizzle** (+ `pg` node-postgres pooled driver) | Better Auth CLI first-classes Drizzle; one migration history for auth + app tables. |
 | Payments | **Dodo Payments** (Merchant of Record) via `@dodopayments/better-auth` | MoR handles global tax/VAT/GST + chargebacks; the plugin mounts checkout/portal/webhooks for us. |
 | Repo | **Monorepo, fully open source.** Desktop stays at root; add `server/` + `packages/shared/`; **npm workspaces** | Least disruption to the signed Tauri build; lowest ceremony. |
-| Agent rules | **`AGENTS.md` canonical + `CLAUDE.md` = `@AGENTS.md` stub** | Codex reads AGENTS.md natively, Claude Code reads CLAUDE.md; import (not symlink) is OSS/Windows-safe. |
+| Agent rules | **`AGENTS.md` canonical + `CLAUDE.md` = `@AGENTS.md` stub** | Claude Code reads CLAUDE.md; import (not symlink) is OSS/Windows-safe. |
 | Free tier | **10 lifetime requests**, no reset | Each ask is premium-model COGS; a monthly reset bleeds money + kills conversion. |
 | Paid tier | **One "Kairo Pro" plan**, monthly + yearly Dodo products, unlimited (soft fair-use) | Keep it simple; Teams/seats is a future add. |
 | Client secrets | **Zero.** Client holds only `KAIRO_BACKEND_URL` + Keychain tokens | Fresh clone runs keyless — an OSS win. |
@@ -323,13 +323,13 @@ proxy migration is **~95% a Rust change**.
 
 ---
 
-## 9. Agent rules (Claude Code + Codex)
+## 9. Agent rules (Claude Code)
 
-- **Single source of truth:** `AGENTS.md` canonical at each level; each `CLAUDE.md` is a one-line `@AGENTS.md` import stub (import, not symlink — safe across OSes for OSS contributors). Codex reads AGENTS.md natively; both tools nest per-directory.
+- **Single source of truth:** `AGENTS.md` canonical at each level; each `CLAUDE.md` is a one-line `@AGENTS.md` import stub (import, not symlink — safe across OSes for OSS contributors). Rules nest per-directory.
 - **Layout (reconciled with the root-stays repo):** root `AGENTS.md` = shared/monorepo rules **+** the existing desktop rules (root *is* the desktop package); `server/AGENTS.md` = backend rules (loaded on demand when working in `server/`). Convert today's `CLAUDE.md` → root `AGENTS.md`; add the shared sections; make `CLAUDE.md` the stub; add `server/AGENTS.md` + `server/CLAUDE.md` stub.
 - **Root `AGENTS.md` sections:** what Kairo is; monorepo map + "which package → which rules"; **open-source secret hygiene** (`.env` = keys only, gitignored; never commit secrets/tokens); commit discipline (main branch, commit-as-you-go, Co-Authored-By); **Dodo test-mode-only**; how to run things (desktop `npm run app`; server scripts); mandatory logging; enforcement pointers. Keep the desktop deep-rules (klog, `.app` build, `constants.rs`, panels/TCC, native-capability checklist, test gate) here since desktop = root.
 - **`server/AGENTS.md`:** Fastify conventions + schema validation + request-id logging (never log secrets/tokens/PII/auth headers); Neon migrations (forward-only, checked in, reviewed in-PR, dry-run on a Neon branch, never agent-applied to prod); Better Auth patterns; **Dodo test-mode-only, live keys only on Hetzner, verify webhook signatures**; request-metering rules; test/verify gate.
-- **Enforcement (files are guidance, not a wall):** back the mandatory rules with CI (gitleaks/trufflehog secret scan; a live-Dodo-key-prefix check; a `console.*`/`println!` log-lint; migration dry-run on a Neon branch), a pre-commit hook (lefthook/husky) running the same scans, branch protection on `server/drizzle/**`, and Claude Code `PreToolUse` hooks blocking writes to `.env`. CI + git hooks are the cross-tool wall since Codex lacks Claude's hook model.
+- **Enforcement (files are guidance, not a wall):** back the mandatory rules with CI (gitleaks/trufflehog secret scan; a live-Dodo-key-prefix check; a `console.*`/`println!` log-lint; migration dry-run on a Neon branch), a pre-commit hook (lefthook/husky) running the same scans, branch protection on `server/drizzle/**`, and Claude Code `PreToolUse` hooks blocking writes to `.env`. CI + git hooks are the cross-tool wall for any agent without a hook model.
 
 ---
 
