@@ -51,12 +51,15 @@ fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
     }
     let mut prompt = serde_json::to_string_pretty(&context)
         .map_err(|error| format!("Failed to build tutor prompt: {error}"))?;
-    // The user's name goes in the NON-cached user turn only (never the cached system prefix).
+    // The user's name + platform go in the NON-cached user turn only (never the cached system
+    // prefix). Both are per-user, so keeping them here avoids fragmenting the shared cache.
     let name_line = crate::prompts::user_name_line(input.user_name.as_deref());
     if !name_line.is_empty() {
         prompt.push_str("\n\n");
         prompt.push_str(&name_line);
     }
+    prompt.push_str("\n\n");
+    prompt.push_str(&crate::prompts::platform_line());
     Ok(prompt)
 }
 
@@ -716,13 +719,15 @@ pub(crate) async fn run_gate_turn(
         "Active app: {app}\nWindow title: {title}{history_line}{pointer_line}\nUser question (spoken): \"{}\"",
         input.user_query
     );
-    // Append the user's name to the NON-cached gate user turn (empty when unknown / signed out).
+    // Append the user's name + platform to the NON-cached gate user turn (name is empty when
+    // unknown / signed out; platform is always known).
     let name_line = crate::prompts::user_name_line(input.user_name.as_deref());
     let user_message = if name_line.is_empty() {
         user_message
     } else {
         format!("{user_message}\n{name_line}")
     };
+    let user_message = format!("{user_message}\n{}", crate::prompts::platform_line());
     // Diagnostic: pair the exact question the gate saw with its answer (the "gate
     // result" line below; always shown, constants::LOG_TRANSCRIPTS).
     crate::klog!(

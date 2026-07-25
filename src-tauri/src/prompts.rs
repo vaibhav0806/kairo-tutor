@@ -153,11 +153,39 @@ fn log_skill_body_once(skill: &crate::skills::Skill) {
 /// The user's-name line for the NON-CACHED (dynamic) section of the gate + tutor prompts. Empty
 /// when the name is unknown / signed out. Kept out of the cached system prefix so it never busts
 /// prompt caching. See spec §12.
+///
+/// Carries usage guidance, not just the name: with the bare fact, the gate used the name in 62%
+/// of fillers and the tutor in 32% of answers, so on a turn where both fired the user heard it
+/// twice in ten seconds — which reads as creepy, not warm.
 pub(crate) fn user_name_line(user_name: Option<&str>) -> String {
     match user_name.map(str::trim) {
-        Some(name) if !name.is_empty() => format!("The user's name is {name}."),
+        Some(name) if !name.is_empty() => format!(
+            "The user's name is {name}. Use it SPARINGLY — a greeting, a congratulation, or a \
+moment that earns it. Never in routine steps, acknowledgements, or fillers. Most turns should \
+not contain their name at all."
+        ),
         _ => String::new(),
     }
+}
+
+/// The user's-platform line for the same NON-CACHED section. Resolved from the build target, so
+/// it is right today (macOS-only shipping) and right automatically when the Windows build lands
+/// — no constant to remember to flip. Per-user like the name, so it stays out of the cached
+/// prefix rather than fragmenting the shared prompt cache across users.
+///
+/// Exists because the model told a Mac user to "press Ctrl+D" and cost them two turns: without
+/// this it has to guess the platform, and skills that spell shortcuts both ways invite the wrong
+/// half.
+pub(crate) fn platform_line() -> String {
+    let (os, modifiers) = match std::env::consts::OS {
+        "macos" => ("macOS", "Command (⌘), Option (⌥), Control (⌃)"),
+        "windows" => ("Windows", "Ctrl, Alt, Shift"),
+        other => (other, "the platform's standard modifiers"),
+    };
+    format!(
+        "The user is on {os}. Give {os} keyboard shortcuts only, using {modifiers} — never quote \
+another platform's shortcut, and never offer both and let them pick."
+    )
 }
 
 #[cfg(test)]
@@ -187,7 +215,34 @@ mod tests {
 
     #[test]
     fn appends_for_a_name() {
-        assert_eq!(user_name_line(Some("Prasad")), "The user's name is Prasad.");
+        // The line now carries usage guidance after the fact, so assert the prefix rather
+        // than the whole string (the guidance itself is covered below).
+        assert!(user_name_line(Some("Prasad")).starts_with("The user's name is Prasad."));
+    }
+
+    #[test]
+    fn name_line_carries_sparing_use_guidance() {
+        // The bare fact drove the name into 62% of fillers; the guidance is the fix, so it
+        // must ship with the name rather than living in a prompt line that can drift away.
+        let line = user_name_line(Some("Prasad"));
+        assert!(line.contains("Prasad"));
+        assert!(line.to_uppercase().contains("SPARINGLY"));
+    }
+
+    #[test]
+    fn platform_line_names_this_build_target_and_its_modifiers() {
+        let line = super::platform_line();
+        #[cfg(target_os = "macos")]
+        {
+            assert!(line.contains("macOS"));
+            assert!(line.contains('⌘'));
+            assert!(!line.contains("Ctrl"));
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert!(line.contains("Windows"));
+            assert!(line.contains("Ctrl"));
+        }
     }
 
     #[test]
