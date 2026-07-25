@@ -15,7 +15,6 @@ const uid = 'test-user-proxy';
 const app = await buildApp();
 
 beforeAll(async () => {
-  await app.listen({ port: 8787, host: '127.0.0.1' });
   await db.execute(sql`INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
     VALUES (${uid}, 'Px', 'px@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await db.execute(sql`DELETE FROM usage_event WHERE user_id = ${uid}`);

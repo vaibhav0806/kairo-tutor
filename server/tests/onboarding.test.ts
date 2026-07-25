@@ -9,7 +9,6 @@ const uid = 'test-user-onboarding';
 const app = await buildApp();
 
 beforeAll(async () => {
-  await app.listen({ port: 8787, host: '127.0.0.1' });
   await db.execute(sql`INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
     VALUES (${uid}, 'Ob', 'ob@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await ensureUserRows(uid);

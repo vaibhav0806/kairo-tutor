@@ -35,6 +35,10 @@ Secrets never reach the browser or the desktop bundle.
 
 - Google-only social provider; **JWT (15m) + JWKS + bearer** plugins. Proxy verifies the JWT via
   JWKS with `jose` (no DB on the hot path). Don't roll your own auth.
+- The verification key set is read **in-process** (`src/auth/jwks.ts` → `auth.api.getJwks()`),
+  cached, and reloaded on an unknown `kid`. **Never** verify against
+  `PUBLIC_BASE_URL/api/auth/jwks` over HTTP — in prod that makes the container fetch its own public
+  hostname through Cloudflare + Caddy, which hangs and 401s every authenticated request.
 - The desktop is Rust (no TS client): we own `/auth/start|callback|exchange` and hand the app a
   session over a **`kairo://` one-time code** — the JWT never rides in the URL.
 

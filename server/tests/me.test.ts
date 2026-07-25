@@ -9,8 +9,7 @@ const uid = 'test-user-me';
 const app = await buildApp();
 
 beforeAll(async () => {
-  // JWKS verification does a real HTTP fetch to the server's own /api/auth/jwks, so listen.
-  await app.listen({ port: 8787, host: '127.0.0.1' });
+  // No listen needed: JWKS is resolved in-process (src/auth/jwks.ts), not over HTTP.
   await db.execute(sql`INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
     VALUES (${uid}, 'Me', 'me@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await ensureUserRows(uid);

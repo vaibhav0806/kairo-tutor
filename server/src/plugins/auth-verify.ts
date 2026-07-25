@@ -1,11 +1,8 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { jwtVerify } from 'jose';
 import type { FastifyRequest } from 'fastify';
 import { env } from '../config/env';
+import { jwks } from '../auth/jwks';
 import { AuthError } from './error-handler';
-
-// Cached in-process. Better Auth serves the keys at /api/auth/jwks; the proxy verifies the JWT
-// statelessly (no DB) on every request. (Same process => this is effectively a local read.)
-const JWKS = createRemoteJWKSet(new URL(`${env.PUBLIC_BASE_URL}/api/auth/jwks`));
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -18,12 +15,17 @@ export async function requireAuth(req: FastifyRequest): Promise<void> {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) throw new AuthError('missing bearer token');
   try {
-    const { payload } = await jwtVerify(header.slice(7), JWKS, {
+    // Keys come from `jwks` (in-process, no HTTP); issuer/audience stay pinned to PUBLIC_BASE_URL
+    // because that is what the issued tokens carry.
+    const { payload } = await jwtVerify(header.slice(7), jwks, {
       issuer: env.PUBLIC_BASE_URL,
       audience: env.PUBLIC_BASE_URL,
     });
     req.userId = payload.sub as string;
-  } catch {
+  } catch (err) {
+    // Log the jose error code only (e.g. ERR_JWT_EXPIRED) — never the token or its claims. Without
+    // this, an infrastructure-level verification failure looks identical to a bad token.
+    req.log.warn({ reason: (err as { code?: string })?.code ?? 'unknown' }, 'jwt verification failed');
     throw new AuthError('invalid token');
   }
 }

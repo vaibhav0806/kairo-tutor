@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    // Tests share one Neon DB and some listen on port 8787 (for JWKS) — run files sequentially.
+    // Tests share one Neon DB (they seed/clean the same rows) — run files sequentially.
     fileParallelism: false,
   },
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, afterAll, vi } from 'vitest';
 
 // Mock the provider forwarder + streamer so no real upstream call happens.
 vi.mock('../src/proxy/forward', () => ({
@@ -15,9 +15,6 @@ import { pool } from '../src/db/client';
 
 const app = await buildApp();
 
-beforeAll(async () => {
-  await app.listen({ port: 8788, host: '127.0.0.1' });
-});
 afterAll(async () => {
   await app.close();
   await pool.end();
