@@ -20,15 +20,19 @@ const Env = z.object({
   DODO_KAIRO_LIVE_KEY: z.string().optional(),
   DODO_TEST_WEBHOOK_SECRET: z.string().optional(),
   DODO_LIVE_WEBHOOK_SECRET: z.string().optional(),
-  // The single Pro product (its id differs between the test + live Dodo dashboards).
-  DODO_KAIRO_PRODUCT_ID: z.string().optional(),
+  // The single Pro product — its id differs between the test + live Dodo dashboards, so
+  // both are held and DODO_ENV picks (keeps the test<->live flip a one-var switch).
+  DODO_KAIRO_TEST_PRODUCT_ID: z.string().optional(),
+  DODO_KAIRO_LIVE_PRODUCT_ID: z.string().optional(),
 });
 
 export const env = Env.parse(process.env);
 export type AppEnv = typeof env;
 
-// The Dodo API key + webhook secret in effect, chosen by DODO_ENV (test vs live).
+// The Dodo key + webhook secret + product id in effect, chosen by DODO_ENV (test vs live).
 export const dodoApiKey =
   env.DODO_ENV === 'live_mode' ? env.DODO_KAIRO_LIVE_KEY : env.DODO_KAIRO_TEST_KEY;
 export const dodoWebhookSecret =
   env.DODO_ENV === 'live_mode' ? env.DODO_LIVE_WEBHOOK_SECRET : env.DODO_TEST_WEBHOOK_SECRET;
+export const dodoProductId =
+  env.DODO_ENV === 'live_mode' ? env.DODO_KAIRO_LIVE_PRODUCT_ID : env.DODO_KAIRO_TEST_PRODUCT_ID;
