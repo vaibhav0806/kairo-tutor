@@ -4,6 +4,7 @@ import type { VoiceCaptureState } from './voiceRecorder';
 export type NotchCapsuleMode =
   | 'listening'
   | 'thinking'
+  | 'speaking'
   | 'coach'
   | 'typing'
   | 'error'
@@ -22,6 +23,10 @@ export function resolveCapsuleMode(a: {
 }): NotchCapsuleMode {
   if (a.state === 'coach') return 'coach';
   if (a.state === 'listening') return 'listening';
+  // Speaking WHILE the turn is still in flight = the gate's "let me look" filler. Kairo is
+  // talking, not thinking, so show the speaking state instead of the thinking cube. Scoped to
+  // `isSubmitting` so the answer narration (submit already cleared) keeps its own answer card.
+  if (a.isSpeaking && a.isSubmitting) return 'speaking';
   if (!a.isSpeaking && a.voiceCaptureState === 'error') return 'error';
   if (
     !a.isSpeaking &&

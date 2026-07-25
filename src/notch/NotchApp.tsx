@@ -1563,7 +1563,12 @@ export function NotchApp() {
     wasBusyRef.current = busy;
   }, [busy]);
 
-  const statusLabel = capsuleMode === 'listening' ? 'Listening' : thinkingVerb;
+  const statusLabel =
+    capsuleMode === 'listening'
+      ? 'Listening'
+      : capsuleMode === 'speaking'
+        ? 'Speaking'
+        : thinkingVerb;
 
   return (
     <NotchCapsule

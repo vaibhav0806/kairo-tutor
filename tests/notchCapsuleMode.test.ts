@@ -36,6 +36,23 @@ describe('resolveCapsuleMode', () => {
     expect(resolveCapsuleMode({ ...base, voiceCaptureState: 'error', isSpeaking: true })).toBe('idle');
   });
 
+  test('the gate filler (speaking mid-turn) shows speaking, never thinking', () => {
+    // isSubmitting stays true for the whole turn, so before this branch existed the filler
+    // played under the thinking cube.
+    expect(resolveCapsuleMode({ ...base, isSubmitting: true, isSpeaking: true })).toBe('speaking');
+    expect(
+      resolveCapsuleMode({ ...base, state: 'thinking', isSubmitting: true, isSpeaking: true })
+    ).toBe('speaking');
+  });
+
+  test('speaking does not hijack listening, or the answer narration after submit clears', () => {
+    expect(
+      resolveCapsuleMode({ ...base, state: 'listening', isSubmitting: true, isSpeaking: true })
+    ).toBe('listening');
+    // Answer playback: isSubmitting already false → unchanged 'idle' (the answer card renders).
+    expect(resolveCapsuleMode({ ...base, state: 'showing_step', isSpeaking: true })).toBe('idle');
+  });
+
   test('coach wins regardless of other fields', () => {
     expect(
       resolveCapsuleMode({ ...base, state: 'coach', isSpeaking: true, layout: 'prompt' })

@@ -465,11 +465,18 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
       fillerResolveRef.current = resolveDone;
       const finishFiller = () => {
         fillerAudioRef.current = null;
+        // Drop the speaking flag with the clip, so the capsule returns to thinking while
+        // the vision turn keeps running.
+        setIsSpeaking(false);
         fillerResolveRef.current?.();
         fillerResolveRef.current = null;
       };
       const startClip = (audio: SpeechClip) => {
         fillerAudioRef.current = audio;
+        // The filler is Kairo TALKING — mark it so the notch shows "Speaking" instead of
+        // the thinking cube. Without this the flag stayed false for the whole filler and
+        // the capsule sat on the thinking state while a line was audibly playing.
+        audio.onplay = () => setIsSpeaking(true);
         audio.onended = finishFiller;
         audio.onerror = finishFiller;
         // A barge-in (stopAnswerPlayback) pauses the clip → unblock the answer.

@@ -1704,6 +1704,7 @@ input {
 /* Compact states read as a pill; roomy states (typing/coach) as a soft rounded-rect. */
 .kairo-capsule[data-mode='listening'],
 .kairo-capsule[data-mode='thinking'],
+.kairo-capsule[data-mode='speaking'],
 .kairo-capsule[data-mode='error'] {
   border-radius: 18px;
 }
@@ -2019,6 +2020,38 @@ input {
     opacity: 0.75;
   }
   50% {
+    opacity: 1;
+  }
+}
+
+/* Speaking (the gate's "let me look" filler): the bars read as Kairo's OWN voice, so they
+   animate on their own rhythm rather than off --mic-level, which only tracks the user's input.
+   Slower and more even than the thinking wave — output, not effort. */
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i {
+  background: rgb(var(--accent-rgb) / 0.9);
+  animation: kairo-viz-speak 900ms ease-in-out infinite;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(4) {
+  animation-delay: 0.36s;
+}
+.kairo-capsule[data-mode='speaking'] .kairo-capsule-viz i:nth-child(5) {
+  animation-delay: 0.48s;
+}
+
+@keyframes kairo-viz-speak {
+  0%,
+  100% {
+    height: 5px;
+    opacity: 0.8;
+  }
+  50% {
+    height: 16px;
     opacity: 1;
   }
 }
