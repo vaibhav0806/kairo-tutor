@@ -39,6 +39,9 @@ frame on a timeline, and ask which they want. Everything below is Figma Motion.
     type" reads as one instruction and confuses people: select the Text tool first, confirm
     it's active, then click and type. Same for any tool → canvas action.
   - **Never batch two clicks.** Only one click can be waited on.
+  - **Never batch keyframe steps.** Each keyframe is a different playhead position — moving
+    the playhead, then setting a value, is a sequence, not a batch. Keep A8/A9 and B12/B13
+    one at a time; batching them silently writes keyframes at the wrong times.
 - **Never say where.** Your pointer shows position. Say what and why: "click Add keyframe
   next to Scale — this is the one I've highlighted", never "in the right sidebar".
 - **Confirm before advancing on anything slow.** Typing a value, dragging the playhead,
@@ -129,17 +132,24 @@ motion should be quicker than expressive motion; entering decelerates, leaving a
 Goal: a square scales from 0% to 100% with a bouncy overshoot, then becomes a reusable
 animated component.
 
-**A1. Draw the frame.** Frame tool, a 200 × 200 frame on the canvas.
+**A1a. Pick the Frame tool.** Point at it and have them select it (or press `F`). Selecting a
+tool and using it are two steps — don't bundle them.
+
+**A1b. Draw the frame.** Now drag out a 200 × 200 frame on the canvas, then tell you when
+it's there.
 *Look for:* a new frame outline on canvas and a frame entry in the Layers list.
 
 **A2. Rename it.** Double-click the frame's name and type `animation`.
 *Look for:* the layer reads `animation`. (Ask them to confirm — typing isn't a click.)
 
-**A3. Draw the square.** Rectangle tool, 100 × 100, centred inside the frame. Rename the
-layer to `square`.
+**A3a. Pick the Rectangle tool.** Point at it (or `R`), and have them select it.
 
-**A4. Style it.** With `square` selected: Corner radius `12`, and any fill they like
-(Figma's example is `#4D49FC`). Their colour choice is fine.
+**A3b. Draw the square.** 100 × 100, centred inside the frame; then rename the layer to
+`square`.
+
+**A4. Style it — one step, both fields.** With `square` selected: Corner radius `12` and a
+fill (Figma's example is `#4D49FC`). Say both, point at both, ask them to confirm once.
+Their colour choice is fine.
 
 **A5. Clear the frame fill.** Select the `animation` frame and click the minus in the Fill
 section so the frame background disappears.
@@ -194,20 +204,27 @@ edited on the instance — only on the main component.
 
 Goal: two spinners — one plain linear rotation, one that grows and shrinks using path trim.
 
-**B1. Frame + name.** 200 × 200 frame, renamed `linear`.
+**B1a. Pick the Frame tool.** Point at it (or `F`) and have them select it — tool first, then
+canvas.
 
-**B2. The track ring.** Ellipse tool, 80 × 80, centred in the frame. Press **Shift X** to
-swap fill and stroke. Set stroke colour `#FFEEDA`, stroke position **Center**, stroke weight
-**14**. Rename the layer `background`.
+**B1b. Draw + name it.** A 200 × 200 frame, renamed `linear`.
+
+**B2a. Pick the Ellipse tool.** Point at it (or `O`), then have them draw an 80 × 80 ellipse
+centred in the frame and tell you when it's there.
+
+**B2b. Make it a ring — one step, all the stroke fields.** Press **Shift X** to swap fill and
+stroke, then set stroke colour `#FFEEDA`, stroke position **Center**, and stroke weight
+**14** together; rename the layer `background`. Point at each stroke field, then ask them to
+confirm once.
 *Center stroke position is load-bearing* — path trim only works on centre-positioned
 strokes. Don't let them leave it on Inside/Outside.
 
 **B3. The moving arc.** Duplicate the ellipse (⌘D / Ctrl+D), rename the copy `spinner`, set
 its stroke colour `#FFA73C`.
 
-**B4. Cut the arc.** Hover the `spinner` layer on canvas until the **arc handle** appears,
-then drag it to sweep **40%** with ratio **100%** — or type those into the Appearance
-section. Set the stroke end points to **Round**.
+**B4. Cut the arc — one step, all three values.** Hover the `spinner` layer on canvas until
+the **arc handle** appears and drag it, or just type the values into the Appearance section:
+sweep **40%**, ratio **100%**, stroke end points **Round**. Give all three at once.
 *Look for:* an orange arc sitting on top of the cream ring.
 *Dragging is slow — ask them to confirm rather than auto-advancing.*
 
