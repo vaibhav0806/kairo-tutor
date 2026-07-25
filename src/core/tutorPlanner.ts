@@ -63,6 +63,13 @@ const tutorResponseSchema = z.object({
     .boolean()
     .nullish()
     .transform((value) => value ?? false),
+  // Multi-point turn: keep every step's box on screen instead of gliding one box
+  // between targets. Rust already forces this false unless steps>1 and awaitClick is
+  // null, so the frontend can trust it.
+  keepBoxes: z
+    .boolean()
+    .nullish()
+    .transform((value) => value ?? false),
   skillSlug: z
     .string()
     .nullish()
@@ -225,6 +232,7 @@ export function parseTutorPlannerResponse(rawContent: string, input: TutorTurnIn
     steps,
     awaitClick,
     done: parsed.done,
+    keepBoxes: parsed.keepBoxes,
     providerMetadata: {
       confidenceState: confidenceState(primaryTargets),
       warnings

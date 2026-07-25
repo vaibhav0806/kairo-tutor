@@ -117,8 +117,24 @@ export async function askTutorFromNotch({
     // Reveal ONE step's visuals: its box + cursor, else the user's annotation
     // preview, else nothing. Built now, run later (on that step's TTS start) so the
     // box/cursor never appear before the step is spoken.
+    // Multi-point turn (keepBoxes): every step's box STAYS on screen — the pet draws each
+    // one as its line is spoken, and the earlier boxes remain so the user can see the
+    // whole batch (all four corner radii, both paddings) while filling it in. Without the
+    // flag a single box glides from target to target, exactly as before.
+    const shownBoxes: TutorStep['visualTargets'] = [];
     const revealStep = async (step: TutorStep, transition: RevealTransition = 'draw') => {
-      if (step.visualTargets.length > 0 && displayBounds) {
+      if (step.visualTargets.length > 0 && displayBounds && response.keepBoxes) {
+        const newBox = step.visualTargets.find((t) => t.kind === 'highlight_box');
+        const pointer = step.visualTargets.find((t) => t.kind !== 'highlight_box');
+        if (newBox) shownBoxes.push(newBox);
+        await routeVisualTargets(
+          nativeBridge,
+          pointer ? [...shownBoxes, pointer] : [...shownBoxes],
+          displayBounds,
+          'draw',
+          newBox?.targetId
+        );
+      } else if (step.visualTargets.length > 0 && displayBounds) {
         await routeVisualTargets(nativeBridge, step.visualTargets, displayBounds, transition);
       } else if (annotations.length > 0 && displayBounds) {
         await nativeBridge.showOverlay({

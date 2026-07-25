@@ -81,6 +81,10 @@ export type TutorResponse = {
   awaitClick?: { visualTargets: VisualTarget[]; wait: string; button: 'left' | 'right' } | null;
   // The user's goal is achieved — celebrate + no pending pointer. Defaults false.
   done?: boolean;
+  // Multi-point turn: each step draws its own box and they ACCUMULATE on screen (a
+  // batched action — set all four corner radii — where the user needs to see every
+  // field at once). Defaults false ⇒ today's single gliding box.
+  keepBoxes?: boolean;
   expectedNextState: string;
   providerMetadata?: {
     confidenceState: 'high' | 'medium' | 'low';

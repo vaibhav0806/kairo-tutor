@@ -34,12 +34,12 @@ pub(crate) const USE_BACKEND_PROXY: bool = true;
 
 // Which model runs the single-call answer+box turn (the one that returns the spoken
 // answer AND the pointer box together).
-//   "anthropic" = claude-fable-5 (Anthropic Messages).
+//   "anthropic" = claude-opus-5 (Anthropic Messages).
 //   "openai"    = gpt-5.6-sol (OpenAI Responses API).
 // Both return the SAME { steps:[{say, box?}] } JSON, so only the model call differs.
 // This is a DIFFERENT knob from POINTING_PROVIDER (that splits narration + pointing).
 // Runtime-overridable via KAIRO_TUTOR_VISION_PROVIDER (no rebuild).
-pub(crate) const TUTOR_VISION_PROVIDER: &str = "openai"; // anthropic | openai
+pub(crate) const TUTOR_VISION_PROVIDER: &str = "anthropic"; // anthropic | openai
 
 // Which engine finds the on-screen target Kairo points at.
 //   "claude" = the default single vision call (spoken answer + target box together).
@@ -61,12 +61,13 @@ pub(crate) const OPENROUTER_APP_TITLE: &str = "Kairo Tutor";
 
 // ---------------------------------------------------------------- Anthropic
 pub(crate) const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
-pub(crate) const TUTOR_VISION_MODEL: &str = "claude-fable-5"; // single-call answer + box
-// Output cap for the Anthropic single-call answer+box vision turn. Fable thinks on
-// every request and thinking counts against max_tokens, so a tight 1200 truncated the
-// JSON on think-heavy asks. 3000 gives a full 5–7 step walkthrough room after thinking.
+pub(crate) const TUTOR_VISION_MODEL: &str = "claude-opus-5"; // single-call answer + box
+// Output cap for the Anthropic single-call answer+box vision turn. Opus 5 thinks by
+// default (omitting `thinking` runs adaptive) and thinking counts against max_tokens,
+// so a tight 1200 truncated the JSON on think-heavy asks. 3000 gives a full 5–7 step
+// walkthrough room after thinking.
 pub(crate) const ANTHROPIC_VISION_MAX_TOKENS: u32 = 3000;
-// Throttles Fable's thinking depth (low | medium | high | xhigh | max). GA, no beta
+// Throttles thinking depth (low | medium | high | xhigh | max). GA, no beta
 // header. `low` for max speed (under test — watch box/pointer accuracy); `medium`
 // keeps coordinates accurate while cutting the thinking that drove the 21s latency;
 // raise for more accuracy.

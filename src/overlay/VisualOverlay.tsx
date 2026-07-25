@@ -83,6 +83,9 @@ export function VisualOverlay({
   // When a persistent highlight is present, the companion cursor is the only
   // pointer — suppress the overlay's own duplicate point marker.
   const hasPersistentTarget = targets.some((target) => target.kind !== 'pointer');
+  // A multi-point turn sends several boxes at once; they must each get their own node.
+  // With one box the key stays the literal 'highlight_box' singleton (below).
+  const multiBox = targets.filter((target) => target.kind === 'highlight_box').length > 1;
 
   return (
     <div className="visual-overlay" aria-label="Tutor visual targets">
@@ -90,8 +93,13 @@ export function VisualOverlay({
         <OverlayTarget
           // The highlight box is a stable singleton so across walkthrough steps the
           // SAME node glides to the next target (CSS transition) instead of
-          // remounting — which would re-run its one-shot draw animation.
-          key={target.kind === 'highlight_box' ? 'highlight_box' : `${target.kind}-${target.targetId}`}
+          // remounting — which would re-run its one-shot draw animation. That collapses
+          // N boxes into one, so a multi-point turn keys each box by its own targetId.
+          key={
+            target.kind === 'highlight_box' && !multiBox
+              ? 'highlight_box'
+              : `${target.kind}-${target.targetId}`
+          }
           target={target}
           dimensions={dimensions}
           displayBounds={displayBounds}

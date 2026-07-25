@@ -440,17 +440,75 @@ pub(crate) fn apply_step_targets(
         })
         .unwrap_or(Value::Null);
     let done = parsed.get("done").and_then(Value::as_bool).unwrap_or(false);
-    crate::klog!(tutor, debug, mode = %mode, steps = out_steps.len(), await_click = !await_click.is_null(), done = done, "unified tutor turn shaped");
+    // Multi-point turns: the steps' boxes ACCUMULATE on screen instead of the single box
+    // gliding from one target to the next, so the user can see every field of a batched
+    // action while filling it in. Only meaningful with >1 step and no await_click (you
+    // can't wait on several targets) — forced false otherwise so a stray flag can't strand
+    // boxes on screen through a click-and-wait turn.
+    let keep_boxes = parsed
+        .get("keep_boxes")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        && out_steps.len() > 1
+        && await_click.is_null();
+    crate::klog!(tutor, debug, mode = %mode, steps = out_steps.len(), await_click = !await_click.is_null(), keep_boxes = keep_boxes, done = done, "unified tutor turn shaped");
     json!({
         "mode": mode,
         "voiceText": says.join(" "),
         "steps": out_steps,
         "awaitClick": await_click,
+        "keepBoxes": keep_boxes,
         "done": done,
     })
     .to_string()
 }
 
+
+#[cfg(test)]
+mod keep_boxes_tests {
+    use super::apply_step_targets;
+    use crate::types::OverlayDisplayBounds;
+    use serde_json::Value;
+
+    fn bounds() -> OverlayDisplayBounds {
+        OverlayDisplayBounds { x: 0.0, y: 0.0, width: 1000.0, height: 800.0, scale_factor: 1.0 }
+    }
+
+    fn shape(raw: &str) -> Value {
+        serde_json::from_str(&apply_step_targets(raw, "", &bounds())).unwrap()
+    }
+
+    #[test]
+    fn keep_boxes_passes_through_for_a_multi_step_no_click_turn() {
+        let out = shape(
+            r#"{"steps":[{"say":"a","box":[0.1,0.1,0.2,0.2]},{"say":"b","box":[0.3,0.3,0.4,0.4]}],"keep_boxes":true}"#,
+        );
+        assert_eq!(out["keepBoxes"], Value::Bool(true));
+    }
+
+    #[test]
+    fn keep_boxes_is_forced_false_on_a_single_step() {
+        // One box has nothing to accumulate with; the singleton glide path must stay.
+        let out = shape(r#"{"steps":[{"say":"a","box":[0.1,0.1,0.2,0.2]}],"keep_boxes":true}"#);
+        assert_eq!(out["keepBoxes"], Value::Bool(false));
+    }
+
+    #[test]
+    fn keep_boxes_is_forced_false_when_await_click_is_present() {
+        // You cannot wait on several targets — a stray flag must not strand boxes on
+        // screen through a click-and-wait turn.
+        let out = shape(
+            r#"{"steps":[{"say":"a","box":[0.1,0.1,0.2,0.2]},{"say":"b","box":[0.3,0.3,0.4,0.4]}],"keep_boxes":true,"await_click":{"box":[0.5,0.5,0.6,0.6],"wait":"instant"}}"#,
+        );
+        assert_eq!(out["keepBoxes"], Value::Bool(false));
+    }
+
+    #[test]
+    fn absent_keep_boxes_defaults_false() {
+        let out = shape(r#"{"steps":[{"say":"a","box":[0.1,0.1,0.2,0.2]},{"say":"b","box":[0.3,0.3,0.4,0.4]}]}"#);
+        assert_eq!(out["keepBoxes"], Value::Bool(false));
+    }
+}
 
 #[cfg(test)]
 mod step_targets_tests {

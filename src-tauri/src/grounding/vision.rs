@@ -121,6 +121,22 @@ pub(crate) async fn anthropic_vision_chat(
         }
     };
 
+    // Opus 5 ships elevated safety classifiers: a declined request is a normal 200 with
+    // stop_reason="refusal" and empty/partial content. Without this line it would surface
+    // as the generic "returned no text" warning below and look like a parse bug.
+    if payload.get("stop_reason").and_then(Value::as_str) == Some("refusal") {
+        let category = payload
+            .pointer("/stop_details/category")
+            .and_then(Value::as_str)
+            .unwrap_or("none");
+        crate::klog!(
+            grounding,
+            warn,
+            model = %model,
+            category = %category,
+            "vision turn REFUSED by safety classifiers"
+        );
+    }
     if payload.get("stop_reason").and_then(Value::as_str) == Some("max_tokens") {
         crate::klog!(grounding, warn, model = %model, "vision response truncated at max_tokens");
     }

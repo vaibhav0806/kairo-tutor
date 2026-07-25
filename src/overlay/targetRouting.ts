@@ -22,9 +22,18 @@ export async function routeVisualTargets(
   nativeBridge: Pick<NativeBridge, 'cursorPoint' | 'cursorDrag' | 'showOverlay' | 'hideOverlay'>,
   targets: VisualTarget[],
   displayBounds: NativeOverlayDisplayBounds,
-  transition: RevealTransition = 'draw'
+  transition: RevealTransition = 'draw',
+  // Multi-point turns pass the ACCUMULATED boxes (every box drawn so far this turn) so
+  // they all stay on screen, and name which one is new — otherwise `.find()` below picks
+  // the oldest box and the pet re-draws the first target on every step.
+  drawTargetId?: string
 ): Promise<void> {
-  const boxTarget = targets.find((target) => target.kind === 'highlight_box');
+  const boxTarget =
+    (drawTargetId
+      ? targets.find(
+          (target) => target.kind === 'highlight_box' && target.targetId === drawTargetId
+        )
+      : undefined) ?? targets.find((target) => target.kind === 'highlight_box');
   const pointTarget = targets.find((target) => POINT_KINDS.has(target.kind)) ?? targets[0];
   const targetSummary = targets
     .map(
