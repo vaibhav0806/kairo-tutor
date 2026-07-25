@@ -15,3 +15,6 @@ competitor_notes.txt
 
 # kairo UI folder
 kairo/
+
+# Local-only helpers with box SSH details (never commit)
+*.local.sh
