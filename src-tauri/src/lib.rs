@@ -844,6 +844,8 @@ pub fn run() {
             // Load the user's chosen accent into the process-global cache so leaf code
             // (color.rs) and every webview read the right hue from launch.
             crate::accent::init_accent(app.handle());
+            // Load the user's per-skill enable/disable choices before the first gate turn.
+            crate::skills::load_disabled(app.handle());
             // Companion cursor: create it, show it always, and start tracking the
             // real mouse so it shadows the cursor from launch.
             match ensure_cursor_panel(app.handle()) {
@@ -1018,6 +1020,8 @@ pub fn run() {
             onboarding::get_user_name,
             accent::get_accent,
             accent::set_accent,
+            skills::list_skills,
+            skills::set_skill_enabled,
             auth::start_google_auth,
             auth::get_auth_status,
             auth::get_backend_jwt,

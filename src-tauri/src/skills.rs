@@ -3,7 +3,8 @@
 //! the tutor turn once a slug is selected). `bundle_ids`/`title_contains` drive a
 //! deterministic guardrail + the non-gate fallback. A skill NEVER holds coordinates.
 
-use std::sync::OnceLock;
+use std::collections::HashSet;
+use std::sync::{OnceLock, RwLock};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Skill {
@@ -67,6 +68,82 @@ pub(crate) fn registry() -> &'static Vec<Skill> {
         );
         packs
     })
+}
+
+// ---------------------------------------------------------------- Per-skill enable/disable
+// User-disabled skill slugs (toggled off in Settings). A slug NOT here = enabled. Persisted
+// one-per-line in the app config dir; loaded once at startup via load_disabled().
+static DISABLED: RwLock<Option<HashSet<String>>> = RwLock::new(None);
+
+fn disabled_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    app.path().app_config_dir().ok().map(|d| d.join("skills_disabled"))
+}
+
+/// Load the persisted disabled set into the cache. Call once from setup.
+pub(crate) fn load_disabled(app: &tauri::AppHandle) {
+    let set: HashSet<String> = disabled_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|raw| raw.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default();
+    if let Ok(mut guard) = DISABLED.write() {
+        *guard = Some(set);
+    }
+}
+
+/// True unless the user disabled this skill (unknown state before load → enabled).
+pub(crate) fn is_enabled(slug: &str) -> bool {
+    DISABLED
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|set| !set.contains(slug)))
+        .unwrap_or(true)
+}
+
+fn persist_disabled(app: &tauri::AppHandle) {
+    if let (Some(path), Ok(guard)) = (disabled_path(app), DISABLED.read()) {
+        if let Some(set) = guard.as_ref() {
+            let _ = std::fs::write(path, set.iter().cloned().collect::<Vec<_>>().join("\n"));
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct SkillInfo {
+    pub slug: String,
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+}
+
+/// List every skill pack + whether it's enabled (for the Settings skills list).
+#[tauri::command]
+pub(crate) fn list_skills() -> Vec<SkillInfo> {
+    registry()
+        .iter()
+        .map(|s| SkillInfo {
+            slug: s.slug.clone(),
+            name: s.name.clone(),
+            description: s.description.clone(),
+            enabled: is_enabled(&s.slug),
+        })
+        .collect()
+}
+
+/// Enable/disable a skill pack (persisted). A disabled pack is never listed to the gate,
+/// never returned by `get()`, and never used as a fallback — so the model can't activate it.
+#[tauri::command]
+pub(crate) fn set_skill_enabled(app: tauri::AppHandle, slug: String, enabled: bool) {
+    if let Ok(mut guard) = DISABLED.write() {
+        let set = guard.get_or_insert_with(HashSet::new);
+        if enabled {
+            set.remove(&slug);
+        } else {
+            set.insert(slug.clone());
+        }
+    }
+    persist_disabled(&app);
+    crate::klog!(skills, info, slug = %slug, enabled = enabled, "skill toggled");
 }
 
 /// Cheap non-cryptographic fingerprint of a pack body. Logged at load and again at
@@ -158,6 +235,7 @@ fn parse_skill(slug: &str, raw: &str) -> Option<Skill> {
 pub(crate) fn metadata_block() -> String {
     let block = registry()
         .iter()
+        .filter(|s| is_enabled(&s.slug))
         .map(|s| format!("- {}: {}", s.slug, s.description))
         .collect::<Vec<_>>()
         .join("\n");
@@ -172,7 +250,7 @@ pub(crate) fn metadata_block() -> String {
 }
 
 pub(crate) fn get(slug: &str) -> Option<&'static Skill> {
-    registry().iter().find(|s| s.slug == slug)
+    registry().iter().find(|s| s.slug == slug && is_enabled(&s.slug))
 }
 
 /// Deterministic guardrail: does this pack belong to the frontmost app?
@@ -200,7 +278,7 @@ pub(crate) fn fallback_for_app(
 ) -> Option<&'static str> {
     registry()
         .iter()
-        .find(|s| matches_app(s, active_app, bundle_id, window_title))
+        .find(|s| is_enabled(&s.slug) && matches_app(s, active_app, bundle_id, window_title))
         .map(|s| s.slug.as_str())
 }
 
