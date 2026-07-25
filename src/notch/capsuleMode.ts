@@ -21,11 +21,16 @@ export function resolveCapsuleMode(a: {
   voiceCaptureState: VoiceCaptureState;
   detailHidden: boolean;
 }): NotchCapsuleMode {
+  // ORDER IS LOAD-BEARING: 'coach' must stay FIRST. Onboarding's only notch write is
+  // `setCoachCaption` (state 'coach'), and onboarding must always show its CAPTION TEXT —
+  // never the bars. Keeping this branch above 'speaking' is what guarantees that, so do not
+  // reorder these two.
   if (a.state === 'coach') return 'coach';
   if (a.state === 'listening') return 'listening';
-  // Speaking WHILE the turn is still in flight = the gate's "let me look" filler. Kairo is
-  // talking, not thinking, so show the speaking state instead of the thinking cube. Scoped to
-  // `isSubmitting` so the answer narration (submit already cleared) keeps its own answer card.
+  // Speaking WHILE the turn is still in flight = the gate's "let me look" filler, in the MAIN
+  // product. Kairo is talking, not thinking, so show the speaking state instead of the thinking
+  // cube. Scoped to `isSubmitting` so the answer narration (submit already cleared) keeps its
+  // own answer card.
   if (a.isSpeaking && a.isSubmitting) return 'speaking';
   if (!a.isSpeaking && a.voiceCaptureState === 'error') return 'error';
   if (

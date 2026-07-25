@@ -58,4 +58,12 @@ describe('resolveCapsuleMode', () => {
       resolveCapsuleMode({ ...base, state: 'coach', isSpeaking: true, layout: 'prompt' })
     ).toBe('coach');
   });
+
+  test('onboarding keeps its caption text — coach beats speaking', () => {
+    // Onboarding's only notch write is setCoachCaption (state 'coach'), and it must show the
+    // caption TEXT, never the speaking bars. Locks the coach-before-speaking branch order.
+    expect(
+      resolveCapsuleMode({ ...base, state: 'coach', isSpeaking: true, isSubmitting: true })
+    ).toBe('coach');
+  });
 });
