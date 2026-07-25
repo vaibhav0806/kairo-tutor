@@ -76,6 +76,11 @@ export function SettingsView() {
       void refresh();
       void loadExtras();
     }).then((u) => unsubs.push(u));
+    // Re-fetch whenever the window regains focus — the plan can change out-of-band (checkout in the
+    // browser, a webhook landing) so the Upgrade/Manage state must never show a stale cache.
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    unsubs.push(() => window.removeEventListener('focus', onFocus));
     return () => unsubs.forEach((u) => u());
   }, [refresh, loadExtras]);
 
