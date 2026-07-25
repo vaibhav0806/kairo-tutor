@@ -10,7 +10,11 @@ describe('landing metadata and brand', () => {
     expect(layout).toMatch(
       /description:\s*['"]Talk to Kairo, show it what you mean, and get visual guidance directly on your screen\.['"]/
     );
-    expect(layout).toMatch(/icons?\s*:\s*(?:\{\s*icon\s*:\s*)?['"]\/favicon\.svg['"]/);
+    expect(layout).toContain("url: '/favicon.ico'");
+    expect(layout).toContain("url: '/favicon-32x32.png'");
+    expect(layout).toContain("url: '/apple-touch-icon.png'");
+    expect(layout).toContain("manifest: '/manifest.webmanifest'");
+    expect(layout).toContain("url: '/og-image.png'");
     expect(layout).toMatch(/import\s+['"]@fontsource-variable\/geist['"];?/);
     expect(layout).toMatch(/import\s+['"]@fontsource-variable\/bricolage-grotesque['"];?/);
     expect(layout).toMatch(/import\s+['"]@fontsource-variable\/geist-mono['"];?/);
@@ -20,16 +24,20 @@ describe('landing metadata and brand', () => {
     expect(layout).not.toMatch(/cursor|overlay|notch/i);
   });
 
-  test('uses a local brand favicon that the public server can return', () => {
+  test('uses the Kairo logo for browser, device, and install icons', () => {
     const layout = readFileSync('src/app/layout.tsx', 'utf8');
-    const favicon = readFileSync('public/favicon.svg', 'utf8');
+    const manifest = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8')) as {
+      icons: Array<{ src: string; sizes: string; purpose?: string }>;
+    };
 
-    expect(layout).toContain('/favicon.svg');
-    expect(favicon).toContain('<svg');
-    expect(favicon).toContain('aria-hidden="true"');
-    expect(favicon).toContain('viewBox="0 0 32 32"');
-    expect(favicon).toContain('#141824');
-    expect(favicon).toContain('#665CFF');
+    expect(layout).toContain('/favicon.ico');
+    expect(layout).toContain('/apple-touch-icon.png');
+    expect(manifest.icons).toContainEqual(
+      expect.objectContaining({ src: '/icon-192.png', sizes: '192x192', purpose: 'any' })
+    );
+    expect(manifest.icons).toContainEqual(
+      expect.objectContaining({ src: '/icon-maskable-512.png', sizes: '512x512', purpose: 'maskable' })
+    );
   });
 
   test('renders the landing page from the Next.js route', () => {

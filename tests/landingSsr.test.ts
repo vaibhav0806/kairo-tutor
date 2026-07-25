@@ -69,6 +69,7 @@ describe('landing server rendering', () => {
     const assetUrls = collectAssetUrls(html);
 
     expect(assetUrls).toEqual([
+      '/brand/kairo-mark-transparent-64.png',
       '/hero/after-effects-workspace.webp',
       '/hero/blender-viewport.webp',
       '/hero/creator-editing.mp4',

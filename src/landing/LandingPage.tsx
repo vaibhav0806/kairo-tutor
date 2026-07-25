@@ -11,7 +11,17 @@ export function LandingPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.brandLockup}>
-          <a className={styles.wordmark} href="#top" aria-label="Kairo home">kairo</a>
+          <a className={styles.wordmark} href="#top" aria-label="Kairo home">
+            <img
+              className={styles.brandMark}
+              src="/brand/kairo-mark-transparent-64.png"
+              alt=""
+              width="32"
+              height="32"
+              aria-hidden="true"
+            />
+            <span>kairo</span>
+          </a>
         </div>
         <HeaderNavigation />
         <HeaderAction />

@@ -23,10 +23,18 @@
 }
 
 .wordmark {
+  gap: 7px;
   font-family: "Bricolage Grotesque Variable", sans-serif;
   font-size: 1.32rem;
   font-weight: 740;
   letter-spacing: -0.065em;
+}
+
+.brandMark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 .back {

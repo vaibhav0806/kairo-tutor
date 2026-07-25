@@ -10,7 +10,17 @@ export default function PrivacyPage() {
   return (
     <main className={styles.page}>
       <header className={styles.header}>
-        <a className={styles.wordmark} href="/">kairo</a>
+        <a className={styles.wordmark} href="/" aria-label="Kairo home">
+          <img
+            className={styles.brandMark}
+            src="/brand/kairo-mark-transparent-64.png"
+            alt=""
+            width="32"
+            height="32"
+            aria-hidden="true"
+          />
+          <span>kairo</span>
+        </a>
         <a className={styles.back} href="/">Back home</a>
       </header>
 
