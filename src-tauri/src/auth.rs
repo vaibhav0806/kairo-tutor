@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::constants;
 
 fn session_path(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join("session.token"))
@@ -51,7 +50,7 @@ pub(crate) fn clear_session(app: &AppHandle) {
 /// Open the system browser at the backend's Google start route.
 #[tauri::command]
 pub fn start_google_auth() -> Result<(), String> {
-    let url = format!("{}/auth/start", constants::KAIRO_BACKEND_URL);
+    let url = format!("{}/auth/start", crate::proxy::backend_url());
     std::process::Command::new("open")
         .arg(&url)
         .spawn()
@@ -83,7 +82,7 @@ pub fn sign_out(app: AppHandle) -> Result<(), String> {
 /// Called by the deep-link handler: exchange the one-time code for a session token, store it, and
 /// notify the UI. The raw code is never logged.
 pub(crate) async fn exchange_code(app: &AppHandle, code: &str) {
-    let url = format!("{}/auth/exchange", constants::KAIRO_BACKEND_URL);
+    let url = format!("{}/auth/exchange", crate::proxy::backend_url());
     let client = reqwest::Client::new();
     let res = client
         .post(&url)
@@ -119,7 +118,7 @@ pub async fn get_backend_jwt(app: AppHandle) -> Option<String> {
 /// Fetch a short-lived JWT from the backend using the stored session token (for the proxy path).
 pub(crate) async fn fetch_jwt(app: &AppHandle) -> Option<String> {
     let session = read_session(app)?;
-    let url = format!("{}/api/auth/token", constants::KAIRO_BACKEND_URL);
+    let url = format!("{}/api/auth/token", crate::proxy::backend_url());
     let res = reqwest::Client::new()
         .get(&url)
         .bearer_auth(&session)
