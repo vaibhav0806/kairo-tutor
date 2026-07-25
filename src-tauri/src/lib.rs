@@ -576,6 +576,21 @@ fn refresh_tray(app: tauri::AppHandle, is_pro: bool) {
     }
 }
 
+/// Launch-at-login (macOS LaunchAgent via tauri-plugin-autostart). Off by default.
+#[tauri::command]
+fn get_launch_at_login(app: tauri::AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    let result = if enabled { manager.enable() } else { manager.disable() };
+    result.map_err(|error| error.to_string())
+}
+
 fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -762,6 +777,10 @@ pub fn run() {
         .manage(AudioCapture::default())
         .plugin(tauri_nspanel::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             let show_setup = should_show_setup_window(&get_permission_status());
             let need_onboarding = !crate::onboarding::is_onboarded(app.handle());
@@ -1009,6 +1028,8 @@ pub fn run() {
             proxy::start_checkout,
             proxy::open_billing_portal,
             refresh_tray,
+            get_launch_at_login,
+            set_launch_at_login,
             onboarding::finish_onboarding,
             onboarding::replay_onboarding_cmd,
             onboarding::set_onboarding_step,
