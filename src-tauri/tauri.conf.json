@@ -15,11 +15,13 @@
       {
         "label": "main",
         "title": "Kairo Tutor",
-        "width": 1180,
-        "height": 820,
-        "minWidth": 920,
-        "minHeight": 640,
+        "width": 460,
+        "height": 720,
+        "minWidth": 420,
+        "minHeight": 520,
         "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "visible": false,
         "focus": false
       },

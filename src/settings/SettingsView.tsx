@@ -32,6 +32,7 @@ export function SettingsView() {
   const [perms, setPerms] = useState<NativePermissionStatus | null>(null);
   const [launchAtLogin, setLaunch] = useState(false);
   const [version, setVersion] = useState('');
+  const [skillsOpen, setSkillsOpen] = useState(false);
 
   // The main window is the big permission-recovery window; shrink it to hug the settings card.
   useEffect(() => {
@@ -207,26 +208,32 @@ export function SettingsView() {
                 onClick={() => void applyAccent(hex)}
               />
             ))}
-            <label className="s-swatch s-swatch-custom" style={{ background: accent }}>
+            <label
+              className={`s-swatch s-swatch-custom${
+                ACCENT_PRESETS.some((p) => p.toLowerCase() === accent.toLowerCase()) ? '' : ' s-swatch-active'
+              }`}
+              style={{ background: accent }}
+              title="Custom color"
+            >
               <input type="color" value={accent} onChange={(e) => void applyAccent(e.target.value)} />
             </label>
           </div>
         </section>
 
-        {/* Skills */}
+        {/* Skills — opens a scrollable modal with checkboxes */}
         {skills.length > 0 && (
           <section className="s-section">
-            <div className="s-label">Skills</div>
-            <p className="settings-muted s-sub">Disabled skills are hidden from Kairo entirely.</p>
-            {skills.map((s) => (
-              <div className="settings-row s-item" key={s.slug}>
-                <div className="settings-account">
-                  <div className="s-item-name">{s.name}</div>
-                  <div className="settings-muted s-item-desc">{s.description}</div>
+            <div className="settings-row s-item">
+              <div className="settings-account">
+                <div className="s-item-name">Skills</div>
+                <div className="settings-muted s-item-desc">
+                  {skills.filter((s) => s.enabled).length} of {skills.length} enabled
                 </div>
-                <Toggle checked={s.enabled} onChange={(v) => void toggleSkill(s.slug, v)} />
               </div>
-            ))}
+              <button className="s-btn s-btn-ghost" onClick={() => setSkillsOpen(true)}>
+                Manage
+              </button>
+            </div>
           </section>
         )}
 
@@ -273,6 +280,35 @@ export function SettingsView() {
           {version && <span className="settings-muted">v{version}</span>}
         </div>
       </div>
+
+      {skillsOpen && (
+        <div className="s-modal-scrim" onClick={() => setSkillsOpen(false)}>
+          <div className="s-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="s-modal-head">
+              <span className="s-modal-title">Skills</span>
+              <button className="s-btn s-btn-ghost" onClick={() => setSkillsOpen(false)}>
+                Done
+              </button>
+            </div>
+            <p className="settings-muted">Uncheck a skill to hide it from Kairo entirely.</p>
+            <div className="s-modal-list">
+              {skills.map((s) => (
+                <label className="s-check-row" key={s.slug}>
+                  <input
+                    type="checkbox"
+                    checked={s.enabled}
+                    onChange={(e) => void toggleSkill(s.slug, e.target.checked)}
+                  />
+                  <span className="s-check-body">
+                    <span className="s-item-name">{s.name}</span>
+                    <span className="settings-muted s-check-desc">{s.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

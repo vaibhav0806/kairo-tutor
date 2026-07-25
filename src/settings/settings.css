@@ -6,7 +6,7 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 22px 20px;
+  padding: 34px 20px 22px;
   background: #f4efe7;
   font-family: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
   color: #1a1622;
@@ -265,4 +265,75 @@
 }
 .s-link:hover {
   text-decoration: underline;
+}
+
+/* Skills modal */
+.s-modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 16, 28, 0.3);
+  backdrop-filter: blur(2px);
+}
+.s-modal {
+  width: 100%;
+  max-width: 380px;
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 18px 14px;
+  border-radius: 20px;
+  background: #fdfbf7;
+  border: 1px solid rgba(20, 16, 28, 0.08);
+  box-shadow: 0 30px 70px -20px rgba(30, 20, 45, 0.4);
+}
+.s-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.s-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.s-modal-list {
+  margin-top: 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.s-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 9px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.s-check-row:hover {
+  background: rgba(20, 16, 28, 0.04);
+}
+.s-check-row input[type='checkbox'] {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--kairo-accent, #7c3aed);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.s-check-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.s-check-desc {
+  line-height: 1.35;
+  white-space: normal;
 }
