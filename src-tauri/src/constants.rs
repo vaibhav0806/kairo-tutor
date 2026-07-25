@@ -39,7 +39,7 @@ pub(crate) const USE_BACKEND_PROXY: bool = true;
 // Both return the SAME { steps:[{say, box?}] } JSON, so only the model call differs.
 // This is a DIFFERENT knob from POINTING_PROVIDER (that splits narration + pointing).
 // Runtime-overridable via KAIRO_TUTOR_VISION_PROVIDER (no rebuild).
-pub(crate) const TUTOR_VISION_PROVIDER: &str = "anthropic"; // anthropic | openai
+pub(crate) const TUTOR_VISION_PROVIDER: &str = "openai"; // anthropic | openai
 
 // Which engine finds the on-screen target Kairo points at.
 //   "claude" = the default single vision call (spoken answer + target box together).
@@ -87,10 +87,11 @@ pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.6-sol";
 // Responses API). Overridable at runtime via OPENAI_TUTOR_MODEL.
 pub(crate) const OPENAI_TUTOR_MODEL: &str = "gpt-5.6-sol";
 // Reasoning effort for the OpenAI vision paths (pointing + single-call tutor).
-// Pinned explicitly to "low" (decoupled from the Claude knob). Sent as OpenAI's
-// `reasoning.effort`; gpt-5.6-sol accepts none | low | medium | high | xhigh (NOT
-// minimal). Overridable at runtime via OPENAI_VISION_EFFORT.
-pub(crate) const OPENAI_VISION_EFFORT: &str = "low";
+// Sent as OpenAI's `reasoning.effort`; gpt-5.6-sol accepts none | low | medium | high |
+// xhigh | max (NOT "minimal"), and defaults to medium when omitted. Raised low -> medium:
+// at "low" the model was skipping boxes on steps that clearly had an on-screen target.
+// Decoupled from the Claude knob. Overridable at runtime via OPENAI_VISION_EFFORT.
+pub(crate) const OPENAI_VISION_EFFORT: &str = "medium";
 // Half-size of the box synthesized around OpenAI's click POINT, as a fraction of the
 // screenshot's longest (resized) edge. computer-use returns a point, not a box, so we
 // draw a small square target around it for the highlight; the cursor uses its center.

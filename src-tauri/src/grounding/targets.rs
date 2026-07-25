@@ -445,12 +445,34 @@ pub(crate) fn apply_step_targets(
     // action while filling it in. Only meaningful with >1 step and no await_click (you
     // can't wait on several targets) — forced false otherwise so a stray flag can't strand
     // boxes on screen through a click-and-wait turn.
+    // How many steps actually carry a box. A step that names a control but ships
+    // `box: null` is a silent pointing failure — the user hears "I've highlighted it"
+    // and sees nothing — so count it here and warn, rather than letting it vanish.
+    let boxed_steps = out_steps
+        .iter()
+        .filter(|s| {
+            s.get("visualTargets")
+                .and_then(Value::as_array)
+                .is_some_and(|t| !t.is_empty())
+        })
+        .count();
     let keep_boxes = parsed
         .get("keep_boxes")
         .and_then(Value::as_bool)
         .unwrap_or(false)
         && out_steps.len() > 1
-        && await_click.is_null();
+        && await_click.is_null()
+        // keep_boxes with <2 real boxes has nothing to accumulate.
+        && boxed_steps > 1;
+    if boxed_steps < out_steps.len() && await_click.is_null() {
+        crate::klog!(
+            grounding,
+            warn,
+            steps = out_steps.len(),
+            boxed = boxed_steps,
+            "steps WITHOUT a box (nothing will be pointed at for those)"
+        );
+    }
     crate::klog!(tutor, debug, mode = %mode, steps = out_steps.len(), await_click = !await_click.is_null(), keep_boxes = keep_boxes, done = done, "unified tutor turn shaped");
     json!({
         "mode": mode,
@@ -500,6 +522,14 @@ mod keep_boxes_tests {
         let out = shape(
             r#"{"steps":[{"say":"a","box":[0.1,0.1,0.2,0.2]},{"say":"b","box":[0.3,0.3,0.4,0.4]}],"keep_boxes":true,"await_click":{"box":[0.5,0.5,0.6,0.6],"wait":"instant"}}"#,
         );
+        assert_eq!(out["keepBoxes"], Value::Bool(false));
+    }
+
+    #[test]
+    fn keep_boxes_is_forced_false_when_the_steps_carry_no_boxes() {
+        // Seen in a real run: keep_boxes=true on a batched step where the model shipped
+        // box:null for every step — nothing to accumulate, so don't claim otherwise.
+        let out = shape(r#"{"steps":[{"say":"a","box":null},{"say":"b","box":null}],"keep_boxes":true}"#);
         assert_eq!(out["keepBoxes"], Value::Bool(false));
     }
 
