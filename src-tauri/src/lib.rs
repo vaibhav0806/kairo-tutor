@@ -58,7 +58,7 @@ use panels::{
     configure_overlay_window, cursor_window, emit_overlay_payload, ensure_cursor_panel,
     ensure_notch_panel, ensure_overlay_panel, overlay_window, show_notch_with_payload,
     spawn_mouse_tracker, spawn_notch_hit_tracker, spawn_onboarding_hit_tracker, store_notch_payload,
-    store_overlay_payload, typing_notch_payload,
+    store_overlay_payload,
 };
 
 mod input;
@@ -552,16 +552,15 @@ fn detect_screen_recording_reset(app: &tauri::AppHandle) -> bool {
 /// (hidden once Pro). Called via the `refresh_tray` command once /v1/me is known + on billing changes.
 fn apply_tray_menu(app: &tauri::AppHandle, is_pro: bool) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-    let show = MenuItem::with_id(app, "tray_show_notch", "Show Notch", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "tray_settings", "Settings…", true, None::<&str>)?;
     let replay = MenuItem::with_id(app, "tray_replay_intro", "Replay intro", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "tray_quit", "Quit Kairo", true, None::<&str>)?;
     let menu = if is_pro {
-        Menu::with_items(app, &[&show, &settings, &replay, &sep, &quit])?
+        Menu::with_items(app, &[&settings, &replay, &sep, &quit])?
     } else {
         let upgrade = MenuItem::with_id(app, "tray_upgrade", "Upgrade to Pro", true, None::<&str>)?;
-        Menu::with_items(app, &[&show, &settings, &upgrade, &replay, &sep, &quit])?
+        Menu::with_items(app, &[&settings, &upgrade, &replay, &sep, &quit])?
     };
     if let Some(tray) = app.tray_by_id("kairo-menu-bar") {
         tray.set_menu(Some(menu))?;
@@ -581,7 +580,6 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
-    let show_item = MenuItem::with_id(app, "tray_show_notch", "Show Notch", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "tray_settings", "Settings…", true, None::<&str>)?;
     let upgrade_item = MenuItem::with_id(app, "tray_upgrade", "Upgrade to Pro", true, None::<&str>)?;
     let replay_item =
@@ -591,7 +589,7 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     // Initial menu = free layout (Upgrade shown). refresh_tray rebuilds it to hide Upgrade once Pro.
     let menu = Menu::with_items(
         app,
-        &[&show_item, &settings_item, &upgrade_item, &replay_item, &separator, &quit_item],
+        &[&settings_item, &upgrade_item, &replay_item, &separator, &quit_item],
     )?;
 
     let mut builder = TrayIconBuilder::with_id("kairo-menu-bar")
@@ -601,15 +599,6 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
             "tray_quit" => {
                 klog!(app, info, "menu bar: quit selected");
                 app.exit(0);
-            }
-            "tray_show_notch" => {
-                klog!(app, info, "menu bar: show notch selected");
-                let state = app.state::<NotchState>();
-                if let Err(error) =
-                    show_notch_with_payload(app, state.inner(), Some(typing_notch_payload()))
-                {
-                    klog!(app, error, "menu bar: show notch failed: {error}");
-                }
             }
             "tray_replay_intro" => {
                 klog!(app, info, "menu bar: replay intro selected");
@@ -944,11 +933,16 @@ pub fn run() {
                             continue;
                         }
                         if url.host_str() == Some("billing-done") {
-                            crate::klog!(auth, info, "deep link: billing-done → notify frontend");
+                            crate::klog!(auth, info, "deep link: billing-done → focus app + notify");
+                            crate::onboarding::focus_app_window(&handle, "main");
                             let _ = handle.emit("billing:changed", ());
                             continue;
                         }
                         crate::onboarding::focus_onboarding_window(&handle);
+                        // Signed in from Settings (no onboarding window) → front the main window.
+                        if handle.get_webview_window("onboarding").is_none() {
+                            crate::onboarding::focus_app_window(&handle, "main");
+                        }
                         let code = url
                             .query_pairs()
                             .find(|(k, _)| k == "code")

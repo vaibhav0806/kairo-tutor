@@ -33,21 +33,22 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
     if (!fresh) return reply.send({ ok: true, duplicate: true });
 
     const type = payload.type ?? '';
-    if (type.startsWith('subscription.')) {
-      const data = (payload.data ?? {}) as Record<string, any>;
-      const userId = data?.metadata?.user_id ?? (await userIdByCustomer(data?.customer_id));
-      if (userId) {
-        await applyDodoState(userId, {
-          type: type as DodoEventType,
-          subscriptionId: data?.subscription_id,
-          customerId: data?.customer_id,
-          productId: data?.product_id,
-          currentPeriodEnd: data?.next_billing_date ? new Date(data.next_billing_date) : null,
-          occurredAt: headers['webhook-timestamp']
-            ? new Date(Number(headers['webhook-timestamp']) * 1000)
-            : new Date(),
-        });
-      }
+    const data = (payload.data ?? {}) as Record<string, any>;
+    // Dodo nests the customer id under data.customer.customer_id (NOT data.customer_id); the
+    // product id lives in data.product_cart[]. Checkout metadata rides on subscription events.
+    const customerId = data?.customer?.customer_id ?? data?.customer_id;
+    const userId = data?.metadata?.user_id ?? (await userIdByCustomer(customerId));
+    if (type.startsWith('subscription.') && userId) {
+      await applyDodoState(userId, {
+        type: type as DodoEventType,
+        subscriptionId: data?.subscription_id,
+        customerId,
+        productId: data?.product_id ?? data?.product_cart?.[0]?.product_id,
+        currentPeriodEnd: data?.next_billing_date ? new Date(data.next_billing_date) : null,
+        occurredAt: headers['webhook-timestamp']
+          ? new Date(Number(headers['webhook-timestamp']) * 1000)
+          : new Date(),
+      });
     }
     return reply.send({ ok: true });
   });

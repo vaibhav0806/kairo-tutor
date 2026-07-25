@@ -89,6 +89,29 @@ pub(crate) fn set_onboarding_ptt(active: bool) {
 /// the browser's "Return to Kairo" hand-off actually fronts the app (a plain deep link
 /// wakes the process but doesn't focus our window). No-op outside onboarding — the
 /// window only exists during first-run, so normal re-auth never steals focus.
+/// Bring the app to the front and focus the window `label` — the "front-pulse" used after a
+/// browser hand-off (OAuth from Settings, checkout return). Same NSApp.activate() trick as
+/// focus_onboarding_window, but for any window (e.g. "main" = Settings). No-op if absent.
+pub(crate) fn focus_app_window(app: &tauri::AppHandle, label: &str) {
+    let Some(win) = app.get_webview_window(label) else {
+        return;
+    };
+    let _ = app.clone().run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+                ns_app.activate();
+                #[allow(deprecated)]
+                ns_app.activateIgnoringOtherApps(true);
+            }
+        }
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    });
+}
+
 pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
     let Some(win) = app.get_webview_window("onboarding") else {
         return;
