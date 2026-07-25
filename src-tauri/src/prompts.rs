@@ -159,6 +159,27 @@ pub(crate) fn user_name_line(user_name: Option<&str>) -> String {
 mod tests {
     use super::user_name_line;
 
+    /// The end-to-end contract of the skill system: a resolved slug puts the pack's
+    /// FULL body into the tutor system prompt. If this breaks, the model is flying blind
+    /// no matter how good SKILL.md is.
+    #[test]
+    fn resolved_slug_injects_the_full_pack_body() {
+        let mut input = crate::tests::sample_tutor_turn_input();
+        input.skill_slug = "first-figma-motion-tutorial".to_string();
+        let prompt = super::build_tutor_system_prompt(&input);
+        let skill = crate::skills::get("first-figma-motion-tutorial").unwrap();
+        assert!(prompt.contains("ACTIVE SKILL"));
+        assert!(prompt.contains(skill.body.as_str()));
+        assert!(prompt.contains("Figma Motion"));
+    }
+
+    #[test]
+    fn empty_slug_injects_nothing() {
+        let mut input = crate::tests::sample_tutor_turn_input();
+        input.skill_slug = String::new();
+        assert!(!super::build_tutor_system_prompt(&input).contains("ACTIVE SKILL"));
+    }
+
     #[test]
     fn appends_for_a_name() {
         assert_eq!(user_name_line(Some("Prasad")), "The user's name is Prasad.");

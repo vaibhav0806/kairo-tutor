@@ -696,6 +696,9 @@ pub fn run() {
     // First thing: stand up the universal logger so every subsystem below logs
     // into ~/Library/Logs/Kairo/. Never panics.
     klog::init();
+    // Warm the skill registry at launch so "did my pack load?" is answerable from the
+    // first lines of the log, instead of only after the first voice turn builds it lazily.
+    let _ = skills::registry();
 
     tauri::Builder::default()
         .manage(OverlayState::default())
@@ -1193,7 +1196,7 @@ mod tests {
         assert_eq!(notch_window_size(None, None), (760.0, 236.0));
     }
 
-    fn sample_tutor_turn_input() -> TutorTurnInput {
+    pub(crate) fn sample_tutor_turn_input() -> TutorTurnInput {
         TutorTurnInput {
             user_query: "What should I click?".to_string(),
             active_app: TutorActiveAppContext {
