@@ -576,6 +576,12 @@ fn refresh_tray(app: tauri::AppHandle, is_pro: bool) {
     }
 }
 
+/// Open a URL in the system browser (Settings "Visit website", etc.).
+#[tauri::command]
+fn open_external(url: String) {
+    let _ = std::process::Command::new("open").arg(&url).spawn();
+}
+
 /// Launch-at-login (macOS LaunchAgent via tauri-plugin-autostart). Off by default.
 #[tauri::command]
 fn get_launch_at_login(app: tauri::AppHandle) -> bool {
@@ -1028,6 +1034,7 @@ pub fn run() {
             proxy::start_checkout,
             proxy::open_billing_portal,
             refresh_tray,
+            open_external,
             get_launch_at_login,
             set_launch_at_login,
             onboarding::finish_onboarding,

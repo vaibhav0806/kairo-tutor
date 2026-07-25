@@ -1,11 +1,12 @@
-/* Settings page — Editorial Light, mirrors the onboarding .ob-card (warm-white, Geist, ink CTA). */
+/* Settings — Editorial Light, compact, accent-aware. Mirrors the onboarding .ob-card. */
 .settings-scrim {
   position: fixed;
   inset: 0;
+  overflow-y: auto;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: 24px;
+  align-items: flex-start;
+  padding: 22px 20px;
   background: #f4efe7;
   font-family: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
   color: #1a1622;
@@ -13,41 +14,72 @@
 
 .settings-card {
   width: 100%;
-  max-width: 380px;
-  padding: 26px 24px 22px;
+  max-width: 404px;
+  padding: 20px 22px 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
   border: 1px solid rgba(20, 16, 28, 0.06);
-  border-radius: 24px;
+  border-radius: 22px;
   background: radial-gradient(
-    120% 90% at 50% -10%,
-    color-mix(in srgb, var(--kairo-accent, #7c3aed) 8%, #fdfbf7) 0%,
-    #faf7f2 55%,
-    #f4efe7 100%
+    130% 80% at 50% -10%,
+    color-mix(in srgb, var(--kairo-accent, #7c3aed) 7%, #fdfbf7) 0%,
+    #faf7f2 45%,
+    #f6f1e9 100%
   );
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.7) inset,
-    0 30px 70px -30px rgba(30, 20, 45, 0.3);
+    0 26px 60px -30px rgba(30, 20, 45, 0.28);
 }
 
+.settings-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
 .settings-brand {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  opacity: 0.85;
 }
-
 .settings-title {
-  margin: 0;
+  font-size: 12px;
+  color: rgba(26, 22, 34, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.settings-h2 {
+  margin: 8px 0 2px;
   font-size: 18px;
   font-weight: 600;
 }
 
 .settings-muted {
   margin: 0;
-  font-size: 13px;
-  color: rgba(26, 22, 34, 0.55);
+  font-size: 12.5px;
+  color: rgba(26, 22, 34, 0.52);
+}
+
+.s-section {
+  padding: 13px 0;
+  border-top: 1px solid rgba(20, 16, 28, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.s-section:first-of-type {
+  border-top: none;
+  padding-top: 8px;
+}
+.s-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(26, 22, 34, 0.4);
+}
+.s-sub {
+  margin-top: -4px;
 }
 
 .settings-row {
@@ -56,66 +88,181 @@
   justify-content: space-between;
   gap: 12px;
 }
-
 .settings-account {
   min-width: 0;
 }
-
 .settings-name {
   font-size: 15px;
   font-weight: 600;
+}
+.s-item-name {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.s-item-desc {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 240px;
 }
 
 .settings-plan {
   display: flex;
 }
-
 .settings-plan-badge {
   font-size: 12px;
-  padding: 6px 12px;
+  padding: 5px 12px;
   border-radius: 999px;
   background: rgba(20, 16, 28, 0.05);
   color: rgba(26, 22, 34, 0.7);
 }
-
 .settings-plan-pro {
-  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 14%, transparent);
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, #1a1622);
+  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 15%, transparent);
+  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 68%, #1a1622);
 }
 
-.settings-btn {
+/* Buttons */
+.s-btn {
   appearance: none;
   border: none;
   cursor: pointer;
   border-radius: 999px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
-  padding: 11px 16px;
+  padding: 10px 16px;
   transition: transform 120ms ease, opacity 120ms ease;
 }
-
-.settings-btn:disabled {
-  opacity: 0.5;
+.s-btn:disabled {
+  opacity: 0.45;
   cursor: default;
 }
-
-.settings-btn:active:not(:disabled) {
+.s-btn:active:not(:disabled) {
   transform: scale(0.98);
 }
-
-.settings-btn-primary {
+.s-btn-primary {
   background: #1a1622;
   color: #fdfbf7;
 }
-
-.settings-btn-ghost {
+.s-btn-ghost {
   background: transparent;
-  color: rgba(26, 22, 34, 0.7);
-  border: 1px solid rgba(20, 16, 28, 0.12);
-  padding: 8px 14px;
-  font-size: 13px;
+  color: rgba(26, 22, 34, 0.72);
+  border: 1px solid rgba(20, 16, 28, 0.14);
+  padding: 7px 14px;
+  font-size: 12.5px;
+}
+.s-btn-mini {
+  background: transparent;
+  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, #1a1622);
+  border: 1px solid color-mix(in srgb, var(--kairo-accent, #7c3aed) 35%, transparent);
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.s-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: #1a1622;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(20, 16, 28, 0.14);
+  background: rgba(255, 255, 255, 0.6);
+  outline: none;
+}
+.s-input:focus {
+  border-color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, transparent);
+}
+
+/* Accent swatches */
+.s-swatches {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.s-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 0 0 1px rgba(20, 16, 28, 0.1);
+}
+.s-swatch-active {
+  border-color: #fdfbf7;
+  box-shadow: 0 0 0 2px #1a1622;
+}
+.s-swatch-custom {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.s-swatch-custom input[type='color'] {
+  position: absolute;
+  inset: -4px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.s-ok {
+  font-size: 12px;
+  color: color-mix(in srgb, #10b981 75%, #1a1622);
+}
+
+/* iOS-style toggle */
+.s-toggle {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(20, 16, 28, 0.18);
+  position: relative;
+  transition: background 160ms ease;
+  flex-shrink: 0;
+}
+.s-toggle-on {
+  background: var(--kairo-accent, #7c3aed);
+}
+.s-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.s-toggle-on .s-toggle-knob {
+  transform: translateX(16px);
+}
+
+.settings-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(20, 16, 28, 0.07);
+}
+.s-link {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 72%, #1a1622);
+}
+.s-link:hover {
+  text-decoration: underline;
 }

@@ -1,19 +1,42 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { getVersion } from '@tauri-apps/api/app';
 import type { MeResponse } from '@kairo/shared';
-import { createNativeBridge } from '../native/nativeBridge';
+import { createNativeBridge, type NativePermissionStatus, type NativePermissionKey } from '../native/nativeBridge';
 import { getAuthStatus, onAuthChanged, signOut, startGoogleAuth } from '../onboarding/authClient';
+import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import './settings.css';
 
-// Minimal account + billing settings, styled like the onboarding .ob-card (Editorial Light).
-// Opened from the menu-bar tray → "Settings…". Upgrade shows ONLY for free users; Manage only Pro.
+type SkillInfo = { slug: string; name: string; description: string; enabled: boolean };
+
+const ACCENT_PRESETS = ['#7c3aed', '#2563eb', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+const PERMISSIONS: { key: NativePermissionKey; label: string }[] = [
+  { key: 'screenRecording', label: 'Screen Recording' },
+  { key: 'accessibility', label: 'Accessibility' },
+  { key: 'microphone', label: 'Microphone' },
+];
+
 export function SettingsView() {
   const bridge = useMemo(() => createNativeBridge(), []);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [signedIn, setSignedIn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [name, setName] = useState('');
+  const [savedName, setSavedName] = useState('');
+  const [accent, setAccentState] = useState(DEFAULT_ACCENT);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [perms, setPerms] = useState<NativePermissionStatus | null>(null);
+  const [launchAtLogin, setLaunch] = useState(false);
+  const [version, setVersion] = useState('');
+
+  // The main window is the big permission-recovery window; shrink it to hug the settings card.
+  useEffect(() => {
+    void getCurrentWindow().setSize(new LogicalSize(460, 720)).catch(() => {});
+  }, []);
 
   const refresh = useCallback(async () => {
     const status = await getAuthStatus();
@@ -28,106 +51,241 @@ export function SettingsView() {
     setLoading(false);
   }, [bridge]);
 
+  const loadExtras = useCallback(async () => {
+    setAccentState(await getAccent().catch(() => DEFAULT_ACCENT));
+    const n = await bridge.getUserName().catch(() => '');
+    setName(n);
+    setSavedName(n);
+    setSkills(await invoke<SkillInfo[]>('list_skills').catch(() => []));
+    setPerms(await bridge.getPermissionStatus().catch(() => null));
+    setLaunch(await invoke<boolean>('get_launch_at_login').catch(() => false));
+    setVersion(await getVersion().catch(() => ''));
+  }, [bridge]);
+
   useEffect(() => {
     void refresh();
+    void loadExtras();
     const unsubs: Array<() => void> = [];
-    void onAuthChanged(() => void refresh()).then((u) => unsubs.push(u));
+    void onAuthChanged(() => {
+      void refresh();
+      void loadExtras();
+    }).then((u) => unsubs.push(u));
     void listen('billing:changed', () => void refresh()).then((u) => unsubs.push(u));
     return () => unsubs.forEach((u) => u());
-  }, [refresh]);
+  }, [refresh, loadExtras]);
 
   const isPro = me?.plan === 'pro';
-  const used = me?.usage.used ?? 0;
-  const limit = me?.usage.limit ?? 10;
 
-  const handleLogout = async () => {
-    setBusy(true);
-    await signOut();
-    await refresh();
-    setBusy(false);
+  const applyAccent = async (hex: string) => {
+    setAccentState(hex);
+    await setAccent(hex);
   };
-  const handleUpgrade = async () => {
+  const saveName = async () => {
+    const trimmed = name.trim();
+    await bridge.setUserName(trimmed);
+    setSavedName(trimmed);
+  };
+  const toggleSkill = async (slug: string, enabled: boolean) => {
+    setSkills((prev) => prev.map((s) => (s.slug === slug ? { ...s, enabled } : s)));
+    await invoke('set_skill_enabled', { slug, enabled }).catch(() => {});
+  };
+  const toggleLaunch = async (enabled: boolean) => {
+    setLaunch(enabled);
+    await invoke('set_launch_at_login', { enabled }).catch(() => {});
+  };
+  const withBusy = (fn: () => Promise<void>) => async () => {
     setBusy(true);
     try {
-      await bridge.startCheckout();
+      await fn();
     } catch (error) {
-      klog('notch', 'warn', 'checkout failed', { error: String(error) });
+      klog('notch', 'warn', 'settings action failed', { error: String(error) });
     }
     setBusy(false);
   };
-  const handleManage = async () => {
-    setBusy(true);
-    try {
-      await bridge.openBillingPortal();
-    } catch (error) {
-      klog('notch', 'warn', 'portal failed', { error: String(error) });
-    }
-    setBusy(false);
-  };
+
+  if (loading) {
+    return (
+      <div className="settings-scrim">
+        <div className="settings-card">
+          <p className="settings-muted">Loading…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!signedIn) {
+    return (
+      <div className="settings-scrim">
+        <div className="settings-card">
+          <div className="settings-brand">kairo</div>
+          <h2 className="settings-h2">You're signed out</h2>
+          <p className="settings-muted">Sign in to use Kairo.</p>
+          <button className="s-btn s-btn-primary" onClick={() => void startGoogleAuth()}>
+            Sign in with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="settings-scrim">
       <div className="settings-card">
-        <div className="settings-brand">kairo</div>
+        <div className="settings-head">
+          <div className="settings-brand">kairo</div>
+          <span className="settings-title">Settings</span>
+        </div>
 
-        {loading ? (
-          <p className="settings-muted">Loading…</p>
-        ) : !signedIn ? (
-          <>
-            <h2 className="settings-title">You're signed out</h2>
-            <p className="settings-muted">Sign in to use Kairo.</p>
-            <button className="settings-btn settings-btn-primary" onClick={() => void startGoogleAuth()}>
-              Sign in with Google
+        {/* Account */}
+        <section className="s-section">
+          <div className="settings-row">
+            <div className="settings-account">
+              <div className="settings-name">{me?.account_name ?? me?.display_name ?? 'Your account'}</div>
+              <div className="settings-muted">{me?.user.email ?? ''}</div>
+            </div>
+            <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(async () => {
+              await signOut();
+              await refresh();
+            })}>
+              Log out
             </button>
-          </>
-        ) : (
-          <>
-            <div className="settings-row">
-              <div className="settings-account">
-                <div className="settings-name">
-                  {me?.account_name ?? me?.display_name ?? 'Your account'}
-                </div>
-                <div className="settings-muted">{me?.user.email ?? ''}</div>
-              </div>
-              <button
-                className="settings-btn settings-btn-ghost"
-                disabled={busy}
-                onClick={() => void handleLogout()}
-              >
-                Log out
-              </button>
-            </div>
+          </div>
+        </section>
 
-            <div className="settings-plan">
-              {isPro ? (
-                <span className="settings-plan-badge settings-plan-pro">Kairo Pro · unlimited ✨</span>
-              ) : (
-                <span className="settings-plan-badge">
-                  Free · {used} of {limit} requests used
-                </span>
-              )}
-            </div>
-
+        {/* Plan */}
+        <section className="s-section">
+          <div className="s-label">Plan</div>
+          <div className="settings-plan">
             {isPro ? (
-              <button
-                className="settings-btn settings-btn-ghost"
-                disabled={busy}
-                onClick={() => void handleManage()}
-              >
-                Manage subscription
-              </button>
+              <span className="settings-plan-badge settings-plan-pro">Kairo Pro · unlimited ✨</span>
             ) : (
-              <button
-                className="settings-btn settings-btn-primary"
-                disabled={busy}
-                onClick={() => void handleUpgrade()}
-              >
-                Upgrade to Pro — $10/mo
-              </button>
+              <span className="settings-plan-badge">
+                Free · {me?.usage.used ?? 0} of {me?.usage.limit ?? 10} used
+              </span>
             )}
-          </>
+          </div>
+          {isPro ? (
+            <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(() => bridge.openBillingPortal())}>
+              Manage subscription
+            </button>
+          ) : (
+            <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout())}>
+              Upgrade to Pro — $10/mo
+            </button>
+          )}
+        </section>
+
+        {/* Display name */}
+        <section className="s-section">
+          <div className="s-label">Call me</div>
+          <div className="settings-row">
+            <input
+              className="s-input"
+              value={name}
+              placeholder="Your name"
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveName();
+              }}
+            />
+            <button className="s-btn s-btn-ghost" disabled={name.trim() === savedName.trim()} onClick={() => void saveName()}>
+              Save
+            </button>
+          </div>
+        </section>
+
+        {/* Accent color */}
+        <section className="s-section">
+          <div className="s-label">Accent color</div>
+          <div className="s-swatches">
+            {ACCENT_PRESETS.map((hex) => (
+              <button
+                key={hex}
+                className={`s-swatch${accent.toLowerCase() === hex.toLowerCase() ? ' s-swatch-active' : ''}`}
+                style={{ background: hex }}
+                aria-label={hex}
+                onClick={() => void applyAccent(hex)}
+              />
+            ))}
+            <label className="s-swatch s-swatch-custom" style={{ background: accent }}>
+              <input type="color" value={accent} onChange={(e) => void applyAccent(e.target.value)} />
+            </label>
+          </div>
+        </section>
+
+        {/* Skills */}
+        {skills.length > 0 && (
+          <section className="s-section">
+            <div className="s-label">Skills</div>
+            <p className="settings-muted s-sub">Disabled skills are hidden from Kairo entirely.</p>
+            {skills.map((s) => (
+              <div className="settings-row s-item" key={s.slug}>
+                <div className="settings-account">
+                  <div className="s-item-name">{s.name}</div>
+                  <div className="settings-muted s-item-desc">{s.description}</div>
+                </div>
+                <Toggle checked={s.enabled} onChange={(v) => void toggleSkill(s.slug, v)} />
+              </div>
+            ))}
+          </section>
         )}
+
+        {/* Permissions */}
+        {perms && (
+          <section className="s-section">
+            <div className="s-label">Permissions</div>
+            {PERMISSIONS.map(({ key, label }) => {
+              const granted = perms[key] === 'granted';
+              return (
+                <div className="settings-row s-item" key={key}>
+                  <div className="s-item-name">{label}</div>
+                  {granted ? (
+                    <span className="s-ok">Granted</span>
+                  ) : (
+                    <button
+                      className="s-btn s-btn-mini"
+                      onClick={async () => {
+                        await bridge.openPermissionSettings(key);
+                      }}
+                    >
+                      Grant
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+
+        {/* Launch at login */}
+        <section className="s-section">
+          <div className="settings-row s-item">
+            <div className="s-item-name">Launch at login</div>
+            <Toggle checked={launchAtLogin} onChange={(v) => void toggleLaunch(v)} />
+          </div>
+        </section>
+
+        {/* Footer */}
+        <div className="settings-foot">
+          <button className="s-link" onClick={() => void invoke('open_external', { url: 'https://meetkairo.xyz' })}>
+            Visit website ↗
+          </button>
+          {version && <span className="settings-muted">v{version}</span>}
+        </div>
       </div>
     </div>
+  );
+}
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked}
+      className={`s-toggle${checked ? ' s-toggle-on' : ''}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="s-toggle-knob" />
+    </button>
   );
 }
