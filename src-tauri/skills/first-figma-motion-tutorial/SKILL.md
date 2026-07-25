@@ -185,11 +185,11 @@ overshoots on playback.
 
 **A12. Make it a component.** Switch the toolbar toggle back to **Design** (components can
 only be made in Design mode), select the `animation` frame, and click **Create component**
-(⌥⌘K on Mac, Ctrl+Alt+K on Windows). Switch back to **Motion**.
+(⌥⌘K). Switch back to **Motion**.
 *Look for:* the layer icon turns into the purple component diamond.
 
 **A13. Stagger some instances.** Add an 800 × 800 frame. Duplicate the main component
-(⌘D / Ctrl+D) to make an instance and drag it into the new frame. Repeat for a few. On the
+(⌘D) to make an instance and drag it into the new frame. Repeat for a few. On the
 timeline the instances are **purple tracks** — drag a track sideways to offset when it
 starts. Offsets much shorter than the animation's duration read as one ripple; offsets close
 to the duration read as a slow march.
@@ -219,14 +219,15 @@ confirm once.
 *Center stroke position is load-bearing* — path trim only works on centre-positioned
 strokes. Don't let them leave it on Inside/Outside.
 
-**B3. The moving arc.** Duplicate the ellipse (⌘D / Ctrl+D), rename the copy `spinner`, set
+**B3. The moving arc.** Duplicate the ellipse (⌘D), rename the copy `spinner`, set
 its stroke colour `#FFA73C`.
 
-**B4. Cut the arc — one step, all three values.** Hover the `spinner` layer on canvas until
-the **arc handle** appears and drag it, or just type the values into the Appearance section:
-sweep **40%**, ratio **100%**, stroke end points **Round**. Give all three at once.
+**B4. Cut the arc — one step, all three values.** Have them TYPE the values in the Appearance
+section: sweep **40%**, ratio **100%**, stroke end points **Round**. Give all three at once.
+*Type, don't drag.* The arc handle on canvas does the same job but lands wherever the mouse
+lets go — a user dragging it hit 54.81% and had to be corrected. Mention the handle only if
+they ask; the recipe needs exact numbers.
 *Look for:* an orange arc sitting on top of the cream ring.
-*Dragging is slow — ask them to confirm rather than auto-advancing.*
 
 **B5. Enter Motion** and select the `linear` frame. Set **Duration** to `1400`.
 *If the timeline shows seconds:* click the time-unit label to toggle to ms.
@@ -247,9 +248,19 @@ timeline later fills with junk keyframes, this is almost always why.
 Linear). Spinners are the one case where linear is correct — they loop forever, and easing
 would make the loop pulse. Play again.
 
-**B10. Second spinner.** Select the `linear` frame, duplicate it (⌘D / Ctrl+D), rename the
-copy `trim path`. Switch to **Design**, select the `spinner` layer inside `trim path`,
-change the arc **Sweep** to `60%`, switch back to **Motion**.
+**B9b. CHECKPOINT — they have a finished animation. Stop and ask.**
+The linear spinner is done: it spins, it loops, it's a real animation. Say so and treat it as
+a finish, not a waypoint — then ask whether they want to build the second version (a
+path-trim spinner that grows and shrinks as it turns) or stop here.
+*Why this matters:* everything past this point is another ~20 exchanges of playhead-then-value
+work that cannot be batched. A user who wasn't offered the exit asked "how close are we to the
+end… can I see the animation now?" — they'd already succeeded and didn't know it.
+If they stop: celebrate, `done: true`. If they continue: say it's about ten more minutes, then
+go to B10.
+
+**B10. Second spinner.** Select the `linear` frame, duplicate it, rename the copy
+`trim path`. Switch to **Design**, select the `spinner` layer inside `trim path`, change the
+arc **Sweep** to `60%`, switch back to **Motion**.
 
 **B11. Retarget the rotation.** Double-click the keyframe at 1400 ms to jump to it, then
 change Rotation from `360` to `-185`.
@@ -263,7 +274,8 @@ Playhead to **1400 ms**, set Path trim start to `80%`. Turn auto-keyframe **off*
 
 **B14. Play.** The arc stretches and shrinks as it rotates.
 
-**Done when:** both spinners loop — one steady, one breathing.
+**Done when:** the linear spinner loops. The path-trim version is a bonus they opted
+into at B9b — if they stopped there, they finished.
 
 ---
 
@@ -308,7 +320,7 @@ fields, say the four values in one breath, and ask them to tell you when they're
 **C6. Enter Motion.**
 
 **C7. Move the anchor point.** Select the `Chat bubble` frame, click **Edit anchor point**
-in the Transform section header (or ⌥R / Alt+R), then drag the target to the frame's
+in the Transform section header (or ⌥R), then drag the target to the frame's
 **bottom-left corner**.
 *Why:* scale and rotation pivot around the anchor point. Bottom-left is what makes the
 bubble grow out of its tail instead of out of thin air. Say this — it's the concept the
