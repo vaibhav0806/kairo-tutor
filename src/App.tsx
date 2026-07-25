@@ -7,6 +7,7 @@ import {
 } from './native/nativeBridge';
 import { getAuthStatus, onAuthChanged } from './onboarding/authClient';
 import { syncUserName } from './onboarding/userName';
+import { SettingsView } from './settings/SettingsView';
 
 // The main window is normally hidden. Rust only reveals it on first run when TCC
 // permissions still need granting (see lib.rs setup). So this component is purely
@@ -134,6 +135,12 @@ export function App() {
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [missingPermissions.length, refreshPermissionStatus]);
+
+  // Permissions all granted → this window is the Settings page (opened from the tray).
+  // Still-missing permissions → the first-run permission-recovery screen below.
+  if (missingPermissions.length === 0) {
+    return <SettingsView />;
+  }
 
   return (
     <main className="app-shell">

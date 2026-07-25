@@ -23,6 +23,16 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   }
 }
 
+/** Clear the stored session → signed-out state (native emits `auth:changed` false). */
+export async function signOut(): Promise<void> {
+  if (!hasNativeBridge) return;
+  try {
+    await invoke('sign_out');
+  } catch (error) {
+    klog('auth', 'warn', 'signOut failed', { error: String(error) });
+  }
+}
+
 /** Short-lived JWT for authed backend calls (/v1/me, /v1/onboarding). Null if signed out. */
 export async function getBackendJwt(): Promise<string | null> {
   if (!hasNativeBridge) return null;

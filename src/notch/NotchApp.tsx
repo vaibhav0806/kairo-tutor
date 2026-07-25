@@ -69,6 +69,16 @@ export function NotchApp() {
   const [activeAnnotationTool, setActiveAnnotationTool] = useState<NotchAnnotationTool | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState>('idle');
+  // True when the last push-to-talk was blocked by the free-request limit — shows the upgrade pill.
+  const [paywalled, setPaywalled] = useState(false);
+  // Clear the pill the moment the user upgrades (kairo://billing-done → billing:changed).
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen('billing:changed', () => setPaywalled(false)).then((u) => {
+      un = u;
+    });
+    return () => un?.();
+  }, []);
   const isSubmittingRef = useRef(false);
   const voiceCaptureStateRef = useRef<VoiceCaptureState>('idle');
   // The status capsule element, for writing the live mic level (--mic-level).
@@ -1254,9 +1264,11 @@ export function NotchApp() {
       setVoicePayload('transcribing');
       void emit('cursor:thinking', {});
       // Paywall — out of free requests → play the cached upgrade line (no provider spend, no STT).
-      if (await nativeBridge.checkPaywalled()) {
+      const paywalledNow = await nativeBridge.checkPaywalled();
+      setPaywalled(paywalledNow);
+      if (paywalledNow) {
         if (signal.aborted) return;
-        klog('notch', 'info', 'paywalled on ptt release → cached upgrade line', { epoch: turnLog });
+        klog('notch', 'info', 'paywalled on ptt release → cached upgrade line + CTA', { epoch: turnLog });
         await playUpgradeMessage(signal);
         return;
       }
@@ -1571,27 +1583,53 @@ export function NotchApp() {
         : thinkingVerb;
 
   return (
-    <NotchCapsule
-      mode={capsuleMode}
-      progress={progress}
-      statusLabel={statusLabel}
-      detail={payload.detail}
-      title={payload.title}
-      chip={payload.chip}
-      meter={payload.meter}
-      query={query}
-      capsuleRef={capsuleRef}
-      onQueryChange={setQuery}
-      onSubmit={handleTypedSubmit}
-      onHide={hideNotch}
-      onCapsulePointer={noteCapsulePointer}
-      onPointerLeave={() => {
-        pointerInsideNotchRef.current = false;
-      }}
-      onPointerDown={() => {
-        lastNotchPointerAt.current = performance.now();
-        noteNotchActivity();
-      }}
-    />
+    <>
+      <NotchCapsule
+        mode={capsuleMode}
+        progress={progress}
+        statusLabel={statusLabel}
+        detail={payload.detail}
+        title={payload.title}
+        chip={payload.chip}
+        meter={payload.meter}
+        query={query}
+        capsuleRef={capsuleRef}
+        onQueryChange={setQuery}
+        onSubmit={handleTypedSubmit}
+        onHide={hideNotch}
+        onCapsulePointer={noteCapsulePointer}
+        onPointerLeave={() => {
+          pointerInsideNotchRef.current = false;
+        }}
+        onPointerDown={() => {
+          lastNotchPointerAt.current = performance.now();
+          noteNotchActivity();
+        }}
+      />
+      {paywalled && (
+        <button
+          className="notch-upgrade-cta"
+          onClick={() => void nativeBridge.startCheckout()}
+          style={{
+            position: 'fixed',
+            bottom: 6,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '5px 14px',
+            borderRadius: 999,
+            border: 'none',
+            background: '#1a1622',
+            color: '#fdfbf7',
+            fontSize: 12,
+            fontWeight: 600,
+            fontFamily: 'inherit',
+            cursor: 'pointer',
+            zIndex: 60,
+          }}
+        >
+          Upgrade to Pro
+        </button>
+      )}
+    </>
   );
 }

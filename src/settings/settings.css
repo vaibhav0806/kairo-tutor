@@ -1,0 +1,121 @@
+/* Settings page — Editorial Light, mirrors the onboarding .ob-card (warm-white, Geist, ink CTA). */
+.settings-scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f4efe7;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  color: #1a1622;
+}
+
+.settings-card {
+  width: 100%;
+  max-width: 380px;
+  padding: 26px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid rgba(20, 16, 28, 0.06);
+  border-radius: 24px;
+  background: radial-gradient(
+    120% 90% at 50% -10%,
+    color-mix(in srgb, var(--kairo-accent, #7c3aed) 8%, #fdfbf7) 0%,
+    #faf7f2 55%,
+    #f4efe7 100%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 30px 70px -30px rgba(30, 20, 45, 0.3);
+}
+
+.settings-brand {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  opacity: 0.85;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.settings-muted {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(26, 22, 34, 0.55);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-account {
+  min-width: 0;
+}
+
+.settings-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-plan {
+  display: flex;
+}
+
+.settings-plan-badge {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(20, 16, 28, 0.05);
+  color: rgba(26, 22, 34, 0.7);
+}
+
+.settings-plan-pro {
+  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 14%, transparent);
+  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, #1a1622);
+}
+
+.settings-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 16px;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.settings-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.settings-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.settings-btn-primary {
+  background: #1a1622;
+  color: #fdfbf7;
+}
+
+.settings-btn-ghost {
+  background: transparent;
+  color: rgba(26, 22, 34, 0.7);
+  border: 1px solid rgba(20, 16, 28, 0.12);
+  padding: 8px 14px;
+  font-size: 13px;
+}

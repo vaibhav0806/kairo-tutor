@@ -4,6 +4,7 @@ import type { ScreenRegion, UserAnnotation, VisualTarget } from '../core/types';
 import type { TutorTurnInput } from '../core/orchestrator';
 import type { NotchAnnotationTool } from '../notch/annotationActions';
 import type { NotchPayload } from '../notch/types';
+import type { MeResponse } from '@kairo/shared';
 
 export type NativeInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -152,6 +153,11 @@ export type NativeBridge = {
   // on push-to-talk release BEFORE transcribing, to skip STT/gate/vision + play the cached
   // upgrade line instead of spending on a paywalled user. false when unknown / proxy off.
   checkPaywalled(): Promise<boolean>;
+  // Billing (proxy mode). fetchMe returns plan/usage/account; null when signed out / on error.
+  fetchMe(): Promise<MeResponse | null>;
+  startCheckout(): Promise<void>;
+  openBillingPortal(): Promise<void>;
+  refreshTray(isPro: boolean): Promise<void>;
   captureScreen(): Promise<NativeScreenCapture>;
   getDisplayBounds(): Promise<NativeOverlayDisplayBounds>;
   showOverlay(payload: NativeOverlayPayload): Promise<void>;
@@ -437,6 +443,30 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
         return await invoke<boolean>('check_paywalled');
       } catch {
         return false;
+      }
+    },
+
+    async fetchMe() {
+      try {
+        return (await invoke<MeResponse | null>('fetch_me')) ?? null;
+      } catch {
+        return null;
+      }
+    },
+
+    async startCheckout() {
+      await invoke<void>('start_checkout');
+    },
+
+    async openBillingPortal() {
+      await invoke<void>('open_billing_portal');
+    },
+
+    async refreshTray(isPro) {
+      try {
+        await invoke<void>('refresh_tray', { isPro });
+      } catch {
+        // tray refresh is best-effort
       }
     },
 
