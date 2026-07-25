@@ -213,6 +213,77 @@ pub(crate) async fn over_free_limit(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
+/// GET `/v1/me` → the plan/usage/account JSON for the settings page + notch. null on any error.
+#[tauri::command]
+pub(crate) async fn fetch_me(app: AppHandle) -> Option<Value> {
+    let jwt = fetch_jwt(&app).await?;
+    let url = format!("{}/v1/me", backend_url());
+    let response = shared_http_client()
+        .get(&url)
+        .bearer_auth(jwt)
+        .timeout(Duration::from_secs(8))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    response.json::<Value>().await.ok()
+}
+
+/// Open the system browser at `url` (macOS `open`, same as the OAuth flow).
+fn open_in_browser(url: &str) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("failed to open browser: {error}"))
+}
+
+/// Start a Pro checkout: POST `/v1/billing/checkout` → open the returned `checkout_url`. Dodo's
+/// success page redirects to `kairo://billing-done`, which refreshes `/v1/me` (see lib.rs).
+#[tauri::command]
+pub(crate) async fn start_checkout(app: AppHandle) -> Result<(), String> {
+    let jwt = fetch_jwt(&app).await.ok_or_else(|| "signed out".to_string())?;
+    let url = format!("{}/v1/billing/checkout", backend_url());
+    let response = shared_http_client()
+        .post(&url)
+        .bearer_auth(jwt)
+        .json(&serde_json::json!({ "interval": "monthly" }))
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    let body: Value = response.json().await.map_err(|error| error.to_string())?;
+    let checkout_url = body
+        .get("checkout_url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "no checkout_url in response".to_string())?;
+    crate::klog!(app, info, "billing: opening checkout in browser");
+    open_in_browser(checkout_url)
+}
+
+/// Open the Dodo customer portal (manage / cancel): POST `/v1/billing/portal` → open the url.
+#[tauri::command]
+pub(crate) async fn open_billing_portal(app: AppHandle) -> Result<(), String> {
+    let jwt = fetch_jwt(&app).await.ok_or_else(|| "signed out".to_string())?;
+    let url = format!("{}/v1/billing/portal", backend_url());
+    let response = shared_http_client()
+        .post(&url)
+        .bearer_auth(jwt)
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    let body: Value = response.json().await.map_err(|error| error.to_string())?;
+    let portal_url = body
+        .get("url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "no portal url in response".to_string())?;
+    crate::klog!(app, info, "billing: opening customer portal in browser");
+    open_in_browser(portal_url)
+}
+
 /// POST the vision answer+box body to the metered `/v1/vision/tutor` route, adding the
 /// `_provider` routing hint (`"anthropic"` | `"openai"`). Returns the raw provider JSON.
 pub(crate) async fn vision_tutor(

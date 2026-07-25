@@ -548,16 +548,51 @@ fn detect_screen_recording_reset(app: &tauri::AppHandle) -> bool {
     false
 }
 
+/// Rebuild the menu-bar tray for the current plan — "Upgrade to Pro" shows only for free users
+/// (hidden once Pro). Called via the `refresh_tray` command once /v1/me is known + on billing changes.
+fn apply_tray_menu(app: &tauri::AppHandle, is_pro: bool) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    let show = MenuItem::with_id(app, "tray_show_notch", "Show Notch", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "tray_settings", "Settings…", true, None::<&str>)?;
+    let replay = MenuItem::with_id(app, "tray_replay_intro", "Replay intro", true, None::<&str>)?;
+    let sep = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "tray_quit", "Quit Kairo", true, None::<&str>)?;
+    let menu = if is_pro {
+        Menu::with_items(app, &[&show, &settings, &replay, &sep, &quit])?
+    } else {
+        let upgrade = MenuItem::with_id(app, "tray_upgrade", "Upgrade to Pro", true, None::<&str>)?;
+        Menu::with_items(app, &[&show, &settings, &upgrade, &replay, &sep, &quit])?
+    };
+    if let Some(tray) = app.tray_by_id("kairo-menu-bar") {
+        tray.set_menu(Some(menu))?;
+    }
+    Ok(())
+}
+
+/// Frontend hook: refresh the tray after the app learns the plan (from /v1/me).
+#[tauri::command]
+fn refresh_tray(app: tauri::AppHandle, is_pro: bool) {
+    if let Err(error) = apply_tray_menu(&app, is_pro) {
+        crate::klog!(app, warn, "refresh_tray failed: {error}");
+    }
+}
+
 fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::TrayIconBuilder;
 
     let show_item = MenuItem::with_id(app, "tray_show_notch", "Show Notch", true, None::<&str>)?;
+    let settings_item = MenuItem::with_id(app, "tray_settings", "Settings…", true, None::<&str>)?;
+    let upgrade_item = MenuItem::with_id(app, "tray_upgrade", "Upgrade to Pro", true, None::<&str>)?;
     let replay_item =
         MenuItem::with_id(app, "tray_replay_intro", "Replay intro", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "tray_quit", "Quit Kairo", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&show_item, &replay_item, &separator, &quit_item])?;
+    // Initial menu = free layout (Upgrade shown). refresh_tray rebuilds it to hide Upgrade once Pro.
+    let menu = Menu::with_items(
+        app,
+        &[&show_item, &settings_item, &upgrade_item, &replay_item, &separator, &quit_item],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id("kairo-menu-bar")
         .tooltip("Kairo Tutor")
@@ -579,6 +614,35 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
             "tray_replay_intro" => {
                 klog!(app, info, "menu bar: replay intro selected");
                 crate::onboarding::replay_onboarding(app);
+            }
+            "tray_settings" => {
+                klog!(app, info, "menu bar: settings selected");
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                    let _ = win.emit("settings:open", ());
+                }
+            }
+            "tray_upgrade" => {
+                klog!(app, info, "menu bar: upgrade selected");
+                let app2 = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let me = crate::proxy::fetch_me(app2.clone()).await;
+                    let is_pro = me
+                        .as_ref()
+                        .and_then(|m| m.get("plan"))
+                        .and_then(|p| p.as_str())
+                        == Some("pro");
+                    if is_pro {
+                        if let Some(win) = app2.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                            let _ = win.emit("settings:open", ());
+                        }
+                    } else if let Err(error) = crate::proxy::start_checkout(app2.clone()).await {
+                        crate::klog!(app2, warn, "tray upgrade checkout failed: {error}");
+                    }
+                });
             }
             other => klog!(app, warn, id = other, "menu bar: unknown menu event"),
         });
@@ -879,6 +943,11 @@ pub fn run() {
                         if url.scheme() != "kairo" {
                             continue;
                         }
+                        if url.host_str() == Some("billing-done") {
+                            crate::klog!(auth, info, "deep link: billing-done → notify frontend");
+                            let _ = handle.emit("billing:changed", ());
+                            continue;
+                        }
                         crate::onboarding::focus_onboarding_window(&handle);
                         let code = url
                             .query_pairs()
@@ -940,6 +1009,10 @@ pub fn run() {
             synthesize_speech_stream,
             save_gesture_debug_image,
             proxy::check_paywalled,
+            proxy::fetch_me,
+            proxy::start_checkout,
+            proxy::open_billing_portal,
+            refresh_tray,
             onboarding::finish_onboarding,
             onboarding::replay_onboarding_cmd,
             onboarding::set_onboarding_step,
