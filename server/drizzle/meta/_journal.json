@@ -36,6 +36,13 @@
       "when": 1784652243368,
       "tag": "0004_moaning_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784995144214,
+      "tag": "0005_lush_vivisector",
+      "breakpoints": true
     }
   ]
 }

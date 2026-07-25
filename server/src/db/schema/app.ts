@@ -56,6 +56,17 @@ export const subscription = pgTable('subscription', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Maps a Dodo checkout session id → our user, stored at checkout. Lets webhooks that carry a
+ * `checkout_session_id` (notably `payment.succeeded`) be attributed to the user even when the
+ * event has no usable metadata/customer link — the reliable path in test mode. */
+export const checkoutSessionMap = pgTable('checkout_session_map', {
+  sessionId: text('session_id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Webhook idempotency store (dedupe on the Dodo `webhook-id` header). */
 export const webhookEvent = pgTable('webhook_event', {
   webhookId: text('webhook_id').primaryKey(),

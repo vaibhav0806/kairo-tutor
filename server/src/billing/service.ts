@@ -99,3 +99,18 @@ export async function userIdByCustomer(customerId?: string): Promise<string | nu
   const r = await db.execute(sql`SELECT user_id FROM subscription WHERE dodo_customer_id = ${customerId} LIMIT 1`);
   return r.rows.length ? (r.rows[0] as { user_id: string }).user_id : null;
 }
+
+/** Remember which user started a checkout session, so a later `payment.succeeded` (which carries
+ * only the `checkout_session_id`) can be attributed back to them. Stored at checkout time. */
+export async function rememberCheckoutSession(sessionId: string, userId: string): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO checkout_session_map (session_id, user_id) VALUES (${sessionId}, ${userId})
+    ON CONFLICT (session_id) DO NOTHING`);
+}
+
+/** Resolve the user behind a Dodo checkout session id (the reliable link in test mode). */
+export async function userFromCheckoutSession(sessionId?: string): Promise<string | null> {
+  if (!sessionId) return null;
+  const r = await db.execute(sql`SELECT user_id FROM checkout_session_map WHERE session_id = ${sessionId} LIMIT 1`);
+  return r.rows.length ? (r.rows[0] as { user_id: string }).user_id : null;
+}

@@ -1,7 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { Webhook } from 'standardwebhooks';
 import { dodoWebhookSecret } from '../config/env';
-import { applyDodoState, recordWebhook, userIdByCustomer, type DodoEventType } from './service';
+import {
+  applyDodoState,
+  recordWebhook,
+  userFromCheckoutSession,
+  userIdByCustomer,
+  type DodoEventType,
+} from './service';
 
 /**
  * Dodo webhook receiver. Registered as its own plugin so its raw-body content-type parser stays
@@ -35,12 +41,26 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
     const type = payload.type ?? '';
     const data = (payload.data ?? {}) as Record<string, any>;
     // Dodo nests the customer id under data.customer.customer_id (NOT data.customer_id); the
-    // product id lives in data.product_cart[]. Checkout metadata rides on subscription events.
+    // product id lives in data.product_cart[]. Resolve the user three ways, most-specific first:
+    // subscription events carry our metadata.user_id; payment.succeeded carries only the
+    // checkout_session_id (mapped at checkout); everything else falls back to the stored customer.
     const customerId = data?.customer?.customer_id ?? data?.customer_id;
-    const userId = data?.metadata?.user_id ?? (await userIdByCustomer(customerId));
-    if (type.startsWith('subscription.') && userId) {
+    const sessionId = data?.checkout_session_id ?? data?.session_id;
+    const userId =
+      data?.metadata?.user_id ??
+      (await userFromCheckoutSession(sessionId)) ??
+      (await userIdByCustomer(customerId));
+
+    // Test mode reliably sends `payment.succeeded` (with checkout_session_id + customer) but often
+    // NOT `subscription.active`. Treat a mapped subscription-checkout payment as activation so we
+    // always capture the customer id (needed for the billing portal) and grant Pro.
+    const billable = type.startsWith('subscription.') || type === 'payment.succeeded';
+    if (billable && userId) {
+      const evType: DodoEventType = type.startsWith('subscription.')
+        ? (type as DodoEventType)
+        : 'subscription.active';
       await applyDodoState(userId, {
-        type: type as DodoEventType,
+        type: evType,
         subscriptionId: data?.subscription_id,
         customerId,
         productId: data?.product_id ?? data?.product_cart?.[0]?.product_id,
@@ -49,6 +69,9 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
           ? new Date(Number(headers['webhook-timestamp']) * 1000)
           : new Date(),
       });
+      req.log.info({ type, mappedFrom: sessionId ? 'session' : 'meta/customer', hasCustomer: Boolean(customerId) }, 'dodo entitlement applied');
+    } else {
+      req.log.info({ type, hasSession: Boolean(sessionId), hasCustomer: Boolean(customerId) }, 'dodo webhook: no user mapped');
     }
     return reply.send({ ok: true });
   });

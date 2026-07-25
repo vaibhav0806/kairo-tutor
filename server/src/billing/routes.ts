@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { env, dodoApiKey, dodoProductId } from '../config/env';
 import { requireAuth } from '../plugins/auth-verify';
+import { rememberCheckoutSession } from './service';
 
 function dodoClient(): DodoPayments | null {
   if (!dodoApiKey) return null;
@@ -32,7 +33,17 @@ export async function billingRoutes(app: FastifyInstance) {
         ...(email ? { customer: { email } } : {}),
         metadata: { user_id: req.userId! },
         return_url: 'kairo://billing-done',
-      } as never)) as { checkout_url?: string; url?: string };
+      } as never)) as { checkout_url?: string; url?: string; session_id?: string; id?: string };
+
+      // Persist session_id → user so the reliable `payment.succeeded` webhook (which carries only
+      // the checkout_session_id, not our metadata) can still be attributed and capture the customer.
+      const sessionId = session.session_id ?? session.id;
+      if (sessionId) {
+        await rememberCheckoutSession(sessionId, req.userId!);
+        req.log.info({ sessionId }, 'checkout session stored');
+      } else {
+        req.log.warn({ keys: Object.keys(session) }, 'checkout: no session_id in response');
+      }
 
       return { checkout_url: session.checkout_url ?? session.url };
     },
