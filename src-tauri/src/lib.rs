@@ -628,6 +628,8 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
             "tray_settings" => {
                 klog!(app, info, "menu bar: settings selected");
                 if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.set_size(LogicalSize::new(460.0, 720.0));
+                    let _ = win.center();
                     let _ = win.show();
                     let _ = win.set_focus();
                     let _ = win.emit("settings:open", ());

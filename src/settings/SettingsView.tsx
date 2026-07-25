@@ -72,6 +72,10 @@ export function SettingsView() {
       void loadExtras();
     }).then((u) => unsubs.push(u));
     void listen('billing:changed', () => void refresh()).then((u) => unsubs.push(u));
+    void listen('settings:open', () => {
+      void refresh();
+      void loadExtras();
+    }).then((u) => unsubs.push(u));
     return () => unsubs.forEach((u) => u());
   }, [refresh, loadExtras]);
 
