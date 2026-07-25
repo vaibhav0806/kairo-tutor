@@ -13,13 +13,22 @@ const Env = z.object({
   OPENAI_API_KEY: z.string().optional(),
   SARVAM_API_KEY: z.string().optional(),
   ELEVENLABS_API_KEY: z.string().optional(),
-  DODO_PAYMENTS_API_KEY: z.string().optional(),
-  DODO_PAYMENTS_WEBHOOK_SECRET: z.string().optional(),
   DODO_ENV: z.enum(['test_mode', 'live_mode']).default('test_mode'),
-  // Set once the Pro products exist in the Dodo dashboard. Until then, billing routes 503.
-  DODO_PRO_MONTHLY_PRODUCT_ID: z.string().optional(),
-  DODO_PRO_YEARLY_PRODUCT_ID: z.string().optional(),
+  // Dodo keys — SAME names as the root .env (one source of truth, no confusion). The active
+  // key + webhook secret are selected by DODO_ENV (see dodoApiKey / dodoWebhookSecret below).
+  DODO_KAIRO_TEST_KEY: z.string().optional(),
+  DODO_KAIRO_LIVE_KEY: z.string().optional(),
+  DODO_TEST_WEBHOOK_SECRET: z.string().optional(),
+  DODO_LIVE_WEBHOOK_SECRET: z.string().optional(),
+  // The single Pro product (its id differs between the test + live Dodo dashboards).
+  DODO_KAIRO_PRODUCT_ID: z.string().optional(),
 });
 
 export const env = Env.parse(process.env);
 export type AppEnv = typeof env;
+
+// The Dodo API key + webhook secret in effect, chosen by DODO_ENV (test vs live).
+export const dodoApiKey =
+  env.DODO_ENV === 'live_mode' ? env.DODO_KAIRO_LIVE_KEY : env.DODO_KAIRO_TEST_KEY;
+export const dodoWebhookSecret =
+  env.DODO_ENV === 'live_mode' ? env.DODO_LIVE_WEBHOOK_SECRET : env.DODO_TEST_WEBHOOK_SECRET;

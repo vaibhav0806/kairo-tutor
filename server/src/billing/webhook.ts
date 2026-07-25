@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { Webhook } from 'standardwebhooks';
-import { env } from '../config/env';
+import { dodoWebhookSecret } from '../config/env';
 import { applyDodoState, recordWebhook, userIdByCustomer, type DodoEventType } from './service';
 
 /**
@@ -11,7 +11,7 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
   app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
 
   app.post('/webhooks/dodo', async (req, reply) => {
-    const secret = env.DODO_PAYMENTS_WEBHOOK_SECRET;
+    const secret = dodoWebhookSecret;
     if (!secret) return reply.status(503).send({ error: 'webhook_not_configured', code: 'provider_error' });
 
     const raw = (req.body as Buffer).toString('utf8');

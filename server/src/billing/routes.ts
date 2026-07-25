@@ -2,12 +2,12 @@ import DodoPayments from 'dodopayments';
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { env } from '../config/env';
+import { env, dodoApiKey } from '../config/env';
 import { requireAuth } from '../plugins/auth-verify';
 
 function dodoClient(): DodoPayments | null {
-  if (!env.DODO_PAYMENTS_API_KEY) return null;
-  return new DodoPayments({ bearerToken: env.DODO_PAYMENTS_API_KEY, environment: env.DODO_ENV });
+  if (!dodoApiKey) return null;
+  return new DodoPayments({ bearerToken: dodoApiKey, environment: env.DODO_ENV });
 }
 
 export async function billingRoutes(app: FastifyInstance) {
@@ -17,8 +17,8 @@ export async function billingRoutes(app: FastifyInstance) {
     { preHandler: requireAuth },
     async (req, reply) => {
       const client = dodoClient();
-      const productId =
-        req.body?.interval === 'yearly' ? env.DODO_PRO_YEARLY_PRODUCT_ID : env.DODO_PRO_MONTHLY_PRODUCT_ID;
+      // Single Pro product — interval kept in the body for future plans, but both map to it.
+      const productId = env.DODO_KAIRO_PRODUCT_ID;
       if (!client || !productId) {
         return reply.status(503).send({ error: 'billing_not_configured', code: 'provider_error' });
       }
