@@ -147,6 +147,11 @@ pub(crate) const MAX_TUTOR_STEPS: usize = 7;
 // tutor turn). Flip to `false` to run the A/B baseline: identical flow, no skill
 // knowledge injected and no skillSlug emitted.
 pub(crate) const SKILLS_ENABLED: bool = true;
+// Dump the FULL body of each skill pack into the log the first time that pack is injected
+// into a tutor system prompt (once per pack per process). This is the ground-truth proof
+// that the SKILL.md text reached the model — grep `skill body dump` in the log. Set to
+// `false` to log only slug + size + hash.
+pub(crate) const LOG_SKILL_BODY: bool = true;
 // Whether Kairo's OWN UI (notch, pet cursor, guidance box) shows up in screen
 // captures/recordings AND the tutor's own screenshot. Overridable at BUILD time via
 // KAIRO_SHOW_IN_CAPTURE (build.rs declares rerun-if-env-changed so a changed value

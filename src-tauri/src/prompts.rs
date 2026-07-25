@@ -72,20 +72,77 @@ pub(crate) fn build_tutor_system_prompt(input: &TutorTurnInput) -> String {
         lines.push("You have ALREADY said `spokenIntro` aloud this turn (a quick greeting/acknowledgment). Continue naturally from it — do NOT greet again, repeat it, or re-answer small talk like \"how are you\". Go straight into the answer or first step.".to_string());
     }
     // L2: inject the selected pack's full body. Authoritative app knowledge for this
-    // turn. Stateless calls → re-injected every turn (cheap; ~400-700 tokens).
-    if let Some(skill) = crate::skills::get(&input.skill_slug) {
-        lines.push(format!(
-            "ACTIVE SKILL — {}. This is authoritative domain knowledge for the app on \
+    // turn. Stateless calls → re-injected every turn.
+    match crate::skills::get(&input.skill_slug) {
+        Some(skill) => {
+            lines.push(format!(
+                "ACTIVE SKILL — {}. This is authoritative domain knowledge for the app on \
 screen; follow it when relevant. It contains NO screen coordinates — always find the \
 actual control in the screenshot.\n{}",
-            skill.name, skill.body
-        ));
+                skill.name, skill.body
+            ));
+            crate::klog!(
+                skills,
+                info,
+                slug = %skill.slug,
+                name = %skill.name,
+                body_chars = skill.body.len(),
+                body_hash = %format!("{:x}", crate::skills::body_hash(&skill.body)),
+                approx_tokens = skill.body.len() / 4,
+                "L2 skill body INJECTED into the tutor system prompt"
+            );
+            // Full-text proof that the pack's knowledge reached the model. One dump per
+            // pack per process (not per turn) so the log stays readable.
+            if crate::constants::LOG_SKILL_BODY {
+                log_skill_body_once(skill);
+            }
+        }
+        None if input.skill_slug.trim().is_empty() => {
+            crate::klog!(skills, debug, "no skill slug for this turn — tutor prompt has no L2 body");
+        }
+        None => {
+            crate::klog!(
+                skills,
+                warn,
+                slug = %input.skill_slug,
+                "skill slug is NOT in the registry — nothing injected"
+            );
+        }
     }
     if !input.constraints.is_empty() {
         lines.push(format!("Constraints: {}", input.constraints.join(" ")));
     }
     lines.push("Output ONLY the JSON object — no prose, no markdown, no code fences, nothing before { or after }.".to_string());
     lines.join("\n")
+}
+
+/// Dump a pack's full body to the log the FIRST time it is injected in this process, in
+/// numbered chunks (the logger truncates nothing, but chunking keeps `tail -F` readable).
+/// This is the ground-truth check that the SKILL.md text we authored is the text the model
+/// receives — grep `skill body dump` and read it back.
+fn log_skill_body_once(skill: &crate::skills::Skill) {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static DUMPED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let dumped = DUMPED.get_or_init(|| Mutex::new(HashSet::new()));
+    let Ok(mut seen) = dumped.lock() else { return };
+    if !seen.insert(skill.slug.clone()) {
+        return;
+    }
+    let chars: Vec<char> = skill.body.chars().collect();
+    let chunks: Vec<String> = chars.chunks(1500).map(|c| c.iter().collect()).collect();
+    let total = chunks.len();
+    for (i, chunk) in chunks.into_iter().enumerate() {
+        crate::klog!(
+            skills,
+            debug,
+            slug = %skill.slug,
+            part = i + 1,
+            of = total,
+            "skill body dump: {}",
+            chunk
+        );
+    }
 }
 
 /// The user's-name line for the NON-CACHED (dynamic) section of the gate + tutor prompts. Empty

@@ -1217,7 +1217,7 @@ mod tests {
                 }),
                 image_geometry: None,
             },
-            skill_slug: "figma-first-animation".to_string(),
+            skill_slug: "first-figma-motion-tutorial".to_string(),
             constraints: vec!["Return one short tutor step.".to_string()],
             recent_context: None,
             spoken_intro: None,

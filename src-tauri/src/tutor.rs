@@ -60,12 +60,41 @@ fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
     Ok(prompt)
 }
 
+/// Last checkpoint before the prompt leaves for the provider: assert the pack's body is
+/// really inside the assembled system prompt. `skill_chars` is measured off the FINAL
+/// string, so a mismatch here means the injection was lost between prompts.rs and the
+/// wire — not that the pack failed to load.
+fn log_prompt_skill_presence(system_prompt: &str, skill_slug: &str, path: &'static str) {
+    let expected = crate::skills::get(skill_slug);
+    let present = expected.is_some_and(|s| system_prompt.contains(s.body.as_str()));
+    let skill_chars = expected.map(|s| s.body.len()).unwrap_or(0);
+    crate::klog!(
+        skills,
+        info,
+        path = path,
+        slug = %skill_slug,
+        skill_in_prompt = present,
+        skill_chars = skill_chars,
+        system_chars = system_prompt.len(),
+        "tutor system prompt assembled"
+    );
+    if expected.is_some() && !present {
+        crate::klog!(
+            skills,
+            error,
+            slug = %skill_slug,
+            "skill body MISSING from the assembled system prompt"
+        );
+    }
+}
+
 pub(crate) fn build_openrouter_messages(
     input: &TutorTurnInput,
     include_screenshot: bool,
 ) -> Result<Value, String> {
     let user_prompt = build_tutor_user_prompt(input)?;
     let system_prompt = build_tutor_system_prompt(input);
+    log_prompt_skill_presence(&system_prompt, &input.skill_slug, "openrouter");
 
     if include_screenshot && input.screen.captured {
         if let (Some(mime_type), Some(image_base64)) =
@@ -377,6 +406,7 @@ pub(crate) async fn run_tutor_turn(
                 provider_env("KAIRO_TUTOR_VISION_PROVIDER", constants::TUTOR_VISION_PROVIDER)
                     .to_lowercase();
             let system_prompt = build_tutor_system_prompt(&input);
+            log_prompt_skill_presence(&system_prompt, &input.skill_slug, "vision");
             let user_text = build_tutor_user_prompt(&input)?;
             let media_type = input
                 .screen
@@ -620,6 +650,15 @@ fn repair_gate_skill(content: &str, app: &str, bundle: &str, title: &str) -> Str
         .and_then(Value::as_str)
         .unwrap_or("");
     let clean = crate::skills::resolve_slug(picked, app, bundle, title);
+    crate::klog!(
+        skills,
+        info,
+        gate_picked = %picked,
+        after_guardrail = %clean,
+        app = %app,
+        title = %title,
+        "gate skill routing"
+    );
     parsed["skillSlug"] = json!(clean);
     parsed.to_string()
 }
@@ -654,6 +693,14 @@ pub(crate) async fn run_gate_turn(
     } else {
         String::new()
     };
+    crate::klog!(
+        skills,
+        info,
+        enabled = constants::SKILLS_ENABLED,
+        packs = crate::skills::registry().len(),
+        l1_chars = skills_block.len(),
+        "gate turn: L1 skill list offered to the model"
+    );
     // Unified turn (RU5): recent turn-triples (continuity) + a "pointer on screen"
     // hint (mid-guide → bias needsScreen). Both are optional context lines.
     let history_line = match input.history.as_deref().map(str::trim) {
@@ -753,7 +800,7 @@ mod tests {
     fn repair_gate_skill_drops_wrong_app_and_fills_match() {
         // Model picked the Figma pack but frontmost app is Blender → dropped.
         let out = super::repair_gate_skill(
-            "{\"needsScreen\":true,\"voiceText\":\"\",\"skillSlug\":\"figma-first-animation\"}",
+            "{\"needsScreen\":true,\"voiceText\":\"\",\"skillSlug\":\"first-figma-motion-tutorial\"}",
             "Blender",
             "org.blender",
             "Blender",
@@ -766,6 +813,6 @@ mod tests {
             "com.figma.Desktop",
             "Untitled – Figma",
         );
-        assert!(out2.contains("figma-first-animation"));
+        assert!(out2.contains("first-figma-motion-tutorial"));
     }
 }

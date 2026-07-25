@@ -20,7 +20,7 @@ describe('tutor orchestrator', () => {
         byteLength: 6,
         displayBounds: { x: 0, y: 0, width: 900, height: 600, scaleFactor: 2 }
       },
-      skillSlug: 'figma-first-animation'
+      skillSlug: 'first-figma-motion-tutorial'
     });
 
     expect(input.userQuery).toBe('Help me animate this');
@@ -30,7 +30,7 @@ describe('tutor orchestrator', () => {
       imageMimeType: 'image/png',
       byteLength: 6
     });
-    expect(input.skillSlug).toBe('figma-first-animation');
+    expect(input.skillSlug).toBe('first-figma-motion-tutorial');
     expect(input.constraints).toContain('Return one short tutor step.');
     expect(input.constraints).toContain(
       'Do not invent app state that is not visible in the provided context.'
@@ -50,7 +50,7 @@ describe('tutor orchestrator', () => {
   test('uses the configured planner adapter for a tutor turn', async () => {
     const response = {
       mode: 'guided_lesson' as const,
-      skillSlug: 'figma-first-animation',
+      skillSlug: 'first-figma-motion-tutorial',
       voiceText: 'Click the cube.',
       screenText: 'Select the cube.',
       visualTargets: [],
@@ -63,14 +63,14 @@ describe('tutor orchestrator', () => {
       orchestrator.runTextTurn({
         request,
         screenCapture: null,
-        skillSlug: 'figma-first-animation'
+        skillSlug: 'first-figma-motion-tutorial'
       })
     ).resolves.toBe(response);
 
     expect(planner).toHaveBeenCalledWith(
       expect.objectContaining({
         userQuery: 'Help me animate this',
-        skillSlug: 'figma-first-animation'
+        skillSlug: 'first-figma-motion-tutorial'
       })
     );
   });
