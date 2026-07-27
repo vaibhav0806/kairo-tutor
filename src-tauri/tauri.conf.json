@@ -108,7 +108,10 @@
     "macOS": {
       "minimumSystemVersion": "14.2",
       "signingIdentity": "Kairo Tutor Local Dev",
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "dmg": {
+        "background": "../assets/brand/dmg-background.png"
+      }
     }
   }
 }

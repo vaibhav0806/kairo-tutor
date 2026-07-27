@@ -33,6 +33,7 @@ done
 python3 assemble.py                    # -> kairo-mark.svg + kairo-mark-mono.svg
 python3 compose_icon.py                # -> kairo-icon-1024.png (macOS squircle plate)
 python3 tray_template.py               # -> kairo-tray-template.png (menu-bar template)
+python3 dmg_background.py              # -> kairo-dmg-background.png (660x400 volume backdrop)
 ```
 
 Then copy the outputs to where the app reads them:
@@ -43,6 +44,7 @@ Then copy the outputs to where the app reads them:
 | `kairo-mark-mono.svg` | `assets/brand/` | source for the tray raster |
 | `kairo-icon-1024.png` | `assets/brand/` | `npm run tauri icon assets/brand/kairo-icon-1024.png` → Dock/Finder/About/notifications |
 | `kairo-tray-template.png` | `src-tauri/icons/tray-template.png` | the menu-bar status item (`lib.rs`) |
+| `kairo-dmg-background.png` | `assets/brand/dmg-background.png` | the DMG volume window (`tauri.conf.json` → `bundle.dmg.background`) |
 
 The intermediate `*.pbm` / `body|face|eyes.svg` files are throwaway — don't commit them.
 
@@ -56,3 +58,14 @@ The intermediate `*.pbm` / `body|face|eyes.svg` files are throwaway — don't co
   continuous (superellipse) corners, `--surface-deep`-family plate, mark at 496px wide.
 - **`kairo-tray-template.png`** — 28×36 (18pt @2x). `tray-icon` normalises the status item
   to 18pt tall via `NSImage.setSize`, so shipping 2x pixels keeps it crisp on Retina.
+- **`kairo-dmg-background.png`** — 660×400, matching Tauri's default `bundle.dmg.window_size`.
+  Finder draws it at natural size, so it must stay 1:1 with that window (no 2x variant), and the
+  arrow is positioned for the default icon slots at (180, 170) and (480, 170). If you change the
+  window size or icon positions in `tauri.conf.json`, change the constants in the script too.
+
+Regenerating the native icon set from `kairo-icon-1024.png` is a separate step:
+
+```bash
+npx tauri icon assets/brand/kairo-icon-1024.png   # writes src-tauri/icons/* (macOS/iOS/Android/Windows)
+cp public/brand/kairo-mark.svg src-tauri/icons/icon.svg   # the generator doesn't touch the SVG
+```

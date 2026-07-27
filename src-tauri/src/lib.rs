@@ -659,11 +659,28 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
             other => klog!(app, warn, id = other, "menu bar: unknown menu event"),
         });
 
-    // Reuse the app icon for the status item. It is a colored icon (not a
-    // monochrome template), so leave `icon_as_template` off — template mode would
-    // render a colored icon as a solid blob in the menu bar.
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
+    // The status item uses a dedicated TEMPLATE icon, not the app icon: a single-colour
+    // silhouette of the Kairo mark (body ring + eyes, face punched out) with real alpha, so
+    // AppKit tints it for the light/dark menu bar and the click-highlight state. Feeding it the
+    // colour app icon instead would render as a muddy blob at 18pt.
+    //
+    // `tray-icon` normalises the status item to 18pt tall via NSImage.setSize, so the asset ships
+    // at 2x pixels (28x36) and stays crisp on Retina. Regenerate with scripts/brand/tray_template.py.
+    const TRAY_TEMPLATE: &[u8] = include_bytes!("../icons/tray-template.png");
+    match image::load_from_memory_with_format(TRAY_TEMPLATE, image::ImageFormat::Png) {
+        Ok(decoded) => {
+            let rgba = decoded.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            let icon = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+            builder = builder.icon(icon).icon_as_template(true);
+            klog!(app, debug, w = width, h = height, "tray template icon loaded");
+        }
+        Err(error) => {
+            klog!(app, warn, "tray template decode failed: {error}; using the app icon");
+            if let Some(icon) = app.default_window_icon().cloned() {
+                builder = builder.icon(icon);
+            }
+        }
     }
 
     builder.build(app)?;
