@@ -18,6 +18,19 @@
   --s-shadow: 6px 6px 0 color-mix(in srgb, var(--s-accent) 18%, transparent);
 }
 
+/* The WebView extends under the native overlay titlebar. This is the ONLY drag target: it sits
+   alongside the real macOS traffic lights and leaves the settings content behaving normally. */
+.settings-window-titlebar {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  left: 72px;
+  right: 0;
+  height: 30px;
+  cursor: default;
+  user-select: none;
+}
+
 .settings-card {
   width: 100%;
   max-width: 404px;
@@ -28,17 +41,7 @@
   border-radius: var(--radius-card);
   background: var(--canvas-raised);
   box-shadow: var(--s-shadow);
-  cursor: grab;
-  user-select: none;
-}
-.settings-card:active {
-  cursor: grabbing;
-}
-.settings-card button,
-.settings-card input,
-.settings-card label {
-  cursor: revert;
-  user-select: auto;
+  cursor: default;
 }
 
 .settings-head {
@@ -242,20 +245,6 @@
   border-color: var(--canvas-raised);
   box-shadow: 0 0 0 2px var(--ink);
 }
-.s-swatch-custom {
-  position: relative;
-  overflow: hidden;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.s-swatch-custom input[type='color'] {
-  position: absolute;
-  inset: -4px;
-  opacity: 0;
-  cursor: pointer;
-}
-
 /* Confirmation text — the site's dark lime, the readable end of --verify. */
 .s-ok {
   font-size: 12px;

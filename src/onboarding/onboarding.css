@@ -30,16 +30,29 @@
   width: fit-content;
   max-width: 100%;
   touch-action: none;
-  cursor: grab;
   will-change: transform;
+  cursor: default;
 }
-.ob-drag-surface:active {
-  cursor: grabbing;
+.ob-card-dragbar {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  cursor: default;
+  touch-action: none;
 }
-.ob-drag-surface button,
-.ob-drag-surface input,
-.ob-drag-surface label {
-  cursor: revert;
+.ob-card-dragbar::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 32px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgb(11 13 18 / 0.12);
+  transform: translateX(-50%);
 }
 
 :root.onboarding-document,

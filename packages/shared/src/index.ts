@@ -15,6 +15,11 @@ export type SubStatus =
   | 'failed'
   | 'expired';
 
+/** Only these states represent a real Dodo subscription with a customer portal to open. */
+export function hasManageableSubscription(status: SubStatus): boolean {
+  return status === 'active' || status === 'on_hold' || status === 'cancelled';
+}
+
 /** Response of `GET /v1/me`. `usage.remaining` is null for unlimited (pro). */
 export interface MeResponse {
   user: { id: string; email: string };

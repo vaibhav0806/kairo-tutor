@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
-import type { MeResponse } from '@kairo/shared';
+import { hasManageableSubscription, type MeResponse } from '@kairo/shared';
 import { createNativeBridge, type NativePermissionStatus, type NativePermissionKey } from '../native/nativeBridge';
 import { getAuthStatus, onAuthChanged, signOut, startGoogleAuth } from '../onboarding/authClient';
 import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import { KairoLockup } from '../components/KairoMark';
+import { ACCENT_PRESETS } from '../onboarding/accentPresets';
 import './settings.css';
 
 type SkillInfo = { slug: string; name: string; description: string; enabled: boolean };
 
-const ACCENT_PRESETS = ['#7c3aed', '#2563eb', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
 const PERMISSIONS: { key: NativePermissionKey; label: string }[] = [
   { key: 'screenRecording', label: 'Screen Recording' },
   { key: 'accessibility', label: 'Accessibility' },
@@ -36,11 +36,8 @@ export function SettingsView() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [actionError, setActionError] = useState('');
 
-  const startWindowDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const target = event.target as Element;
-    if (target.closest('button, input, select, textarea, a, label, [role="switch"]')) return;
-    event.preventDefault();
-    klog('settings', 'debug', 'window drag started');
+  const startWindowDrag = useCallback(() => {
+    klog('settings', 'debug', 'titlebar drag started');
     void getCurrentWindow().startDragging().catch((error) => {
       klog('settings', 'warn', 'window drag failed', { error: String(error) });
     });
@@ -65,7 +62,16 @@ export function SettingsView() {
   }, [bridge]);
 
   const loadExtras = useCallback(async () => {
-    setAccentState(await getAccent().catch(() => DEFAULT_ACCENT));
+    const storedAccent = await getAccent().catch(() => DEFAULT_ACCENT);
+    const curatedAccent = ACCENT_PRESETS.find(
+      (preset) => preset.hex.toLowerCase() === storedAccent.toLowerCase()
+    )?.hex;
+    const nextAccent = curatedAccent ?? DEFAULT_ACCENT;
+    setAccentState(nextAccent);
+    if (!curatedAccent) {
+      klog('settings', 'info', 'legacy custom accent reset to curated default');
+      await setAccent(nextAccent);
+    }
     const n = await bridge.getUserName().catch(() => '');
     setName(n);
     setSavedName(n);
@@ -97,6 +103,9 @@ export function SettingsView() {
   }, [refresh, loadExtras]);
 
   const isPro = me?.plan === 'pro';
+  const canManageSubscription = Boolean(
+    isPro && me && hasManageableSubscription(me.status)
+  );
 
   const applyAccent = async (hex: string) => {
     setAccentState(hex);
@@ -131,7 +140,8 @@ export function SettingsView() {
   if (loading) {
     return (
       <div className="settings-scrim">
-        <div className="settings-card" onPointerDown={startWindowDrag}>
+        <div className="settings-window-titlebar" onPointerDown={startWindowDrag} />
+        <div className="settings-card">
           <p className="settings-muted">Loading…</p>
         </div>
       </div>
@@ -141,7 +151,8 @@ export function SettingsView() {
   if (!signedIn) {
     return (
       <div className="settings-scrim">
-        <div className="settings-card" onPointerDown={startWindowDrag}>
+        <div className="settings-window-titlebar" onPointerDown={startWindowDrag} />
+        <div className="settings-card">
           <KairoLockup className="settings-brand" />
           <h2 className="settings-h2">You're signed out</h2>
           <p className="settings-muted">Sign in to use Kairo.</p>
@@ -155,7 +166,8 @@ export function SettingsView() {
 
   return (
     <div className="settings-scrim">
-      <div className="settings-card" onPointerDown={startWindowDrag}>
+      <div className="settings-window-titlebar" onPointerDown={startWindowDrag} />
+      <div className="settings-card">
         <div className="settings-head">
           <KairoLockup className="settings-brand" />
           <span className="settings-title">Settings</span>
@@ -182,21 +194,23 @@ export function SettingsView() {
           <div className="s-label">Plan</div>
           <div className="settings-plan">
             {isPro ? (
-              <span className="settings-plan-badge settings-plan-pro">Kairo Pro · unlimited ✨</span>
+              <span className="settings-plan-badge settings-plan-pro">Kairo Pro · unlimited</span>
             ) : (
               <span className="settings-plan-badge">
                 Free · {me?.usage.used ?? 0} of {me?.usage.limit ?? 10} used
               </span>
             )}
           </div>
-          {isPro ? (
+          {canManageSubscription ? (
             <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(() => bridge.openBillingPortal())}>
               {busy ? 'Opening…' : 'Manage subscription'}
             </button>
-          ) : (
+          ) : !isPro ? (
             <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout())}>
               Upgrade to Pro — $10/mo
             </button>
+          ) : (
+            <p className="settings-muted">Complimentary access · no subscription to manage</p>
           )}
           {actionError ? (
             <p className="s-action-error" role="alert">
@@ -228,24 +242,16 @@ export function SettingsView() {
         <section className="s-section">
           <div className="s-label">Accent color</div>
           <div className="s-swatches">
-            {ACCENT_PRESETS.map((hex) => (
+            {ACCENT_PRESETS.map(({ hex, name }) => (
               <button
                 key={hex}
                 className={`s-swatch${accent.toLowerCase() === hex.toLowerCase() ? ' s-swatch-active' : ''}`}
                 style={{ background: hex }}
-                aria-label={hex}
+                aria-label={name}
+                title={name}
                 onClick={() => void applyAccent(hex)}
               />
             ))}
-            <label
-              className={`s-swatch s-swatch-custom${
-                ACCENT_PRESETS.some((p) => p.toLowerCase() === accent.toLowerCase()) ? '' : ' s-swatch-active'
-              }`}
-              style={{ background: accent }}
-              title="Custom color"
-            >
-              <input type="color" value={accent} onChange={(e) => void applyAccent(e.target.value)} />
-            </label>
           </div>
         </section>
 

@@ -1,16 +1,7 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode
-} from 'react';
-import { motion, useDragControls, useReducedMotion } from 'framer-motion';
+import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { motion, useDragControls } from 'framer-motion';
 import { invoke } from '@tauri-apps/api/core';
 import { klog } from '../../core/logger';
-
-const INTERACTIVE_SELECTOR =
-  'button, input, select, textarea, a, label, [role="button"], [role="radio"], [role="switch"]';
 
 /**
  * Makes a floating onboarding card feel like a small application window without moving the
@@ -28,7 +19,6 @@ export function DraggableSurface({
   const boundsRef = useRef<HTMLDivElement | null>(null);
   const reportFrameRef = useRef<number | null>(null);
   const controls = useDragControls();
-  const reduce = useReducedMotion();
 
   const reportHitRect = useCallback(() => {
     if (reportFrameRef.current !== null) return;
@@ -65,8 +55,6 @@ export function DraggableSurface({
   }, [reportHitRect]);
 
   const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const target = event.target as Element;
-    if (target.closest(INTERACTIVE_SELECTOR)) return;
     controls.start(event);
   };
 
@@ -82,9 +70,7 @@ export function DraggableSurface({
         dragConstraints={boundsRef}
         dragElastic={0.06}
         dragMomentum={false}
-        whileDrag={reduce ? undefined : { scale: 1.008 }}
         transition={{ type: 'spring', stiffness: 520, damping: 42 }}
-        onPointerDown={beginDrag}
         onDragStart={() => klog('onboarding', 'info', 'card drag started', { surface: label })}
         onDrag={reportHitRect}
         onDragEnd={() => {
@@ -92,6 +78,11 @@ export function DraggableSurface({
           klog('onboarding', 'info', 'card drag ended', { surface: label });
         }}
       >
+        <div
+          className="ob-card-dragbar"
+          aria-label="Drag window"
+          onPointerDown={beginDrag}
+        />
         {children}
       </motion.div>
     </>
