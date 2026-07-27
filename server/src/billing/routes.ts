@@ -1,102 +1,225 @@
 import DodoPayments from 'dodopayments';
+import type { Subscription, SubscriptionListResponse } from 'dodopayments/resources/subscriptions';
 import type { FastifyInstance } from 'fastify';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { env, dodoApiKey, dodoProductId } from '../config/env';
 import { requireAuth } from '../plugins/auth-verify';
-import { customerIdForEmail, rememberCheckoutSession, rememberDodoCustomer } from './service';
+import { ProviderError } from '../plugins/error-handler';
+import {
+  applyDodoState,
+  customerIdForEmail,
+  rememberCheckoutSession,
+  type BillingStatus,
+  type DodoSubscriptionState,
+} from './service';
 import { hasManageableSubscription, type SubStatus } from '@kairo/shared';
+
+type SubscriptionSnapshot = Pick<
+  Subscription,
+  | 'status'
+  | 'subscription_id'
+  | 'customer'
+  | 'product_id'
+  | 'next_billing_date'
+  | 'cancel_at_next_billing_date'
+>;
+
+type BillingProvider = Pick<DodoPayments, 'checkoutSessions' | 'customers' | 'subscriptions'>;
+
+type BillingAccount = {
+  status: SubStatus;
+  plan: 'free' | 'pro';
+  dodo_subscription_id: string | null;
+  dodo_customer_id: string | null;
+  email: string;
+};
 
 function dodoClient(): DodoPayments | null {
   if (!dodoApiKey) return null;
   return new DodoPayments({ bearerToken: dodoApiKey, environment: env.DODO_ENV });
 }
 
+function providerError(error: unknown, operation: string): ProviderError {
+  const message = error instanceof Error ? error.message : String(error);
+  return new ProviderError(`${operation}: ${message}`);
+}
+
+function billingReturnUrl(): string {
+  return `${env.PUBLIC_BASE_URL.replace(/\/$/, '')}/billing/return`;
+}
+
+async function readBillingAccount(userId: string): Promise<BillingAccount | undefined> {
+  const result = await db.execute(sql`
+    SELECT s.status, uc.plan, s.dodo_subscription_id, s.dodo_customer_id, u.email
+      FROM "user" u
+      JOIN usage_counter uc ON uc.user_id = u.id
+      LEFT JOIN subscription s ON s.user_id = u.id
+     WHERE u.id = ${userId}`);
+  return result.rows[0] as BillingAccount | undefined;
+}
+
+export function stateFromDodoSnapshot(
+  snapshot: SubscriptionSnapshot | SubscriptionListResponse,
+  occurredAt = new Date(),
+): DodoSubscriptionState {
+  return {
+    status: snapshot.status as BillingStatus,
+    subscriptionId: snapshot.subscription_id,
+    customerId: snapshot.customer.customer_id,
+    productId: snapshot.product_id,
+    currentPeriodEnd: snapshot.next_billing_date ? new Date(snapshot.next_billing_date) : null,
+    cancelAtPeriodEnd: snapshot.cancel_at_next_billing_date,
+    occurredAt,
+  };
+}
+
+/**
+ * Recover authoritative state directly from Dodo. This closes the gap if a webhook is delayed,
+ * exhausted its retries, or arrived before checkout attribution was committed.
+ */
+export async function reconcileBillingAccount(
+  client: BillingProvider,
+  userId: string,
+): Promise<{ synced: boolean; status?: BillingStatus }> {
+  const account = await readBillingAccount(userId);
+  if (!account) return { synced: false };
+
+  let snapshot: Subscription | SubscriptionListResponse | null = null;
+  if (account.dodo_subscription_id) {
+    snapshot = await client.subscriptions.retrieve(account.dodo_subscription_id);
+  } else {
+    let customerId = account.dodo_customer_id;
+    if (!customerId) {
+      const customers = await client.customers.list({ email: account.email, page_size: 20 });
+      customerId = customerIdForEmail(customers.items, account.email);
+    }
+    if (customerId && dodoProductId) {
+      const subscriptions = await client.subscriptions.list({
+        customer_id: customerId,
+        product_id: dodoProductId,
+        page_size: 20,
+      });
+      const candidates = [...subscriptions.items].sort((a, b) => {
+        const priority = (status: string) => (status === 'active' ? 3 : status === 'on_hold' ? 2 : status === 'pending' ? 1 : 0);
+        return priority(b.status) - priority(a.status) || Date.parse(b.created_at) - Date.parse(a.created_at);
+      });
+      snapshot = candidates[0] ?? null;
+    }
+  }
+
+  if (!snapshot || (dodoProductId && snapshot.product_id !== dodoProductId)) return { synced: false };
+  const state = stateFromDodoSnapshot(snapshot);
+  await applyDodoState(userId, state);
+  return { synced: true, status: state.status };
+}
+
 export async function billingRoutes(app: FastifyInstance) {
-  // Start a checkout for the Pro subscription (monthly or yearly). Opened in the system browser.
-  app.post<{ Body: { interval?: 'monthly' | 'yearly' } }>(
+  // Dodo returns here after both checkout and portal actions. The public HTTP page reliably hands
+  // control back to the desktop custom scheme and also leaves a clickable fallback.
+  app.get('/billing/return', async (_req, reply) => {
+    reply.type('text/html; charset=utf-8');
+    return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+      <title>Return to Kairo</title>
+      <style>body{font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0;background:#f7f7fb;color:#171717}
+      main{text-align:center}a{color:#665cff}</style>
+      <main><h1>Returning to Kairo…</h1><p><a href="kairo://billing-done">Open Kairo</a></p></main>
+      <script>location.replace("kairo://billing-done")</script>`;
+  });
+
+  app.post<{ Body: { interval?: 'monthly' } }>(
     '/v1/billing/checkout',
     { preHandler: requireAuth },
     async (req, reply) => {
+      const startedAt = performance.now();
       const client = dodoClient();
-      // Single Pro product — interval kept in the body for future plans, but both map to it.
       const productId = dodoProductId;
       if (!client || !productId) {
+        req.log.error({ environment: env.DODO_ENV }, 'checkout requested without complete billing configuration');
         return reply.status(503).send({ error: 'billing_not_configured', code: 'provider_error' });
       }
 
-      const u = await db.execute(sql`SELECT email FROM "user" WHERE id = ${req.userId!}`);
-      const email = (u.rows[0] as { email: string } | undefined)?.email;
-
-      // metadata.user_id lets the webhook map the payment back to our user.
-      const session = (await client.checkoutSessions.create({
-        product_cart: [{ product_id: productId, quantity: 1 }],
-        ...(email ? { customer: { email } } : {}),
-        metadata: { user_id: req.userId! },
-        return_url: 'kairo://billing-done',
-      } as never)) as { checkout_url?: string; url?: string; session_id?: string; id?: string };
-
-      // Persist session_id → user so the reliable `payment.succeeded` webhook (which carries only
-      // the checkout_session_id, not our metadata) can still be attributed and capture the customer.
-      const sessionId = session.session_id ?? session.id;
-      if (sessionId) {
-        await rememberCheckoutSession(sessionId, req.userId!);
-        req.log.info({ sessionId }, 'checkout session stored');
-      } else {
-        req.log.warn({ keys: Object.keys(session) }, 'checkout: no session_id in response');
+      // Reconcile first so a missed webhook cannot let an already-subscribed user buy twice.
+      try {
+        await reconcileBillingAccount(client, req.userId!);
+      } catch (error) {
+        req.log.warn({ err: error }, 'pre-checkout reconciliation failed; using stored state');
+      }
+      const account = await readBillingAccount(req.userId!);
+      if (account && (account.plan === 'pro' || ['pending', 'active', 'on_hold'].includes(account.status))) {
+        req.log.info({ status: account.status }, 'duplicate subscription checkout blocked');
+        return reply.status(409).send({ error: 'subscription_exists', code: 'subscription_exists' });
       }
 
-      return { checkout_url: session.checkout_url ?? session.url };
+      try {
+        const session = await client.checkoutSessions.create({
+          product_cart: [{ product_id: productId, quantity: 1 }],
+          ...(account?.email ? { customer: { email: account.email } } : {}),
+          metadata: { user_id: req.userId! },
+          return_url: billingReturnUrl(),
+          feature_flags: { redirect_immediately: true },
+        });
+        if (!session.session_id || !session.checkout_url) {
+          req.log.error(
+            { hasSessionId: Boolean(session.session_id), hasCheckoutUrl: Boolean(session.checkout_url) },
+            'checkout provider response incomplete',
+          );
+          return reply.status(502).send({ error: 'checkout_response_incomplete', code: 'provider_error' });
+        }
+
+        await rememberCheckoutSession(session.session_id, req.userId!);
+        req.log.info({ ms: Math.round(performance.now() - startedAt) }, 'checkout session ready');
+        return { checkout_url: session.checkout_url };
+      } catch (error) {
+        throw providerError(error, 'checkout session creation failed');
+      }
     },
   );
 
-  // Self-serve subscription management (cancel, update card, invoices).
+  // Called during post-checkout polling and before opening the portal.
+  app.post('/v1/billing/sync', { preHandler: requireAuth }, async (req) => {
+    const client = dodoClient();
+    if (!client) throw new ProviderError('billing reconciliation is not configured');
+    try {
+      const result = await reconcileBillingAccount(client, req.userId!);
+      req.log.info({ synced: result.synced, status: result.status ?? 'unchanged' }, 'billing reconciliation complete');
+      return result;
+    } catch (error) {
+      throw providerError(error, 'billing reconciliation failed');
+    }
+  });
+
   app.post('/v1/billing/portal', { preHandler: requireAuth }, async (req, reply) => {
     const client = dodoClient();
     if (!client) return reply.status(503).send({ error: 'billing_not_configured', code: 'provider_error' });
 
-    const s = await db.execute(sql`
-      SELECT s.status, s.dodo_customer_id, u.email
-        FROM subscription s
-        JOIN "user" u ON u.id = s.user_id
-       WHERE s.user_id = ${req.userId!}`);
-    const account = s.rows[0] as {
-      status: SubStatus;
-      dodo_customer_id: string | null;
-      email: string;
-    } | undefined;
+    try {
+      await reconcileBillingAccount(client, req.userId!);
+    } catch (error) {
+      req.log.warn({ err: error }, 'pre-portal reconciliation failed; using stored state');
+    }
+    const account = await readBillingAccount(req.userId!);
     if (!account || !hasManageableSubscription(account.status)) {
       req.log.info({ status: account?.status ?? 'missing' }, 'billing portal: no managed subscription');
-      return reply.status(409).send({
-        error: 'no_billing_subscription',
-        code: 'no_billing_subscription',
-      });
+      return reply.status(409).send({ error: 'no_billing_subscription', code: 'no_billing_subscription' });
     }
-    let customerId = account?.dodo_customer_id ?? null;
-
-    // Early test-mode checkouts could grant Pro from payment.succeeded without persisting the nested
-    // customer id. Recover once from Dodo's exact-email filter, then store the mapping permanently.
-    if (!customerId && account?.email) {
-      const customers = await client.customers.list({ email: account.email, page_size: 20 });
-      customerId = customerIdForEmail(customers.items, account.email);
-      if (customerId) {
-        await rememberDodoCustomer(req.userId!, customerId);
-        req.log.info('billing portal: recovered missing customer mapping');
-      }
-    }
-    if (!customerId) {
+    if (!account.dodo_customer_id) {
       req.log.warn('billing portal: customer mapping unavailable');
       return reply.status(409).send({ error: 'customer_not_ready', code: 'billing_sync_pending' });
     }
 
-    const portal = await client.customers.customerPortal.create(customerId, {
-      return_url: 'kairo://billing-done',
-    });
-    if (!portal.link) {
-      req.log.error('billing portal: provider returned no link');
-      return reply.status(502).send({ error: 'portal_link_missing', code: 'provider_error' });
+    try {
+      const portal = await client.customers.customerPortal.create(account.dodo_customer_id, {
+        return_url: billingReturnUrl(),
+      });
+      if (!portal.link) {
+        req.log.error('billing portal: provider returned no link');
+        return reply.status(502).send({ error: 'portal_link_missing', code: 'provider_error' });
+      }
+      req.log.info('billing portal session created');
+      return { url: portal.link };
+    } catch (error) {
+      throw providerError(error, 'customer portal creation failed');
     }
-    req.log.info('billing portal session created');
-    return { url: portal.link };
   });
 }

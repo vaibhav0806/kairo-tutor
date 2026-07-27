@@ -48,17 +48,20 @@ export function SettingsView() {
     void getCurrentWindow().setSize(new LogicalSize(460, 720)).catch(() => {});
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<MeResponse | null> => {
     const status = await getAuthStatus();
     setSignedIn(status.signed_in);
     if (status.signed_in) {
       const next = await bridge.fetchMe();
       setMe(next);
       if (next) void bridge.refreshTray(next.plan === 'pro');
+      setLoading(false);
+      return next;
     } else {
       setMe(null);
     }
     setLoading(false);
+    return null;
   }, [bridge]);
 
   const loadExtras = useCallback(async () => {
@@ -89,7 +92,30 @@ export function SettingsView() {
       void refresh();
       void loadExtras();
     }).then((u) => unsubs.push(u));
-    void listen('billing:changed', () => void refresh()).then((u) => unsubs.push(u));
+    void listen('billing:changed', () => {
+      void (async () => {
+        // Webhooks and the browser deep-link race each other. Reconcile with Dodo and poll briefly
+        // so checkout activation or portal cancellation appears without reopening Settings.
+        for (let attempt = 1; attempt <= 6; attempt += 1) {
+          const result = await bridge.syncBilling().catch((error) => {
+            klog('settings', 'warn', 'billing reconciliation attempt failed', {
+              attempt,
+              error: String(error),
+            });
+            return { synced: false };
+          });
+          const next = await refresh();
+          klog('settings', 'info', 'billing state refreshed', {
+            attempt,
+            synced: result.synced,
+            plan: next?.plan ?? 'unknown',
+            status: next?.status ?? 'unknown',
+          });
+          if (result.synced) break;
+          await new Promise((resolve) => window.setTimeout(resolve, attempt * 750));
+        }
+      })();
+    }).then((u) => unsubs.push(u));
     void listen('settings:open', () => {
       void refresh();
       void loadExtras();
@@ -103,9 +129,15 @@ export function SettingsView() {
   }, [refresh, loadExtras]);
 
   const isPro = me?.plan === 'pro';
+  const isPending = me?.status === 'pending';
   const canManageSubscription = Boolean(
     isPro && me && hasManageableSubscription(me.status)
   );
+  const periodLabel = me?.renews_at
+    ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(
+        new Date(me.renews_at),
+      )
+    : '';
 
   const applyAccent = async (hex: string) => {
     setAccentState(hex);
@@ -201,9 +233,20 @@ export function SettingsView() {
               </span>
             )}
           </div>
+          {isPro && me?.cancel_at_period_end ? (
+            <p className="settings-muted">
+              Cancels at the end of your billing period{periodLabel ? ` · ${periodLabel}` : ''}
+            </p>
+          ) : isPro && me?.status === 'on_hold' ? (
+            <p className="settings-muted">Payment needs attention · update it in subscription settings</p>
+          ) : null}
           {canManageSubscription ? (
             <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(() => bridge.openBillingPortal())}>
               {busy ? 'Opening…' : 'Manage subscription'}
+            </button>
+          ) : isPending ? (
+            <button className="s-btn s-btn-primary" disabled>
+              Checkout processing…
             </button>
           ) : !isPro ? (
             <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout())}>

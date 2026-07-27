@@ -156,6 +156,7 @@ export type NativeBridge = {
   // Billing (proxy mode). fetchMe returns plan/usage/account; null when signed out / on error.
   fetchMe(): Promise<MeResponse | null>;
   startCheckout(): Promise<void>;
+  syncBilling(): Promise<{ synced: boolean; status?: string }>;
   openBillingPortal(): Promise<void>;
   refreshTray(isPro: boolean): Promise<void>;
   captureScreen(): Promise<NativeScreenCapture>;
@@ -456,6 +457,10 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
 
     async startCheckout() {
       await invoke<void>('start_checkout');
+    },
+
+    async syncBilling() {
+      return invoke<{ synced: boolean; status?: string }>('sync_billing');
     },
 
     async openBillingPortal() {

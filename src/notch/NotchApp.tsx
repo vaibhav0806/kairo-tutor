@@ -71,14 +71,6 @@ export function NotchApp() {
   const [voiceCaptureState, setVoiceCaptureState] = useState<VoiceCaptureState>('idle');
   // True when the last push-to-talk was blocked by the free-request limit — shows the upgrade pill.
   const [paywalled, setPaywalled] = useState(false);
-  // Clear the pill the moment the user upgrades (kairo://billing-done → billing:changed).
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    void listen('billing:changed', () => setPaywalled(false)).then((u) => {
-      un = u;
-    });
-    return () => un?.();
-  }, []);
   const isSubmittingRef = useRef(false);
   const voiceCaptureStateRef = useRef<VoiceCaptureState>('idle');
   // The status capsule element, for writing the live mic level (--mic-level).
@@ -162,6 +154,20 @@ export function NotchApp() {
   // pointer arms so the first wrong-button nudge on it always fires (clock-independent).
   const lastNudgeAtRef = useRef(Number.NEGATIVE_INFINITY);
   const nativeBridge = useMemo(() => createNativeBridge(), []);
+  // Re-read authoritative quota after a billing return. Never assume a browser redirect means the
+  // payment succeeded—the backend entitlement remains the source of truth.
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    void listen('billing:changed', () => {
+      void nativeBridge.checkPaywalled().then((next) => {
+        setPaywalled(next);
+        klog('notch', 'info', 'billing return quota refreshed', { paywalled: next });
+      });
+    }).then((u) => {
+      un = u;
+    });
+    return () => un?.();
+  }, [nativeBridge]);
   // The user's name (from onboarding / their Google account) is cached natively; read it at launch
   // so every tutor/gate turn can pass it into the NON-cached prompt section (§12). Re-read on a
   // fresh sign-in during a live session.

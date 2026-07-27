@@ -9,6 +9,8 @@ import {
   isProNow,
   recordWebhook,
 } from '../src/billing/service';
+import { reconcileBillingAccount, stateFromDodoSnapshot } from '../src/billing/routes';
+import { dodoProductId } from '../src/config/env';
 
 const uid = 'test-user-billing';
 
@@ -116,5 +118,34 @@ describe('customerIdForEmail', () => {
     ];
     expect(customerIdForEmail(customers, 'founder@example.com')).toBe('cus_right');
     expect(customerIdForEmail(customers, 'founder+other@example.com')).toBeNull();
+  });
+});
+
+describe('provider reconciliation', () => {
+  it('maps a scheduled-cancellation snapshot without revoking paid access', async () => {
+    const nextBilling = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const snapshot = {
+      status: 'active' as const,
+      subscription_id: 'sub_1',
+      customer: { customer_id: 'cus_1', email: 'bl@t.dev', name: 'Bl' },
+      product_id: dodoProductId ?? 'product_test',
+      next_billing_date: nextBilling,
+      cancel_at_next_billing_date: true,
+    };
+    expect(stateFromDodoSnapshot(snapshot)).toMatchObject({
+      status: 'active',
+      cancelAtPeriodEnd: true,
+      subscriptionId: 'sub_1',
+      customerId: 'cus_1',
+    });
+
+    const client = {
+      subscriptions: { retrieve: async () => snapshot },
+      customers: {},
+      checkoutSessions: {},
+    };
+    const result = await reconcileBillingAccount(client as never, uid);
+    expect(result).toEqual({ synced: true, status: 'active' });
+    expect(await planOf()).toBe('pro');
   });
 });

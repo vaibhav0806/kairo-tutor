@@ -1052,6 +1052,7 @@ pub fn run() {
             proxy::check_paywalled,
             proxy::fetch_me,
             proxy::start_checkout,
+            proxy::sync_billing,
             proxy::open_billing_portal,
             refresh_tray,
             open_external,

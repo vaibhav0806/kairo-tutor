@@ -249,6 +249,11 @@ pub(crate) async fn fetch_me(app: AppHandle) -> Option<Value> {
 
 /// Open the system browser at `url` (macOS `open`, same as the OAuth flow).
 fn open_in_browser(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| "billing returned an invalid URL".to_string())?;
+    if parsed.scheme() != "https" {
+        crate::klog!(app, error, scheme = parsed.scheme(), "refused non-HTTPS billing URL");
+        return Err("billing returned an unsafe URL".to_string());
+    }
     std::process::Command::new("open")
         .arg(url)
         .spawn()
@@ -256,67 +261,78 @@ fn open_in_browser(url: &str) -> Result<(), String> {
         .map_err(|error| format!("failed to open browser: {error}"))
 }
 
-/// Start a Pro checkout: POST `/v1/billing/checkout` → open the returned `checkout_url`. Dodo's
-/// success page redirects to `kairo://billing-done`, which refreshes `/v1/me` (see lib.rs).
-#[tauri::command]
-pub(crate) async fn start_checkout(app: AppHandle) -> Result<(), String> {
-    let jwt = fetch_jwt(&app).await.ok_or_else(|| "signed out".to_string())?;
-    let url = format!("{}/v1/billing/checkout", backend_url());
+fn billing_error_message(code: &str, operation: &str) -> String {
+    match code {
+        "subscription_exists" => "You already have an active or pending subscription.".to_string(),
+        "no_billing_subscription" => "There is no subscription to manage yet.".to_string(),
+        "billing_sync_pending" => {
+            "Your billing account is still syncing. Please try again in a moment.".to_string()
+        }
+        "provider_error" => format!("{operation} is temporarily unavailable. Please try again."),
+        _ => format!("Could not {operation}. Please try again."),
+    }
+}
+
+async fn billing_post(app: &AppHandle, path: &str, operation: &str) -> Result<Value, String> {
+    let jwt = fetch_jwt(app).await.ok_or_else(|| "signed out".to_string())?;
     let response = shared_http_client()
-        .post(&url)
+        .post(format!("{}{}", backend_url(), path))
         .bearer_auth(jwt)
-        .json(&serde_json::json!({ "interval": "monthly" }))
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(30))
         .send()
         .await
-        .map_err(|error| error.to_string())?;
-    let body: Value = response.json().await.map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            crate::klog!(app, error, operation, "billing network request failed: {error}");
+            format!("Could not {operation}. Check your connection and try again.")
+        })?;
+    let status = response.status();
+    let body: Value = response.json().await.map_err(|error| {
+        crate::klog!(app, error, operation, status = status.as_u16(), "billing response parse failed: {error}");
+        format!("Could not {operation}. The server returned an invalid response.")
+    })?;
+    if !status.is_success() {
+        let code = body.get("code").and_then(Value::as_str).unwrap_or("billing_error");
+        crate::klog!(app, warn, operation, status = status.as_u16(), code, "billing request failed");
+        return Err(billing_error_message(code, operation));
+    }
+    Ok(body)
+}
+
+/// Start a Pro checkout and open Dodo's returned HTTPS URL.
+#[tauri::command]
+pub(crate) async fn start_checkout(app: AppHandle) -> Result<(), String> {
+    let _timer = crate::klog::timer("app", "billing_checkout");
+    let body = billing_post(&app, "/v1/billing/checkout", "start checkout").await?;
     let checkout_url = body
         .get("checkout_url")
         .and_then(Value::as_str)
-        .ok_or_else(|| "no checkout_url in response".to_string())?;
+        .ok_or_else(|| {
+            crate::klog!(app, error, "successful checkout response missing checkout_url");
+            "Could not start checkout. The server returned an incomplete response.".to_string()
+        })?;
     crate::klog!(app, info, "billing: opening checkout in browser");
     open_in_browser(checkout_url)
+}
+
+/// Ask the backend to reconcile the local entitlement against Dodo.
+#[tauri::command]
+pub(crate) async fn sync_billing(app: AppHandle) -> Result<Value, String> {
+    let _timer = crate::klog::timer("app", "billing_sync");
+    billing_post(&app, "/v1/billing/sync", "sync billing").await
 }
 
 /// Open the Dodo customer portal (manage / cancel): POST `/v1/billing/portal` → open the url.
 #[tauri::command]
 pub(crate) async fn open_billing_portal(app: AppHandle) -> Result<(), String> {
     let _timer = crate::klog::timer("app", "billing_portal");
-    let jwt = fetch_jwt(&app).await.ok_or_else(|| "signed out".to_string())?;
-    let url = format!("{}/v1/billing/portal", backend_url());
-    let response = shared_http_client()
-        .post(&url)
-        .bearer_auth(jwt)
-        .timeout(Duration::from_secs(15))
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    let status = response.status();
-    let body: Value = response.json().await.map_err(|error| error.to_string())?;
-    if !status.is_success() {
-        let code = body
-            .get("code")
-            .and_then(Value::as_str)
-            .unwrap_or("billing_error");
-        crate::klog!(app, warn, status = status.as_u16(), code, "billing portal request failed");
-        return Err(match code {
-            "no_billing_subscription" => {
-                "This Pro access is complimentary and has no subscription to manage.".to_string()
-            }
-            "billing_sync_pending" => {
-                "Your billing account is still syncing. Please try again in a moment.".to_string()
-            }
-            "provider_error" => {
-                "The subscription portal is temporarily unavailable. Please try again.".to_string()
-            }
-            _ => "Could not open your subscription settings. Please try again.".to_string(),
-        });
-    }
+    let body = billing_post(&app, "/v1/billing/portal", "open subscription settings").await?;
     let portal_url = body
         .get("url")
         .and_then(Value::as_str)
-        .ok_or_else(|| "no portal url in response".to_string())?;
+        .ok_or_else(|| {
+            crate::klog!(app, error, "successful portal response missing url");
+            "Could not open subscription settings. The server returned an incomplete response.".to_string()
+        })?;
     crate::klog!(app, info, "billing: opening customer portal in browser");
     open_in_browser(portal_url)
 }
@@ -347,5 +363,17 @@ mod tests {
         assert_eq!(backend_url_for_target(Some("hosted")), KAIRO_HOSTED_BACKEND_URL);
         assert_eq!(backend_url_for_target(None), KAIRO_HOSTED_BACKEND_URL);
         assert_eq!(backend_url_for_target(Some("typo")), KAIRO_HOSTED_BACKEND_URL);
+    }
+
+    #[test]
+    fn billing_errors_are_actionable_instead_of_missing_field_messages() {
+        assert_eq!(
+            super::billing_error_message("subscription_exists", "start checkout"),
+            "You already have an active or pending subscription."
+        );
+        assert_eq!(
+            super::billing_error_message("provider_error", "start checkout"),
+            "start checkout is temporarily unavailable. Please try again."
+        );
     }
 }
