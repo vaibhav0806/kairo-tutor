@@ -17,6 +17,31 @@
   place-items: center;
 }
 
+/* The orchestrator is a full-display native panel, but each visible card behaves like its own small
+   application surface. Motion constrains the wrapper to this safe viewport inset. */
+.ob-drag-bounds {
+  position: fixed;
+  inset: 16px;
+  pointer-events: none;
+}
+.ob-drag-surface {
+  pointer-events: auto;
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  touch-action: none;
+  cursor: grab;
+  will-change: transform;
+}
+.ob-drag-surface:active {
+  cursor: grabbing;
+}
+.ob-drag-surface button,
+.ob-drag-surface input,
+.ob-drag-surface label {
+  cursor: revert;
+}
+
 :root.onboarding-document,
 body.onboarding-document {
   background: transparent;

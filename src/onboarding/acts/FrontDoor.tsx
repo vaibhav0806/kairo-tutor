@@ -10,6 +10,7 @@ import { ACT_LINES, HERO_COPY } from '../copy';
 import { ACCENT_PRESETS } from '../accentPresets';
 import blenderShot from '../../assets/onboarding/blender-viewport.webp';
 import { KairoLockup, KairoMark } from '../../components/KairoMark';
+import { DraggableSurface } from './DraggableSurface';
 
 // The fixed hero violet (landing accent). Act 0 shows BEFORE the color step, so the hero is
 // deliberately decoupled from the user's chosen accent — it always reads in this violet.
@@ -86,33 +87,6 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
     // Hide the pet through the hero + color steps — it's revealed at the collapse (cursor:entrance).
     void emit('cursor:suppress', {});
     klog('onboarding', 'info', 'front door: hero shown');
-  }, []);
-
-  // Report the card's rect so the native hit-tracker makes the full-screen onboarding window
-  // click-through EVERYWHERE except the card — the user can click the desktop around the hero/color
-  // card (founder: WELCOME must not take over the whole screen). Cleared on unmount → the window
-  // returns to the per-act toggle (the next act owns click-through). Re-reported on the spring-entrance
-  // settle (transforms don't trip ResizeObserver) + on resize/reflow so the rect stays accurate.
-  useEffect(() => {
-    const el = cardRef.current;
-    if (!el) return;
-    const report = () => {
-      const r = el.getBoundingClientRect();
-      void invoke('set_onboarding_hit_rect', {
-        rect: { x: r.left, y: r.top, width: r.width, height: r.height }
-      }).catch(() => {});
-    };
-    report();
-    const settle = window.setTimeout(report, 420);
-    const ro = new ResizeObserver(report);
-    ro.observe(el);
-    window.addEventListener('resize', report);
-    return () => {
-      window.clearTimeout(settle);
-      ro.disconnect();
-      window.removeEventListener('resize', report);
-      void invoke('set_onboarding_hit_rect', { rect: null }).catch(() => {});
-    };
   }, []);
 
   // The color step is SILENT (no spoken line) — jumping into speech before any greeting felt abrupt.
@@ -248,22 +222,23 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
   return (
     <>
       <div className="ob-vignette" aria-hidden />
-      <motion.div
-        ref={cardRef}
-        className="ob-card ob-card--hero"
-        initial={reduce ? false : { opacity: 0, y: 10, scale: 0.97 }}
-        animate={
-          collapse
-            ? { x: collapse.dx, y: collapse.dy, scale: 0.02, opacity: 0 }
-            : { x: 0, y: 0, scale: 1, opacity: 1 }
-        }
-        transition={
-          collapse
-            ? { type: 'tween', ease: [0.4, 0, 1, 1], duration: reduce ? 0 : 1.2 }
-            : { type: 'spring', stiffness: 260, damping: 26 }
-        }
-        onAnimationComplete={() => void onCardAnimationComplete()}
-      >
+      <DraggableSurface label="front-door">
+        <motion.div
+          ref={cardRef}
+          className="ob-card ob-card--hero"
+          initial={reduce ? false : { opacity: 0, y: 10, scale: 0.97 }}
+          animate={
+            collapse
+              ? { x: collapse.dx, y: collapse.dy, scale: 0.02, opacity: 0 }
+              : { x: 0, y: 0, scale: 1, opacity: 1 }
+          }
+          transition={
+            collapse
+              ? { type: 'tween', ease: [0.4, 0, 1, 1], duration: reduce ? 0 : 1.2 }
+              : { type: 'spring', stiffness: 260, damping: 26 }
+          }
+          onAnimationComplete={() => void onCardAnimationComplete()}
+        >
         <div className="ob-hero-left">
           <AnimatePresence mode="wait" initial={false}>
             {phase === 'hero' ? (
@@ -360,8 +335,8 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
             <circle ref={inkEndRef} className="ob-hero-ink-end" cx="300" cy="182" r="5" />
           </svg>
         </div>
-      </motion.div>
+        </motion.div>
+      </DraggableSurface>
     </>
   );
 }
-

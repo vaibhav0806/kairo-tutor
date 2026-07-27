@@ -7,6 +7,7 @@ import { LuUsers, LuEllipsis } from 'react-icons/lu';
 import { useCoach } from '../useCoach';
 import { ACT5_SOURCE } from '../copy';
 import { KairoLockup } from '../../components/KairoMark';
+import { DraggableSurface } from './DraggableSurface';
 
 // "Where'd you hear about us?" (v2 redesign) — a light Editorial card with an icon grid. No messaging
 // icon, no free-text field; every source (incl. A friend / Other) is a one-tap button. The label string
@@ -40,22 +41,24 @@ export function Act5Source({ onPick }: { onPick: (source: string) => void }) {
   return (
     <>
       <div className="ob-vignette" aria-hidden />
-      <div className="ob-card ob-card--source">
-        <KairoLockup className="ob-source-mark" />
-        <span className="ob-source-kicker">one last thing</span>
-        <h1 className="ob-source-title">Where&apos;d you find us?</h1>
-        <p className="ob-source-sub">
-          We&apos;re a small team — knowing where you heard about us helps a ton.
-        </p>
-        <div className="ob-source-grid">
-          {SOURCES.map(({ label, Icon }) => (
-            <button key={label} type="button" className="ob-source-btn" onClick={() => pick(label)}>
-              <Icon className="ob-source-ico" aria-hidden="true" />
-              <span>{label}</span>
-            </button>
-          ))}
+      <DraggableSurface label="source">
+        <div className="ob-card ob-card--source">
+          <KairoLockup className="ob-source-mark" />
+          <span className="ob-source-kicker">one last thing</span>
+          <h1 className="ob-source-title">Where&apos;d you find us?</h1>
+          <p className="ob-source-sub">
+            We&apos;re a small team — knowing where you heard about us helps a ton.
+          </p>
+          <div className="ob-source-grid">
+            {SOURCES.map(({ label, Icon }) => (
+              <button key={label} type="button" className="ob-source-btn" onClick={() => pick(label)}>
+                <Icon className="ob-source-ico" aria-hidden="true" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      </DraggableSurface>
     </>
   );
 }

@@ -28,6 +28,17 @@
   border-radius: var(--radius-card);
   background: var(--canvas-raised);
   box-shadow: var(--s-shadow);
+  cursor: grab;
+  user-select: none;
+}
+.settings-card:active {
+  cursor: grabbing;
+}
+.settings-card button,
+.settings-card input,
+.settings-card label {
+  cursor: revert;
+  user-select: auto;
 }
 
 .settings-head {

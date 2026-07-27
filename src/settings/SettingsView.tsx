@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
@@ -34,6 +34,16 @@ export function SettingsView() {
   const [launchAtLogin, setLaunch] = useState(false);
   const [version, setVersion] = useState('');
   const [skillsOpen, setSkillsOpen] = useState(false);
+
+  const startWindowDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target as Element;
+    if (target.closest('button, input, select, textarea, a, label, [role="switch"]')) return;
+    event.preventDefault();
+    klog('settings', 'debug', 'window drag started');
+    void getCurrentWindow().startDragging().catch((error) => {
+      klog('settings', 'warn', 'window drag failed', { error: String(error) });
+    });
+  }, []);
 
   // The main window is the big permission-recovery window; shrink it to hug the settings card.
   useEffect(() => {
@@ -117,7 +127,7 @@ export function SettingsView() {
   if (loading) {
     return (
       <div className="settings-scrim">
-        <div className="settings-card">
+        <div className="settings-card" onPointerDown={startWindowDrag}>
           <p className="settings-muted">Loading…</p>
         </div>
       </div>
@@ -127,7 +137,7 @@ export function SettingsView() {
   if (!signedIn) {
     return (
       <div className="settings-scrim">
-        <div className="settings-card">
+        <div className="settings-card" onPointerDown={startWindowDrag}>
           <KairoLockup className="settings-brand" />
           <h2 className="settings-h2">You're signed out</h2>
           <p className="settings-muted">Sign in to use Kairo.</p>
@@ -141,7 +151,7 @@ export function SettingsView() {
 
   return (
     <div className="settings-scrim">
-      <div className="settings-card">
+      <div className="settings-card" onPointerDown={startWindowDrag}>
         <div className="settings-head">
           <KairoLockup className="settings-brand" />
           <span className="settings-title">Settings</span>
