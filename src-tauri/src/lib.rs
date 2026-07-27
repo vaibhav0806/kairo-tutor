@@ -979,9 +979,19 @@ pub fn run() {
                             continue;
                         }
                         if url.host_str() == Some("billing-done") {
-                            crate::klog!(auth, info, "deep link: billing-done → focus app + notify");
+                            let status = url
+                                .query_pairs()
+                                .find(|(key, _)| key == "status")
+                                .map(|(_, value)| value.into_owned())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            crate::klog!(
+                                auth,
+                                info,
+                                status = status.as_str(),
+                                "deep link: billing-done → focus app + notify"
+                            );
                             crate::onboarding::focus_app_window(&handle, "main");
-                            let _ = handle.emit("billing:changed", ());
+                            let _ = handle.emit("billing:changed", status);
                             continue;
                         }
                         crate::onboarding::focus_onboarding_window(&handle);

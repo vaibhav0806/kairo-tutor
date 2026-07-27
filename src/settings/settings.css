@@ -111,6 +111,31 @@
   font-size: 12px;
   line-height: 1.4;
 }
+.s-billing-notice {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-inset);
+  background: var(--surface-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.s-billing-notice strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+.s-billing-notice span {
+  color: var(--ink-muted);
+}
+.s-billing-notice-progress {
+  border-color: color-mix(in srgb, var(--s-accent) 32%, var(--hairline));
+  background: color-mix(in srgb, var(--s-accent) 7%, var(--canvas-raised));
+}
+.s-billing-notice-error {
+  border-color: color-mix(in srgb, #c83c32 34%, var(--hairline));
+  background: color-mix(in srgb, #c83c32 6%, var(--canvas-raised));
+}
 
 .settings-row {
   display: flex;

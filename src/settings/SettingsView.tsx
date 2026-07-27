@@ -10,6 +10,12 @@ import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import { KairoLockup } from '../components/KairoMark';
 import { ACCENT_PRESETS } from '../onboarding/accentPresets';
+import {
+  billingNotice,
+  normalizeBillingReturnStatus,
+  shouldContinueBillingPoll,
+  type BillingReturnStatus,
+} from './billingState';
 import './settings.css';
 
 type SkillInfo = { slug: string; name: string; description: string; enabled: boolean };
@@ -35,6 +41,7 @@ export function SettingsView() {
   const [version, setVersion] = useState('');
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [billingReturnStatus, setBillingReturnStatus] = useState<BillingReturnStatus>('unknown');
 
   const startWindowDrag = useCallback(() => {
     klog('settings', 'debug', 'titlebar drag started');
@@ -84,6 +91,30 @@ export function SettingsView() {
     setVersion(await getVersion().catch(() => ''));
   }, [bridge]);
 
+  const reconcileAndRefresh = useCallback(async () => {
+    // A browser return can beat Dodo's final subscription state. Keep polling only while the
+    // provider is genuinely pending or /v1/me has not caught up with the reconciled snapshot.
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      const result = await bridge.syncBilling().catch((error) => {
+        klog('settings', 'warn', 'billing reconciliation attempt failed', {
+          attempt,
+          error: String(error),
+        });
+        return { synced: false, status: undefined };
+      });
+      const next = await refresh();
+      klog('settings', 'info', 'billing state refreshed', {
+        attempt,
+        synced: result.synced,
+        plan: next?.plan ?? 'unknown',
+        status: next?.status ?? 'unknown',
+      });
+      if (next?.plan === 'pro') setBillingReturnStatus('unknown');
+      if (result.synced && !shouldContinueBillingPoll(result.status, next)) break;
+      await new Promise((resolve) => window.setTimeout(resolve, attempt * 750));
+    }
+  }, [bridge, refresh]);
+
   useEffect(() => {
     void refresh();
     void loadExtras();
@@ -92,29 +123,11 @@ export function SettingsView() {
       void refresh();
       void loadExtras();
     }).then((u) => unsubs.push(u));
-    void listen('billing:changed', () => {
-      void (async () => {
-        // Webhooks and the browser deep-link race each other. Reconcile with Dodo and poll briefly
-        // so checkout activation or portal cancellation appears without reopening Settings.
-        for (let attempt = 1; attempt <= 6; attempt += 1) {
-          const result = await bridge.syncBilling().catch((error) => {
-            klog('settings', 'warn', 'billing reconciliation attempt failed', {
-              attempt,
-              error: String(error),
-            });
-            return { synced: false };
-          });
-          const next = await refresh();
-          klog('settings', 'info', 'billing state refreshed', {
-            attempt,
-            synced: result.synced,
-            plan: next?.plan ?? 'unknown',
-            status: next?.status ?? 'unknown',
-          });
-          if (result.synced) break;
-          await new Promise((resolve) => window.setTimeout(resolve, attempt * 750));
-        }
-      })();
+    void listen<string>('billing:changed', (event) => {
+      const returnStatus = normalizeBillingReturnStatus(event.payload);
+      setBillingReturnStatus(returnStatus);
+      klog('settings', 'info', 'billing browser return received', { returnStatus });
+      void reconcileAndRefresh();
     }).then((u) => unsubs.push(u));
     void listen('settings:open', () => {
       void refresh();
@@ -126,7 +139,7 @@ export function SettingsView() {
     window.addEventListener('focus', onFocus);
     unsubs.push(() => window.removeEventListener('focus', onFocus));
     return () => unsubs.forEach((u) => u());
-  }, [refresh, loadExtras]);
+  }, [refresh, loadExtras, reconcileAndRefresh]);
 
   const isPro = me?.plan === 'pro';
   const isPending = me?.status === 'pending';
@@ -138,6 +151,7 @@ export function SettingsView() {
         new Date(me.renews_at),
       )
     : '';
+  const planNotice = billingNotice(me, billingReturnStatus);
 
   const applyAccent = async (hex: string) => {
     setAccentState(hex);
@@ -233,6 +247,12 @@ export function SettingsView() {
               </span>
             )}
           </div>
+          {planNotice ? (
+            <div className={`s-billing-notice s-billing-notice-${planNotice.tone}`} role={planNotice.tone === 'error' ? 'alert' : 'status'}>
+              <strong>{planNotice.title}</strong>
+              <span>{planNotice.body}</span>
+            </div>
+          ) : null}
           {isPro && me?.cancel_at_period_end ? (
             <p className="settings-muted">
               Cancels at the end of your billing period{periodLabel ? ` · ${periodLabel}` : ''}
@@ -246,11 +266,11 @@ export function SettingsView() {
             </button>
           ) : isPending ? (
             <button className="s-btn s-btn-primary" disabled>
-              Checkout processing…
+              Waiting for payment confirmation…
             </button>
           ) : !isPro ? (
             <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout())}>
-              Upgrade to Pro — $10/mo
+              {me?.status === 'failed' ? 'Try upgrading again — $10/mo' : 'Upgrade to Pro — $10/mo'}
             </button>
           ) : (
             <p className="settings-muted">Complimentary access · no subscription to manage</p>

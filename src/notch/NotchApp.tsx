@@ -159,10 +159,22 @@ export function NotchApp() {
   useEffect(() => {
     let un: (() => void) | undefined;
     void listen('billing:changed', () => {
-      void nativeBridge.checkPaywalled().then((next) => {
+      void (async () => {
+        // Reconcile before reading quota. The browser callback and the webhook can arrive in
+        // either order, so an immediate quota-only read can otherwise cache the old Free state.
+        await nativeBridge.syncBilling().catch((error) => {
+          klog('notch', 'warn', 'billing return reconciliation failed', { error: String(error) });
+        });
+        const me = await nativeBridge.fetchMe();
+        const next = me?.paywalled ?? (await nativeBridge.checkPaywalled());
         setPaywalled(next);
-        klog('notch', 'info', 'billing return quota refreshed', { paywalled: next });
-      });
+        if (me) await nativeBridge.refreshTray(me.plan === 'pro');
+        klog('notch', 'info', 'billing return entitlement refreshed', {
+          paywalled: next,
+          plan: me?.plan ?? 'unknown',
+          status: me?.status ?? 'unknown',
+        });
+      })();
     }).then((u) => {
       un = u;
     });
