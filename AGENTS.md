@@ -13,9 +13,18 @@ The whole repo is public. `.env` (gitignored) holds ONLY API keys. NEVER commit 
 NEVER paste a live key into code, logs, tests, or committed config. Provider keys live in
 `server/.env` (dev) / the Hetzner env (prod) — never in the desktop bundle.
 
-## Dodo — TEST MODE ONLY
-The agent operates Dodo in **test mode only**. Live keys live only on the Hetzner prod env, never
-in the repo or on a dev machine.
+## Dodo environments
+
+- Local development and every automated/simulated billing test are **test mode only**.
+- Live keys live only in the Hetzner environment—never in the repo, a desktop bundle, a dev
+  machine, logs, command output, or chat.
+- An agent may switch Hetzner to live mode only when the user explicitly authorizes that cutover
+  in the current request and the complete signed test-mode lifecycle has already passed.
+- Before a live cutover, verify without printing values that the live key authenticates, the live
+  product exists and is recurring, the live webhook secret is present, and an enabled live webhook
+  targets `https://api.meetkairo.xyz/webhooks/dodo` with the required billing events.
+- Never create or simulate a live transaction. After switching, use read-only provider checks plus
+  `/readyz`; the founder performs the first real checkout.
 
 ## Commit discipline
 Work on `main` (no branches unless the user says so). Commit each change as you go — small,

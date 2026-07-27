@@ -5,7 +5,7 @@ authenticates (Better Auth, **Google-only**), **proxies all AI provider calls** 
 real keys, **meters usage** (10 free requests, lifetime), and handles **Dodo** billing.
 Secrets never reach the browser or the desktop bundle.
 
-> Root rules (secret hygiene, commit discipline, Dodo test-mode) live in `../AGENTS.md`.
+> Root rules (secret hygiene, commit discipline, and Dodo environment controls) live in `../AGENTS.md`.
 > This file is the backend-specific layer.
 
 ## Run / dev
@@ -42,13 +42,17 @@ Secrets never reach the browser or the desktop bundle.
 - The desktop is Rust (no TS client): we own `/auth/start|callback|exchange` and hand the app a
   session over a **`kairo://` one-time code** — the JWT never rides in the URL.
 
-## Dodo — TEST MODE ONLY
+## Dodo environment safety
 
-- Test keys in dev; **live keys only on the Hetzner prod env**. Never commit any Dodo key.
+- Local development is always test mode; **live keys only exist in the Hetzner env**. Never commit
+  or print any Dodo key.
 - Verify webhook signatures over the **raw** body (Standard Webhooks HMAC).
 - Local end-to-end testing uses `npm run billing:test:listen` from the repo root. It applies
   migrations, verifies `DODO_ENV=test_mode`, and runs Dodo's signed CLI relay to
   `http://localhost:8787/webhooks/dodo`. Never bypass signature checks for local testing.
+- A Hetzner live cutover requires explicit user approval in the current request and the preflight
+  in root `AGENTS.md`. Change only the environment selector after preflight; never copy live values
+  into a command, repo file, local env, test, or log. Do not generate a live checkout as an agent.
 
 ## Verify gate (before "done")
 
