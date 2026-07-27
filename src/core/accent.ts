@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { klog } from './logger';
 
 // Mirror of src-tauri/src/constants.rs DEFAULT_ACCENT — keep in sync.
-export const DEFAULT_ACCENT = '#7c3aed';
+export const DEFAULT_ACCENT = '#665cff';
 
 /** The user's accent (or the brand default). Never throws — falls back on any native error. */
 export async function getAccent(): Promise<string> {

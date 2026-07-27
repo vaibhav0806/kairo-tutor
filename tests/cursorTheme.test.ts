@@ -25,8 +25,8 @@ describe('accentTints', () => {
     expect(sum(t.hi)).toBeGreaterThan(sum(t.base));
   });
 
-  test('falls back to brand purple on a malformed hex', () => {
-    expect(accentTints('nope').rgb).toBe('124 58 237');
+  test('falls back to the brand accent on a malformed hex', () => {
+    expect(accentTints('nope').rgb).toBe('102 92 255'); // #665cff, the website's --kairo
   });
 });
 

@@ -5,7 +5,7 @@
 //! (accepts a minimal `{ style: { setProperty } }` target) so it's unit-testable in node.
 
 // Brand-default accent, used when a hex can't be parsed. Matches the CSS var defaults.
-const BRAND: readonly [number, number, number] = [124, 58, 237]; // #7c3aed
+const BRAND: readonly [number, number, number] = [102, 92, 255]; // #665cff
 
 export type AccentTints = {
   base: string; // '#rrggbb'

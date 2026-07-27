@@ -3,7 +3,7 @@
 // spread across the hue wheel (no pale/light colors). The `name` is INTERNAL only — the UI shows just the
 // swatch. Kept in sync with DEFAULT_ACCENT in core/accent.ts (Nebula = the brand default).
 export const ACCENT_PRESETS: { name: string; hex: string }[] = [
-  { name: 'Nebula', hex: '#7c3aed' }, // deep electric violet (brand default)
+  { name: 'Nebula', hex: '#665cff' }, // the website's --kairo (brand default)
   { name: 'Ember', hex: '#ea580c' }, // burnt orange
   { name: 'Tide', hex: '#0891b2' }, // deep cyan
   { name: 'Flare', hex: '#dc2626' }, // strong crimson red

@@ -28,9 +28,9 @@
     "db:migrate": "npm run db:migrate -w @kairo/server"
   },
   "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource-variable/geist": "^5.2.9",
-    "@fontsource/bricolage-grotesque": "^5.3.0",
-    "@fontsource/instrument-serif": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@tauri-apps/api": "^2.11.1",
     "@uiw/react-color-shade-slider": "^2.10.3",
     "@uiw/react-color-wheel": "^2.10.3",

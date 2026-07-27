@@ -217,7 +217,7 @@ pub(crate) const WAIT_UI_SETTLE_MS: u64 = 900;
 pub(crate) const WAIT_PAGE_LOAD_MS: u64 = 3_000;
 
 // ---------------------------------------------------------------- Accent
-// Brand-default accent (violet). The user overrides it in onboarding (Act 1); until then this
-// is the base tint for the pointer/box and every accent-threaded surface. Frontend mirror:
-// DEFAULT_ACCENT in src/core/accent.ts — keep in sync.
-pub(crate) const DEFAULT_ACCENT: &str = "#7c3aed";
+// Brand-default accent — the website's `--kairo` (kairo/src/styles.css). The user overrides it
+// in onboarding (Act 1); until then this is the base tint for the pointer/box and every
+// accent-threaded surface. Frontend mirror: DEFAULT_ACCENT in src/core/accent.ts — keep in sync.
+pub(crate) const DEFAULT_ACCENT: &str = "#665cff";

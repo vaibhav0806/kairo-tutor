@@ -7,14 +7,12 @@ import { NotchApp } from './notch/NotchApp';
 import { OverlayApp } from './overlay/OverlayApp';
 import { installGlobalErrorLogging, klog } from './core/logger';
 import { applyAccent, getAccent, onAccentChanged } from './core/accent';
+// The website's three faces, so the app reads as the same product (kairo/src/app/layout.tsx):
+// Geist for body copy, Bricolage Grotesque for display, Geist Mono for kickers and labels.
+// All variable — the site uses weights (670, 740) that the static cuts can't reach.
 import '@fontsource-variable/geist';
-// Instrument Serif — the display face for the onboarding hero + color card (v2 Phase C). The dep was
-// installed but never imported, so 'Instrument Serif' references were silently falling back to Georgia.
-import '@fontsource/instrument-serif';
-// Bricolage Grotesque — the notch caption face (more character than Geist). Weights used: 400/500/600.
-import '@fontsource/bricolage-grotesque/400.css';
-import '@fontsource/bricolage-grotesque/500.css';
-import '@fontsource/bricolage-grotesque/600.css';
+import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/geist-mono';
 import './styles.css';
 
 // Record uncaught errors/rejections from this WebView into the shared Kairo log.

@@ -43,7 +43,7 @@ export function OverlayTarget({
           <defs>
             <linearGradient id="kairo-pointer-grad" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stopColor="#c79bff" />
-              <stop offset="100%" stopColor="#7c3aed" />
+              <stop offset="100%" stopColor="#665cff" />
             </linearGradient>
           </defs>
           <path
