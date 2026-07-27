@@ -72,6 +72,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
   // Non-null once the card is imploding toward the pet; holds the translate delta (card center → pet).
   const [collapse, setCollapse] = useState<{ dx: number; dy: number } | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const cursorWakeTimerRef = useRef<number | null>(null);
   // Right-side looping demo (Blender tile → ink connector → "Kairo sees Blender" streaming note).
   const burstRef = useRef<SVGSVGElement | null>(null);
   const inkPathRef = useRef<SVGPathElement | null>(null);
@@ -88,6 +89,13 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
     void emit('cursor:suppress', {});
     klog('onboarding', 'info', 'front door: hero shown');
   }, []);
+
+  useEffect(
+    () => () => {
+      if (cursorWakeTimerRef.current !== null) window.clearTimeout(cursorWakeTimerRef.current);
+    },
+    []
+  );
 
   // The color step is SILENT (no spoken line) — jumping into speech before any greeting felt abrupt.
   // Kairo introduces itself LATER, at the collapse (the act1_wake line: "Hey — I'm Kairo. See that
@@ -116,7 +124,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
   }, []);
 
   const confirm = useCallback(
-    async (e: MouseEvent<HTMLButtonElement>) => {
+    (e: MouseEvent<HTMLButtonElement>) => {
       // Capture the click point synchronously (before any await) — the pet shadows the mouse, so it's
       // on the button; the full-monitor window means clientX/Y are screen coords.
       const point = { x: e.clientX, y: e.clientY };
@@ -124,17 +132,28 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
       klog('onboarding', 'info', 'front door: color confirmed', { picked: hex, clamped });
       applyAccent(clamped);
       void emit('accent:changed', { hex: clamped });
-      await invoke('set_accent', { hex: clamped }).catch(() => {}); // persist natively
+      // Persistence is local and independent; never hold the first animation frame behind IPC.
+      void invoke('set_accent', { hex: clamped }).catch((error) => {
+        klog('onboarding', 'warn', 'accent persistence failed', { error: String(error) });
+      });
       playChime('confirm'); // satisfying two-note rise on lock-in
       // Kick off the collapse: the pet wakes to "catch" the card, and framer-motion implodes it toward
       // the click point. onCollapseDone (onAnimationComplete) drives the rest.
       const rect = cardRef.current?.getBoundingClientRect();
       const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
       const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
-      void emit('cursor:entrance');
       setCollapse({ dx: point.x - cx, dy: point.y - cy });
+      // Cross-fade the actual cursor into the card's last small, still-visible frame. This makes the
+      // physical hand-off read as one object changing form, not a window disappearing and a pet
+      // independently appearing nearby.
+      const wake = () => {
+        klog('onboarding', 'info', 'card handed off to cursor');
+        void emit('cursor:entrance');
+      };
+      if (reduce) wake();
+      else cursorWakeTimerRef.current = window.setTimeout(wake, 430);
     },
-    [hex]
+    [hex, reduce]
   );
 
   // Fired when the framer-motion card animation finishes. Only acts on the COLLAPSE (not the entrance):
@@ -237,12 +256,22 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
           initial={reduce ? false : { opacity: 0, y: 10, scale: 0.97 }}
           animate={
             collapse
-              ? { x: collapse.dx, y: collapse.dy, scale: 0.02, opacity: 0 }
+              ? {
+                  x: [0, collapse.dx * 0.08, collapse.dx * 0.78, collapse.dx],
+                  y: [0, collapse.dy * 0.08, collapse.dy * 0.78, collapse.dy],
+                  scale: [1, 0.9, 0.16, 0.025],
+                  opacity: [1, 1, 0.82, 0]
+                }
               : { x: 0, y: 0, scale: 1, opacity: 1 }
           }
           transition={
             collapse
-              ? { type: 'tween', ease: [0.4, 0, 1, 1], duration: reduce ? 0 : 1.2 }
+              ? {
+                  type: 'tween',
+                  ease: [0.22, 0.7, 0, 1],
+                  duration: reduce ? 0 : 0.72,
+                  times: [0, 0.2, 0.76, 1]
+                }
               : { type: 'spring', stiffness: 260, damping: 26 }
           }
           onAnimationComplete={() => void onCardAnimationComplete()}
@@ -299,7 +328,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
                     );
                   })}
                 </div>
-                <button type="button" className="ob-color-confirm" onClick={(e) => void confirm(e)}>
+                <button type="button" className="ob-color-confirm" onClick={confirm}>
                   {HERO_COPY.confirm}
                 </button>
               </motion.div>

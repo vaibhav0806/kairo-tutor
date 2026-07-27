@@ -6,6 +6,7 @@
 //! hit-rect contract are preserved.
 
 import { useRef } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CloseIcon } from './NotchIcons';
 import { MicMeter } from './MicMeter';
 import type { NotchCapsuleMode } from './capsuleMode';
@@ -91,6 +92,55 @@ function ThinkingCube() {
   );
 }
 
+/**
+ * A quick character stream for coach copy: the previous sentence slides softly left while the next
+ * one resolves character-by-character in under a second. Words remain normal wrapping units, so the
+ * animation never harms the notch's measured layout.
+ */
+function FadingStreamText({ text }: { text: string }) {
+  const reduce = useReducedMotion();
+  let characterIndex = 0;
+  return (
+    <span className="kairo-capsule-caption" aria-label={text}>
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={text}
+          className="kairo-caption-stream"
+          aria-hidden
+          initial={reduce ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={reduce ? { opacity: 0 } : { opacity: 0, x: -8 }}
+          transition={{ duration: reduce ? 0.01 : 0.14, ease: 'easeOut' }}
+        >
+          {text.split(' ').map((word, wordIndex, words) => (
+            <span className="kairo-caption-word" key={`${wordIndex}-${word}`}>
+              {Array.from(word).map((character) => {
+                const index = characterIndex++;
+                return (
+                  <motion.span
+                    className="kairo-caption-character"
+                    key={`${index}-${character}`}
+                    initial={reduce ? false : { opacity: 0, x: 7 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: reduce ? 0.01 : 0.18,
+                      delay: reduce ? 0 : Math.min(index * 0.009, 0.4),
+                      ease: [0.22, 1, 0.36, 1]
+                    }}
+                  >
+                    {character}
+                  </motion.span>
+                );
+              })}
+              {wordIndex < words.length - 1 ? ' ' : null}
+            </span>
+          ))}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
 // Per-mode content. The box morphs around whatever this returns; content swaps instantly
 // inside while the layers cross-fade.
 function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
@@ -104,7 +154,7 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
             <span className="kairo-capsule-caption-row">
               {/* Kairo's eyes beside the caption — or the live mic meter during Act 2's say-hi drill. */}
               {props.meter ? <MicMeter /> : <KairoEyes />}
-              <span className="kairo-capsule-caption">{props.detail}</span>
+              <FadingStreamText text={props.detail} />
             </span>
             {props.chip ? <span className="kairo-capsule-chip">{props.chip}</span> : null}
           </>
