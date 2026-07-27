@@ -1,6 +1,10 @@
 /* Onboarding surfaces. The flow is notch-driven: Acts 1-4 render nothing (the notch caption + the
-   pet ARE the UI); only the color wheel (Act 1) and the Act 5 sign-in / source cards get a small
-   floating panel. Everything is accent-threaded via --kairo-accent (set by Phase 0's applyAccent). */
+   pet ARE the UI); only the hero/color card (Act 0-1) and the Act 5 sign-in / source cards get a
+   small floating panel. Everything is accent-threaded via --kairo-accent (set by applyAccent).
+
+   Visual language = the website (kairo/src/styles.css), via the tokens in ../styles.css: cool
+   canvas, Bricolage display, Geist Mono kickers, near-square edges, hairline borders, and one hard
+   offset shadow instead of soft violet blooms. */
 
 /* Full-screen transparent orchestrator. pointer-events:none so only a temp panel is a click target
    within the webview; window-level click-through is controlled natively (Rust). */
@@ -19,7 +23,13 @@ body.onboarding-document {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body);
+
+  /* The user's accent, and the offset shadow tinted by it. The site's hard shadow is always the
+     brand violet; here it follows whatever hue the user picked in Act 1. */
+  --ob-accent: var(--kairo-accent, #665cff);
+  --ob-shadow: 6px 6px 0 color-mix(in srgb, var(--ob-accent) 20%, transparent);
+  --ob-shadow-hover: 3px 3px 0 color-mix(in srgb, var(--ob-accent) 28%, transparent);
 }
 
 /* Subtle desktop vignette (tinted by the chosen accent) over the transparent window; never eats
@@ -29,15 +39,14 @@ body.onboarding-document {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 50% 8%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 7%, transparent) 0%, transparent 55%),
-    radial-gradient(140% 120% at 50% 120%, rgba(0, 0, 0, 0.2) 0%, transparent 62%);
+    radial-gradient(120% 90% at 50% 8%, color-mix(in srgb, var(--ob-accent) 7%, transparent) 0%, transparent 55%),
+    radial-gradient(140% 120% at 50% 120%, rgb(11 13 18 / 0.2) 0%, transparent 62%);
   transition: background 200ms ease;
 }
 
-/* ---- The floating sign-in panel (Act 5a) ----------------------------------------------------
-   Warm-white "Editorial Light" surface — matches the shared .ob-card (hero + source screens) so
-   the whole onboarding reads as one light theme. Accent-threaded hairline, layered depth.
-   Concentric radius: outer 28, inner controls 999/16. */
+/* ---- The floating panel behind Act 5's cards -------------------------------------------------
+   Same surface as the shared .ob-card (hero + color + source) so the whole onboarding reads as one
+   theme: raised cool white, hairline border, offset shadow. */
 .ob-color-scrim {
   position: fixed;
   inset: 0;
@@ -49,15 +58,11 @@ body.onboarding-document {
 .ob-color-panel {
   pointer-events: auto;
   animation: ob-panel-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  background:
-    radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 8%, #fdfbf7) 0%, #faf7f2 55%, #f4efe7 100%);
-  border: 1px solid rgba(20, 16, 28, 0.06);
-  border-radius: 28px;
-  color: #1a1622;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.7) inset,
-    0 40px 90px -32px rgba(30, 20, 45, 0.35),
-    0 0 60px -24px color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, transparent);
+  background: var(--canvas-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  color: var(--ink);
+  box-shadow: var(--ob-shadow);
   padding: 30px 30px 26px;
   display: flex;
   flex-direction: column;
@@ -75,7 +80,7 @@ body.onboarding-document {
   }
 }
 
-/* ---- Act 1: color wheel ---------------------------------------------------------------------- */
+/* ---- Act 1: colour choice --------------------------------------------------------------------- */
 .ob-color {
   display: flex;
   flex-direction: column;
@@ -89,107 +94,54 @@ body.onboarding-document {
   gap: 2px;
   text-align: center;
 }
-/* Live swatch dot above the title — glows in the currently-picked hue. */
+/* Live swatch dot above the title — reads in the currently-picked hue. */
 .ob-color-dot {
   width: 34px;
   height: 34px;
   border-radius: 999px;
   margin-bottom: 8px;
-  box-shadow:
-    0 0 0 4px rgba(255, 255, 255, 0.06),
-    0 0 26px 2px color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, transparent);
+  box-shadow: 0 0 0 1px var(--hairline);
   transition: box-shadow 200ms ease;
 }
-/* Small uppercase kicker — the spoken caption says the rest, so the card doesn't repeat it. */
-.ob-color-kicker,
-.ob-panel-kicker {
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+/* Kicker — Geist Mono, like every section label on the site. The spoken caption says the rest, so
+   the card doesn't repeat it. */
+.ob-color-kicker {
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(240, 236, 250, 0.5);
-}
-
-.ob-wheel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-}
-/* @uiw wheel — soft accent halo behind the disc so it feels lit. */
-.ob-wheel > div:first-child {
-  border-radius: 999px;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 0 44px -6px color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, transparent);
-}
-.ob-wheel-slider {
-  width: 248px;
-  border-radius: 999px;
-  overflow: hidden;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  color: var(--ink-muted);
 }
 
 .ob-color-confirm {
   margin-top: 4px;
-  border: none;
-  border-radius: 14px;
+  border: 1px solid var(--ink-strong);
+  border-radius: var(--radius-button);
   padding: 12px 26px;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 660;
   cursor: pointer;
-  color: #fff;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--kairo-accent, #7c3aed) 84%, #ffffff 16%),
-    var(--kairo-accent, #7c3aed)
-  );
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.25) inset,
-    0 10px 26px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 65%, transparent);
+  color: #ffffff;
+  background: var(--ink-strong);
+  box-shadow: var(--ob-shadow);
   transition:
-    transform 120ms cubic-bezier(0.2, 0, 0, 1),
-    box-shadow 160ms ease;
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .ob-color-confirm:hover {
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.3) inset,
-    0 14px 32px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 75%, transparent);
+  transform: translate(2px, 2px);
+  box-shadow: var(--ob-shadow-hover);
 }
 .ob-color-confirm:active {
-  transform: scale(0.96);
+  transform: translate(4px, 4px);
+  box-shadow: 1px 1px 0 color-mix(in srgb, var(--ob-accent) 30%, transparent);
 }
 
-/* ---- Act 5: sign-in + source cards (share the panel) ----------------------------------------
-   Composed like the color card: an accent-glow glyph, a small kicker, then the one control. Keeps
-   the panels from feeling like a naked button in a void. */
-.ob-panel-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  min-width: 268px;
-  padding: 2px;
-}
-.ob-panel-icon {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, #ffffff 45%);
-  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--kairo-accent, #7c3aed) 30%, rgba(255, 255, 255, 0.08));
-  box-shadow:
-    0 0 30px -6px color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-/* Sign-in card — minimal per Google's guidance: a Kairo wordmark (the trust signal, NOT a shield/
-   tick), one line, and the official button. The notch already speaks the instruction. */
+/* ---- Act 5a: sign-in card --------------------------------------------------------------------
+   Minimal per Google's guidance: the Kairo lockup (the trust signal, NOT a shield/tick), one line,
+   and the official button. The notch already speaks the instruction. */
 .ob-signin {
   display: flex;
   flex-direction: column;
@@ -198,25 +150,27 @@ body.onboarding-document {
   min-width: 268px;
   padding: 4px 2px;
 }
+/* The Kairo lockup. Matches the site header exactly: lowercase, Bricolage 740, tight tracking. */
 .ob-signin-mark {
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-weight: 400;
-  font-size: 34px;
+  font-family: var(--font-display);
+  font-weight: 740;
+  font-size: 30px;
   line-height: 1;
-  color: #171320;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.065em;
+  color: var(--ink-strong);
+  text-transform: lowercase;
 }
 .ob-signin-sub {
   margin-bottom: 6px;
   font-size: 13px;
   font-weight: 500;
-  color: #6b6478;
+  color: var(--ink-muted);
 }
 .ob-signin-done {
   margin-top: 2px;
   font-size: 14px;
   font-weight: 500;
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 60%, #1a1622 40%);
+  color: color-mix(in srgb, var(--ob-accent) 60%, var(--ink) 40%);
 }
 
 /* Official "Sign in with Google" — Light theme (white). Google's 4-colour G may only sit on white
@@ -232,7 +186,7 @@ body.onboarding-document {
   box-sizing: border-box;
   background: #ffffff;
   border: 1px solid #747775; /* official Light-theme stroke */
-  border-radius: 12px;
+  border-radius: 4px; /* Google's standard corner */
   font-family: 'Roboto', -apple-system, system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -241,8 +195,7 @@ body.onboarding-document {
   color: #1f1f1f;
   cursor: pointer;
   user-select: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.18);
-  transition: background-color 120ms ease, box-shadow 120ms ease, transform 60ms ease;
+  transition: background-color 120ms ease, transform 60ms ease;
 }
 .google-signin-btn svg {
   display: block;
@@ -250,123 +203,31 @@ body.onboarding-document {
 }
 .google-signin-btn:hover {
   background: #f7f8f8;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.34), 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 .google-signin-btn:active {
   background: #f1f3f4;
   transform: translateY(0.5px);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
-/* Source chips + the free-text "other" row. */
-.ob-chip {
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 11px;
-  color: #d8d0ec;
-  cursor: pointer;
-  font-size: 13.5px;
-  font-weight: 500;
-  padding: 9px 15px;
-  transition: transform 120ms ease, background 140ms ease, border-color 140ms ease, color 140ms ease;
-}
-.ob-source-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  max-width: 300px;
-  margin-top: 2px;
-}
-.ob-source-chips .ob-chip:hover {
-  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 16%, rgba(255, 255, 255, 0.05));
-  border-color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 42%, rgba(255, 255, 255, 0.12));
-  color: #fff;
-  transform: translateY(-1px);
-}
-.ob-source-other {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  width: 100%;
-  max-width: 300px;
-}
-.ob-source-other input {
-  flex: 1;
-  min-width: 0;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  color: #f4f0fb;
-  font-family: inherit;
-  font-size: 14px;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-  padding: 11px 14px;
-  transition: background 160ms ease, border-color 160ms ease;
-}
-.ob-source-other input:focus {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, rgba(255, 255, 255, 0.14));
-}
-.ob-source-other input::placeholder {
-  color: rgba(244, 240, 251, 0.3);
-}
-.ob-source-go {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border: 0;
-  border-radius: 12px;
-  color: #fff;
-  cursor: pointer;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--kairo-accent, #7c3aed) 84%, #ffffff 16%),
-    var(--kairo-accent, #7c3aed)
-  );
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.25) inset,
-    0 8px 20px -8px color-mix(in srgb, var(--kairo-accent, #7c3aed) 65%, transparent);
-  transition: transform 120ms cubic-bezier(0.2, 0, 0, 1), box-shadow 160ms ease, opacity 160ms ease;
-}
-.ob-source-go:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-.ob-source-go:active:not(:disabled) {
-  transform: scale(0.94);
-}
-.ob-source-go:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-/* ---- Act 0 hero + the shared light "Editorial Light" card (v2 Phase C) -----------------------
-   Warm-white surface shared by the hero (Act 0) and the redesigned color card (Act 1) so the
-   Get-started morph is seamless (light→light, same center, same accent glow). */
+/* ---- Act 0 hero + the shared card ------------------------------------------------------------
+   One raised cool-white surface shared by the hero (Act 0), the colour card (Act 1) and the source
+   card (Act 5b), so the Get-started morph is seamless (same surface, same centre). */
 .ob-card {
   pointer-events: auto;
   position: relative;
-  background:
-    radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, var(--kairo-accent, #7c3aed) 8%, #fdfbf7) 0%, #faf7f2 55%, #f4efe7 100%);
-  border: 1px solid rgba(20, 16, 28, 0.06);
-  border-radius: 28px;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.7) inset,
-    0 40px 90px -32px rgba(30, 20, 45, 0.35),
-    0 0 60px -24px color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, transparent);
+  background: var(--canvas-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--ob-shadow);
   animation: ob-panel-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
   -webkit-font-smoothing: antialiased;
-  color: #1a1622;
+  color: var(--ink);
 }
 
 .ob-card--hero {
-  /* Fixed hero violet (landing accent). Act 0 is BEFORE the color step, so the hero is deliberately
-     decoupled from the user's chosen accent — burst / ink / note / CTA all read in this violet. */
-  --hero-violet: #665cff;
+  /* Act 0 runs BEFORE the colour step, so the hero is deliberately decoupled from the user's accent
+     and reads in the fixed brand violet — burst / ink / note / CTA shadow all use it. */
+  --hero-violet: var(--kairo);
   width: min(880px, 92vw);
   display: grid;
   grid-template-columns: 42% 58%;
@@ -374,10 +235,11 @@ body.onboarding-document {
   /* framer-motion (FrontDoor) drives the card entrance + collapse — disable the CSS entrance so the
      two don't fight. */
   animation: none;
+  box-shadow: 7px 7px 0 rgb(102 92 255 / 19%); /* the site's hero shadow, exactly */
 }
 
 /* FrontDoor left-panel content wrappers (swapped by AnimatePresence; the card frame + right demo
-   stay put, so only the left morphs between the hero pitch and the color picker). */
+   stay put, so only the left morphs between the hero pitch and the colour picker). */
 .ob-front-hero {
   display: flex;
   flex-direction: column;
@@ -391,12 +253,8 @@ body.onboarding-document {
   gap: 16px;
   width: 100%;
 }
-/* The color kicker lives on the light hero card now → dark text (its default is light-on-dark). */
-.ob-card--hero .ob-color-kicker {
-  color: rgba(26, 22, 34, 0.45);
-}
 
-/* Curated accent preset swatches (replaces the color wheel). 4×2 grid; selected = white gap + ink ring. */
+/* Curated accent preset swatches. 4×2 grid; selected = canvas gap + ink ring. */
 .ob-swatches {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -408,13 +266,11 @@ body.onboarding-document {
 .ob-swatch {
   aspect-ratio: 1;
   border: none;
-  border-radius: 13px;
+  border-radius: var(--radius-inset);
   cursor: pointer;
-  box-shadow:
-    0 0 0 1px rgba(20, 16, 28, 0.06),
-    0 6px 14px -6px rgba(30, 20, 45, 0.5);
+  box-shadow: 0 0 0 1px var(--hairline);
   transition:
-    transform 140ms cubic-bezier(0.2, 0, 0, 1),
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 160ms ease;
 }
 .ob-swatch:hover {
@@ -426,9 +282,8 @@ body.onboarding-document {
 .ob-swatch--on {
   transform: scale(1.08);
   box-shadow:
-    0 0 0 2px #fdfbf7,
-    0 0 0 4px rgba(26, 22, 34, 0.55),
-    0 8px 18px -6px rgba(30, 20, 45, 0.5);
+    0 0 0 2px var(--canvas-raised),
+    0 0 0 4px var(--ink);
 }
 @media (prefers-reduced-motion: reduce) {
   .ob-swatch {
@@ -436,7 +291,7 @@ body.onboarding-document {
   }
 }
 
-/* Act 5 source card — light Editorial (v2 redesign): icon grid, no messaging icon, no free text. */
+/* ---- Act 5b: source card ---------------------------------------------------------------------- */
 .ob-card--source {
   width: min(440px, 92vw);
   padding: 32px 30px 26px;
@@ -447,26 +302,27 @@ body.onboarding-document {
   gap: 5px;
 }
 .ob-source-kicker {
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 62%, #9a93a5);
+  color: color-mix(in srgb, var(--ob-accent) 62%, var(--ink-muted));
 }
 .ob-source-title {
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-weight: 670;
   font-size: 32px;
-  line-height: 1.05;
-  margin: 4px 0 0;
-  color: #171320;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  margin: 6px 0 0;
+  color: var(--ink-strong);
 }
 .ob-source-sub {
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
-  color: #6b6478;
-  margin: 0 0 18px;
+  color: var(--ink-muted);
+  margin: 6px 0 18px;
   max-width: 36ch;
 }
 .ob-source-grid {
@@ -481,26 +337,27 @@ body.onboarding-document {
   justify-content: center;
   gap: 7px;
   padding: 11px 8px;
-  border: 1px solid rgba(20, 16, 28, 0.1);
-  border-radius: 12px;
-  background: #fdfbf7;
-  color: #2a2435;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-inset);
+  background: var(--canvas-soft);
+  color: var(--ink);
+  font-family: var(--font-body);
   font-size: 12.5px;
   font-weight: 550;
   cursor: pointer;
   transition:
-    transform 120ms cubic-bezier(0.2, 0, 0, 1),
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 160ms ease,
-    box-shadow 160ms ease;
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .ob-source-btn:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 45%, rgba(20, 16, 28, 0.12));
-  box-shadow: 0 8px 18px -10px color-mix(in srgb, var(--kairo-accent, #7c3aed) 60%, transparent);
+  transform: translate(-2px, -2px);
+  border-color: color-mix(in srgb, var(--ob-accent) 45%, var(--hairline));
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--ob-accent) 22%, transparent);
 }
 .ob-source-btn:active {
-  transform: scale(0.97);
+  transform: translate(0, 0);
+  box-shadow: none;
 }
 .ob-source-ico {
   width: 16px;
@@ -513,6 +370,7 @@ body.onboarding-document {
   }
 }
 
+/* ---- Hero, left half -------------------------------------------------------------------------- */
 .ob-hero-left {
   padding: 44px 40px 34px;
   display: flex;
@@ -520,83 +378,94 @@ body.onboarding-document {
   gap: 12px;
   justify-content: center;
 }
+/* Same lockup as the site header (lowercase, Bricolage 740, -0.065em). */
 .ob-hero-mark {
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-size: 22px;
-  letter-spacing: 0.01em;
-  color: color-mix(in srgb, var(--hero-violet) 70%, #1a1622);
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 740;
+  line-height: 1;
+  letter-spacing: -0.065em;
+  color: var(--ink-strong);
+  text-transform: lowercase;
 }
 .ob-hero-h1 {
-  font-family: 'Instrument Serif', Georgia, serif;
+  font-family: var(--font-display);
   font-size: 52px;
-  line-height: 1.02;
-  font-weight: 400;
-  margin: 6px 0 0;
-  color: #171320;
+  line-height: 0.9;
+  font-weight: 670;
+  letter-spacing: -0.055em;
+  margin: 10px 0 0;
+  color: var(--ink-strong);
 }
 .ob-hero-sub {
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 16px;
-  color: #5a5266;
-  margin: 0;
+  line-height: 1.62;
+  color: var(--ink-subtle);
+  margin: 4px 0 0;
 }
+/* The site's primary action: ink fill, near-square, hard violet offset shadow that tightens on
+   hover as the button slides into it. */
 .ob-hero-cta {
   align-self: flex-start;
-  margin-top: 12px;
-  border: none;
-  border-radius: 14px;
-  padding: 13px 28px;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  margin-top: 14px;
+  border: 1px solid var(--ink-strong);
+  border-radius: var(--radius-button);
+  padding: 14px 22px;
+  font-family: var(--font-body);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 680;
   cursor: pointer;
-  color: #fff;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--hero-violet) 84%, #ffffff 16%),
-    var(--hero-violet)
-  );
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.25) inset,
-    0 12px 28px -8px color-mix(in srgb, var(--hero-violet) 65%, transparent);
+  color: #ffffff;
+  background: var(--ink-strong);
+  box-shadow: 7px 7px 0 rgb(102 92 255 / 19%);
   transition:
-    transform 120ms cubic-bezier(0.2, 0, 0, 1),
-    box-shadow 160ms ease;
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .ob-hero-cta:hover {
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.3) inset,
-    0 16px 34px -8px color-mix(in srgb, var(--hero-violet) 75%, transparent);
+  transform: translate(3px, 3px);
+  box-shadow: 4px 4px 0 rgb(102 92 255 / 26%);
 }
 .ob-hero-cta:active {
-  transform: scale(0.97);
+  transform: translate(6px, 6px);
+  box-shadow: 1px 1px 0 rgb(102 92 255 / 30%);
 }
 .ob-hero-legal {
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 11px;
-  color: #9a93a5;
+  color: color-mix(in srgb, var(--ink-muted) 72%, var(--canvas-raised));
   margin: 8px 0 0;
 }
 
-/* Right half of the hero: a light "corner-burst" backdrop with a looping Blender demo
-   (tile → ink connector → "Kairo sees Blender" note). Coordinates match the 520×460 design box. */
+/* ---- Hero, right half ------------------------------------------------------------------------
+   A dot-field canvas (the site's hero backdrop) with a looping Blender demo on top: tile → ink
+   connector → "Kairo sees Blender" note. Coordinates match the 520×460 design box. */
 .ob-hero-right {
   position: relative;
   overflow: hidden;
   min-height: 460px;
-  background: radial-gradient(
-    120% 100% at 80% 0%,
-    color-mix(in srgb, var(--hero-violet) 7%, #ffffff) 0%,
-    #f5f3fb 60%,
-    #eceaf6 100%
-  );
+  border-left: 1px solid var(--hairline);
+  background: var(--canvas-soft);
+}
+/* The site's dot field, same geometry and mask. */
+.ob-hero-right::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.5;
+  background-image: radial-gradient(circle, rgb(11 13 18 / 17%) 0.7px, transparent 0.8px);
+  background-size: 23px 23px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 2%, #000 18%, #000 86%, transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 2%, #000 18%, #000 86%, transparent 100%);
 }
 /* Corner burst (built in JS into .ob-hero-burst-svg), masked to fade away from the corner so it
    never crowds the tile/note. */
 .ob-hero-burst {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   overflow: hidden;
   -webkit-mask-image: radial-gradient(135% 135% at 100% 0%, #000 55%, transparent 100%);
           mask-image: radial-gradient(135% 135% at 100% 0%, #000 55%, transparent 100%);
@@ -609,7 +478,7 @@ body.onboarding-document {
   display: block;
 }
 
-/* Soft focus glow that blooms on the object when the ink lands. */
+/* Focus glow that blooms on the object when the ink lands. */
 .ob-hero-focus {
   position: absolute;
   left: 214px;
@@ -634,24 +503,24 @@ body.onboarding-document {
   top: 120px;
   width: 336px;
   z-index: 2;
-  border-radius: 14px;
+  border-radius: var(--radius-inset);
   overflow: hidden;
-  background: #14121d;
+  background: var(--surface-deep);
   box-shadow:
-    0 34px 66px -28px rgba(30, 20, 45, 0.5),
-    0 0 0 1px rgba(20, 16, 28, 0.07);
+    0 0 0 1px var(--hairline),
+    0 24px 48px -28px rgb(11 13 18 / 0.45);
 }
 .ob-hero-tile-bar {
   display: flex;
   gap: 6px;
   padding: 9px 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgb(255 255 255 / 0.05);
 }
 .ob-hero-tile-bar span {
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgb(255 255 255 / 0.18);
 }
 .ob-hero-tile-shot {
   position: relative;
@@ -664,15 +533,15 @@ body.onboarding-document {
   position: absolute;
   left: 10px;
   bottom: 8px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.82);
-  background: rgba(10, 8, 16, 0.45);
+  color: rgb(255 255 255 / 0.82);
+  background: rgb(11 13 18 / 0.5);
   padding: 2px 7px;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
-/* The "Kairo sees Blender" reply note. */
+/* The "Kairo sees Blender" reply note — the same card the site's hero uses. */
 .ob-hero-note {
   position: absolute;
   left: 252px;
@@ -680,10 +549,10 @@ body.onboarding-document {
   z-index: 6;
   width: 232px;
   padding: 13px 15px 14px;
-  border-radius: 15px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(20, 16, 28, 0.08);
-  box-shadow: 0 18px 40px -18px rgba(30, 20, 45, 0.4);
+  border-radius: var(--radius-inset);
+  background: rgb(251 252 254 / 0.94);
+  border: 1px solid var(--hairline);
+  box-shadow: 5px 5px 0 rgb(102 92 255 / 14%);
   transform: rotate(1.1deg) translateY(6px);
   opacity: 0;
   transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -697,10 +566,10 @@ body.onboarding-document {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 12px;
   font-weight: 600;
-  color: #1a1622;
+  color: var(--ink);
 }
 .ob-hero-note-glyph {
   width: 20px;
@@ -708,11 +577,13 @@ body.onboarding-document {
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: 7px;
-  font-family: 'Instrument Serif', Georgia, serif;
-  font-size: 14px;
-  color: #fff;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--hero-violet) 82%, #fff 18%), var(--hero-violet));
+  border-radius: 6px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 740;
+  letter-spacing: -0.06em;
+  color: #ffffff;
+  background: var(--hero-violet);
 }
 .ob-hero-note-listen {
   margin-left: auto;
@@ -736,10 +607,10 @@ body.onboarding-document {
 }
 .ob-hero-note-reply {
   margin: 9px 0 0;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.5;
-  color: #5a5266;
+  color: var(--ink-subtle);
   min-height: 3.4em;
 }
 .ob-hero-note-reply .ob-caret {
@@ -781,7 +652,7 @@ body.onboarding-document {
   filter: drop-shadow(0 0 6px color-mix(in srgb, var(--hero-violet) 70%, transparent));
 }
 
-/* Hero → color morph-out (crossfade-morph; see the Phase C plan's library note). */
+/* Hero → colour morph-out (crossfade-morph; see the Phase C plan's library note). */
 @keyframes ob-morph-out {
   to {
     opacity: 0;
@@ -793,7 +664,7 @@ body.onboarding-document {
   animation: ob-morph-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-/* ---- Act 1 color card (light, shares .ob-card) + morph-in + collapse (v2 Phase C) ------------ */
+/* ---- Act 1 colour card (shares .ob-card) + morph-in + collapse -------------------------------- */
 .ob-card--color {
   width: min(360px, 92vw);
   padding: 26px 26px 22px;
@@ -802,13 +673,9 @@ body.onboarding-document {
   align-items: center;
   gap: 18px;
 }
-/* Light-surface override for the kicker (originally light-on-dark for the glassy panel). */
-.ob-card--color .ob-color-kicker {
-  color: rgba(26, 22, 34, 0.45);
-}
 
-/* Hero → color morph-in (crossfade-morph; pairs with .ob-morph-out on the hero). Defined AFTER
-   .ob-card so it overrides the default ob-panel-in for the color card. */
+/* Hero → colour morph-in (crossfade-morph; pairs with .ob-morph-out on the hero). Defined AFTER
+   .ob-card so it overrides the default ob-panel-in for the colour card. */
 @keyframes ob-morph-in {
   from {
     opacity: 0;
@@ -843,8 +710,6 @@ body.onboarding-document {
   .ob-morph-in,
   .ob-collapsing,
   .google-signin-btn,
-  .ob-source-go,
-  .ob-source-chips .ob-chip,
   .ob-vignette {
     animation: none !important;
     transition: none !important;
