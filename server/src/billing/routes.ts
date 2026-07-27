@@ -14,6 +14,7 @@ import {
   type DodoSubscriptionState,
 } from './service';
 import { hasManageableSubscription, type SubStatus } from '@kairo/shared';
+import { renderBillingReturnPage } from './return-page';
 
 type SubscriptionSnapshot = Pick<
   Subscription,
@@ -117,14 +118,17 @@ export async function reconcileBillingAccount(
 export async function billingRoutes(app: FastifyInstance) {
   // Dodo returns here after both checkout and portal actions. The public HTTP page reliably hands
   // control back to the desktop custom scheme and also leaves a clickable fallback.
-  app.get('/billing/return', async (_req, reply) => {
-    reply.type('text/html; charset=utf-8');
-    return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-      <title>Return to Kairo</title>
-      <style>body{font:16px system-ui;display:grid;place-items:center;min-height:100vh;margin:0;background:#f7f7fb;color:#171717}
-      main{text-align:center}a{color:#665cff}</style>
-      <main><h1>Returning to Kairo…</h1><p><a href="kairo://billing-done">Open Kairo</a></p></main>
-      <script>location.replace("kairo://billing-done")</script>`;
+  app.get<{ Querystring: { status?: string } }>('/billing/return', async (req, reply) => {
+    const status = typeof req.query.status === 'string' ? req.query.status : 'unknown';
+    req.log.info({ checkoutStatus: status }, 'billing browser return received');
+    reply
+      .header('cache-control', 'no-store')
+      .header(
+        'content-security-policy',
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      )
+      .type('text/html; charset=utf-8');
+    return renderBillingReturnPage(status);
   });
 
   app.post<{ Body: { interval?: 'monthly' } }>(
@@ -155,7 +159,10 @@ export async function billingRoutes(app: FastifyInstance) {
         const session = await client.checkoutSessions.create({
           product_cart: [{ product_id: productId, quantity: 1 }],
           ...(account?.email ? { customer: { email: account.email } } : {}),
-          metadata: { user_id: req.userId! },
+          metadata: {
+            user_id: req.userId!,
+            backend_url: env.PUBLIC_BASE_URL.replace(/\/$/, ''),
+          },
           return_url: billingReturnUrl(),
           feature_flags: { redirect_immediately: true },
         });

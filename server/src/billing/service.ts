@@ -100,6 +100,44 @@ export async function userIdByCustomer(customerId?: string | null): Promise<stri
   return r.rows.length ? (r.rows[0] as { user_id: string }).user_id : null;
 }
 
+/**
+ * Resolve webhook attribution in one database round-trip, in trust order. Metadata is accepted
+ * only when that user exists in this database; this prevents another Kairo backend's user id from
+ * ever reaching the subscription foreign key.
+ */
+export async function resolveWebhookUser(
+  metadataUserId?: string | null,
+  sessionId?: string | null,
+  customerId?: string | null,
+): Promise<{
+  userId: string | null;
+  metadataUserExists: boolean;
+  source: 'metadata' | 'session' | 'customer' | null;
+}> {
+  const r = await db.execute(sql`
+    WITH candidates AS (
+      SELECT 1 AS priority, id AS user_id, true AS metadata_user
+        FROM "user" WHERE id = ${metadataUserId ?? null}
+      UNION ALL
+      SELECT 2, c.user_id, false
+        FROM checkout_session_map c
+        JOIN "user" u ON u.id = c.user_id
+       WHERE c.session_id = ${sessionId ?? null}
+      UNION ALL
+      SELECT 3, s.user_id, false
+        FROM subscription s
+        JOIN "user" u ON u.id = s.user_id
+       WHERE s.dodo_customer_id = ${customerId ?? null}
+    )
+    SELECT user_id, metadata_user, priority FROM candidates ORDER BY priority LIMIT 1`);
+  const row = r.rows[0] as { user_id: string; metadata_user: boolean; priority: number } | undefined;
+  return {
+    userId: row?.user_id ?? null,
+    metadataUserExists: row?.metadata_user ?? false,
+    source: row?.priority === 1 ? 'metadata' : row?.priority === 2 ? 'session' : row?.priority === 3 ? 'customer' : null,
+  };
+}
+
 /** Recover a legacy/missed-webhook customer mapping without trusting a fuzzy email match. */
 export function customerIdForEmail(
   customers: Array<{ customer_id: string; email: string }>,

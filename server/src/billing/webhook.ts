@@ -4,11 +4,11 @@ import { dodoProductId, dodoWebhookSecret } from '../config/env';
 import {
   applyWebhookState,
   recordWebhook,
-  userFromCheckoutSession,
-  userIdByCustomer,
+  resolveWebhookUser,
   type BillingStatus,
   type DodoSubscriptionState,
 } from './service';
+import { env } from '../config/env';
 
 const SUBSCRIPTION_EVENTS = new Set([
   'subscription.active',
@@ -92,16 +92,29 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
     const customerId = data.customer?.customer_id ?? data.customer_id;
     const sessionId = data.checkout_session_id ?? data.session_id;
     const metadataUserId = typeof data.metadata?.user_id === 'string' ? data.metadata.user_id : null;
-    const sessionUserId = await userFromCheckoutSession(sessionId);
-    const customerUserId = await userIdByCustomer(customerId);
+    const metadataBackend = typeof data.metadata?.backend_url === 'string'
+      ? data.metadata.backend_url.replace(/\/$/, '')
+      : null;
+    const currentBackend = env.PUBLIC_BASE_URL.replace(/\/$/, '');
+    if (metadataBackend && metadataBackend !== currentBackend) {
+      const fresh = await recordWebhook(headers['webhook-id'], type, payload);
+      req.log.info({ type, duplicate: !fresh }, 'ignored webhook routed to another Kairo backend');
+      return reply.send({ ok: true, ignored: true, duplicate: !fresh });
+    }
+    const resolvedUser = await resolveWebhookUser(metadataUserId, sessionId, customerId);
     const occurredAt = eventTime(payload.timestamp, headers['webhook-timestamp']);
 
     let state: DodoSubscriptionState | null = null;
     let userId: string | null = null;
     if (SUBSCRIPTION_EVENTS.has(type)) {
       state = stateFromSubscription(type, data, occurredAt);
-      userId = metadataUserId ?? sessionUserId ?? customerUserId;
-    } else if (type === 'payment.succeeded' && data.subscription_id && sessionUserId) {
+      userId = resolvedUser.userId;
+    } else if (
+      type === 'payment.succeeded'
+      && data.subscription_id
+      && resolvedUser.userId
+      && resolvedUser.source === 'session'
+    ) {
       // Test mode may deliver payment.succeeded before subscription.active. Only a mapped checkout
       // with a real subscription id may take this fallback path; unrelated customer payments cannot.
       state = {
@@ -113,7 +126,7 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
         cancelAtPeriodEnd: false,
         occurredAt,
       };
-      userId = sessionUserId;
+      userId = resolvedUser.userId;
     }
 
     const eventProductId = state?.productId;
@@ -124,6 +137,14 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
     }
 
     if (state && !userId) {
+      if (metadataUserId && !resolvedUser.metadataUserExists) {
+        const fresh = await recordWebhook(headers['webhook-id'], type, payload);
+        req.log.warn(
+          { type, duplicate: !fresh },
+          'ignored billable webhook carrying a user from another Kairo database',
+        );
+        return reply.send({ ok: true, ignored: true, duplicate: !fresh });
+      }
       // Do not record this event yet: a retry may arrive after checkout/customer attribution commits.
       req.log.warn(
         { type, hasSession: Boolean(sessionId), hasCustomer: Boolean(customerId) },

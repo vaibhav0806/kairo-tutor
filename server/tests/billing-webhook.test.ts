@@ -103,7 +103,7 @@ describe('signed Dodo subscription lifecycle', () => {
     expect(await billingState()).toMatchObject({ plan: 'free', status: 'cancelled', cancel_at_period_end: false });
   });
 
-  it('rejects unsigned payloads and retries an unmapped billable event', async () => {
+  it('rejects unsigned payloads, retries an unmapped event, and ignores foreign user metadata', async () => {
     const bad = await app.inject({
       method: 'POST',
       url: '/webhooks/dodo',
@@ -127,12 +127,30 @@ describe('signed Dodo subscription lifecycle', () => {
     expect(unmapped.statusCode).toBe(503);
     const stored = await db.execute(sql`SELECT webhook_id FROM webhook_event WHERE webhook_id = ${unmappedId}`);
     expect(stored.rows).toHaveLength(0);
+
+    const foreignId = `wh_foreign_${Date.now()}`;
+    const foreign = await sendSigned(
+      'subscription.active',
+      {
+        status: 'active',
+        subscription_id: 'sub_foreign',
+        metadata: { user_id: 'user-from-another-kairo-database' },
+        customer: { customer_id: 'cus_foreign' },
+      },
+      new Date(),
+      foreignId,
+    );
+    expect(foreign.statusCode).toBe(200);
+    expect(foreign.json()).toMatchObject({ ok: true, ignored: true });
   });
 
   it('serves a public HTTPS-to-deep-link return bridge', async () => {
-    const response = await app.inject({ method: 'GET', url: '/billing/return' });
+    const response = await app.inject({ method: 'GET', url: '/billing/return?status=failed&email=not-rendered@example.com' });
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/html');
-    expect(response.body).toContain('kairo://billing-done');
+    expect(response.body).toContain('kairo://billing-done?status=failed');
+    expect(response.body).toContain('That payment didn’t go through.');
+    expect(response.body).not.toContain('not-rendered@example.com');
+    expect(response.headers['cache-control']).toBe('no-store');
   });
 });
