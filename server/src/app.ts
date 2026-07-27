@@ -12,11 +12,33 @@ import { dodoWebhookRoutes } from './billing/webhook';
 import { onboardingRoutes } from './onboarding/routes';
 import { registerErrorHandler } from './plugins/error-handler';
 import { healthRoutes } from './health/routes';
+import { requestPath } from './logging';
 
 /** Build the Fastify instance. Returned (not started) so tests can `app.inject(...)`. */
 export async function buildApp(): Promise<FastifyInstance> {
   // 16MB body limit: base64 screenshots (~80KB) and WAV (~48KB) plus headroom for hi-DPI captures.
-  const app = Fastify({ logger: { level: 'info' }, bodyLimit: 16 * 1024 * 1024 });
+  const app = Fastify({
+    logger: {
+      level: 'info',
+      serializers: {
+        req(request: {
+          method?: string;
+          url?: string;
+          headers?: { host?: string };
+          socket?: { remoteAddress?: string; remotePort?: number };
+        }) {
+          return {
+            method: request.method,
+            url: requestPath(request.url),
+            host: request.headers?.host,
+            remoteAddress: request.socket?.remoteAddress,
+            remotePort: request.socket?.remotePort,
+          };
+        },
+      },
+    },
+    bodyLimit: 16 * 1024 * 1024,
+  });
 
   registerErrorHandler(app);
   // The desktop webview calls the backend from a different origin (tauri://localhost) — reflect

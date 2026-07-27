@@ -2,7 +2,7 @@ type CheckoutReturnStatus = 'succeeded' | 'failed' | 'cancelled' | 'processing' 
 
 function checkoutReturnStatus(value: unknown): CheckoutReturnStatus {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (normalized === 'success' || normalized === 'succeeded') return 'succeeded';
+  if (normalized === 'success' || normalized === 'succeeded' || normalized === 'active') return 'succeeded';
   if (normalized === 'failed') return 'failed';
   if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
   if (normalized === 'processing' || normalized === 'pending') return 'processing';
@@ -55,13 +55,13 @@ export function renderBillingReturnPage(rawStatus: unknown): string {
   <style>
     :root{--ink:#11101a;--muted:#696778;--line:#dedce8;--paper:#fbfaff;--accent:#5c26f1;--lime:#b9ef55;--rose:#ff796f}
     *{box-sizing:border-box}
-    html,body{min-height:100%;margin:0}
-    body{display:grid;place-items:center;padding:28px;background:
+    html,body{width:100%;min-height:100%;margin:0}
+    body{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:28px;background:
       radial-gradient(circle at 16% 18%,rgba(92,38,241,.11),transparent 28rem),
       linear-gradient(rgba(17,16,26,.035) 1px,transparent 1px),
       linear-gradient(90deg,rgba(17,16,26,.035) 1px,transparent 1px),#f5f4fa;
       background-size:auto,32px 32px,32px 32px;font-family:"Avenir Next","Helvetica Neue",sans-serif;color:var(--ink)}
-    .shell{position:relative;width:min(100%,620px)}
+    .shell{position:relative;width:min(100%,620px);margin:auto;transform:translate(-5px,-5px)}
     .spark{position:absolute;border:1px solid var(--ink);background:var(--lime);transform:rotate(7deg)}
     .spark.one{width:28px;height:28px;right:-11px;top:44px}
     .spark.two{width:15px;height:15px;left:-7px;bottom:62px;background:var(--accent);transform:rotate(-12deg)}
@@ -87,7 +87,7 @@ export function renderBillingReturnPage(rawStatus: unknown): string {
       transition:transform .18s ease,box-shadow .18s ease}
     a:hover{transform:translate(2px,2px);box-shadow:3px 3px 0 rgba(92,38,241,.26)}
     .hint{margin:0;font:500 11px/1.45 ui-monospace,SFMono-Regular,monospace;color:var(--muted);text-align:right}
-    @media(max-width:560px){main{padding:26px 24px 28px}.content{padding:42px 0 38px}footer{align-items:flex-start;flex-direction:column}.hint{text-align:left}}
+    @media(max-width:560px){body{padding:20px}.shell{transform:translate(-3px,-3px)}main{padding:26px 24px 28px}.content{padding:42px 0 38px}footer{align-items:flex-start;flex-direction:column}.hint{text-align:left}}
     @media(prefers-reduced-motion:no-preference){main{animation:arrive .52s cubic-bezier(.2,.8,.2,1) both}.dot{animation:pulse 1.8s ease-in-out infinite}
       @keyframes arrive{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}@keyframes pulse{50%{transform:scale(.72)}}}
   </style>

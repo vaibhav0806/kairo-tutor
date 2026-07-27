@@ -56,7 +56,7 @@ afterAll(async () => {
 });
 
 describe('signed Dodo subscription lifecycle', () => {
-  it('activates, schedules cancellation, deduplicates, then revokes on final cancellation', async () => {
+  it('fails safely, activates, schedules cancellation, deduplicates, then revokes', async () => {
     const base = Date.now() - 10_000;
     const common = {
       metadata: { user_id: uid },
@@ -65,6 +65,15 @@ describe('signed Dodo subscription lifecycle', () => {
       product_id: dodoProductId,
       next_billing_date: new Date(base + 86_400_000).toISOString(),
     };
+
+    const failed = await sendSigned(
+      'subscription.failed',
+      { ...common, status: 'failed', cancel_at_next_billing_date: false },
+      new Date(base - 1000),
+      `wh_failed_${Date.now()}`,
+    );
+    expect(failed.statusCode).toBe(200);
+    expect(await billingState()).toMatchObject({ plan: 'free', status: 'failed', cancel_at_period_end: false });
 
     const active = await sendSigned(
       'subscription.active',
@@ -101,7 +110,7 @@ describe('signed Dodo subscription lifecycle', () => {
     );
     expect(cancelled.statusCode).toBe(200);
     expect(await billingState()).toMatchObject({ plan: 'free', status: 'cancelled', cancel_at_period_end: false });
-  });
+  }, 15_000);
 
   it('rejects unsigned payloads, retries an unmapped event, and ignores foreign user metadata', async () => {
     const bad = await app.inject({
