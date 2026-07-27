@@ -102,7 +102,7 @@ export function renderBillingReturnPage(rawStatus: unknown): string {
       <footer><a href="${deepLink}">Return to Kairo&nbsp; →</a><p class="hint">Kairo verifies your plan<br>directly with Dodo.</p></footer>
     </main>
   </div>
-  <script>window.setTimeout(function(){location.replace(${JSON.stringify(deepLink)})},550)</script>
+  <script>history.replaceState(null,"","/billing/return");window.setTimeout(function(){location.replace(${JSON.stringify(deepLink)})},550)</script>
 </body>
 </html>`;
 }

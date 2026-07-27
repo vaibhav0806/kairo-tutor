@@ -151,6 +151,7 @@ describe('signed Dodo subscription lifecycle', () => {
     expect(response.body).toContain('kairo://billing-done?status=failed');
     expect(response.body).toContain('That payment didn’t go through.');
     expect(response.body).not.toContain('not-rendered@example.com');
+    expect(response.body).toContain('history.replaceState(null,"","/billing/return")');
     expect(response.headers['cache-control']).toBe('no-store');
   });
 });
