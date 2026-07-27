@@ -34,6 +34,7 @@ python3 assemble.py                    # -> kairo-mark.svg + kairo-mark-mono.svg
 python3 compose_icon.py                # -> kairo-icon-1024.png (macOS squircle plate)
 python3 tray_template.py               # -> kairo-tray-template.png (menu-bar template)
 python3 dmg_background.py              # -> kairo-dmg-background.png (660x400 volume backdrop)
+python3 square_logo.py                 # -> google-oauth-logo-120.png + dodo-logo-512.png
 ```
 
 Then copy the outputs to where the app reads them:
@@ -45,6 +46,8 @@ Then copy the outputs to where the app reads them:
 | `kairo-icon-1024.png` | `assets/brand/` | `npm run tauri icon assets/brand/kairo-icon-1024.png` → Dock/Finder/About/notifications |
 | `kairo-tray-template.png` | `src-tauri/icons/tray-template.png` | the menu-bar status item (`lib.rs`) |
 | `kairo-dmg-background.png` | `assets/brand/dmg-background.png` | the DMG volume window (`tauri.conf.json` → `bundle.dmg.background`) |
+| `google-oauth-logo-120.png` | `assets/brand/` | uploaded by hand to the Google Cloud OAuth consent screen |
+| `dodo-logo-512.png` | `assets/brand/` | uploaded by hand to Dodo → Settings → Business |
 
 The intermediate `*.pbm` / `body|face|eyes.svg` files are throwaway — don't commit them.
 
