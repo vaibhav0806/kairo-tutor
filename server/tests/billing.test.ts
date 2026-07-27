@@ -2,7 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db, pool } from '../src/db/client';
 import { ensureUserRows } from '../src/usage/service';
-import { applyDodoState, customerIdForEmail, isProNow, recordWebhook } from '../src/billing/service';
+import {
+  applyDodoState,
+  applyWebhookState,
+  customerIdForEmail,
+  isProNow,
+  recordWebhook,
+} from '../src/billing/service';
 
 const uid = 'test-user-billing';
 
@@ -33,22 +39,24 @@ describe('isProNow', () => {
     const future = new Date(Date.now() + 86_400_000);
     const past = new Date(Date.now() - 86_400_000);
     expect(isProNow('active', null)).toBe(true);
-    expect(isProNow('cancelled', future)).toBe(true); // paid through the period
+    expect(isProNow('active', future)).toBe(true); // includes scheduled cancellation
+    expect(isProNow('cancelled', future)).toBe(false); // provider says fully ended
     expect(isProNow('cancelled', past)).toBe(false);
     expect(isProNow('on_hold', future)).toBe(true); // dunning grace
+    expect(isProNow('on_hold', new Date(Date.now() - 4 * 86_400_000))).toBe(false);
     expect(isProNow('expired', future)).toBe(false);
   });
 });
 
 describe('applyDodoState', () => {
-  it('activate -> pro, cancel(future) -> still pro, expire -> free; ignores stale events', async () => {
+  it('activate -> pro, scheduled cancel -> pro, final cancel -> free; ignores stale events', async () => {
     const t1 = new Date(Date.now() - 3000);
     const t2 = new Date(Date.now() - 2000);
     const t3 = new Date(Date.now() - 1000);
     const future = new Date(Date.now() + 30 * 86_400_000);
 
     await applyDodoState(uid, {
-      type: 'subscription.active',
+      status: 'active',
       subscriptionId: 'sub_1',
       customerId: 'cus_1',
       currentPeriodEnd: future,
@@ -57,17 +65,22 @@ describe('applyDodoState', () => {
     expect(await planOf()).toBe('pro');
     expect(await statusOf()).toBe('active');
 
-    await applyDodoState(uid, { type: 'subscription.cancelled', currentPeriodEnd: future, occurredAt: t2 });
+    await applyDodoState(uid, {
+      status: 'active',
+      currentPeriodEnd: future,
+      cancelAtPeriodEnd: true,
+      occurredAt: t2,
+    });
     expect(await planOf()).toBe('pro');
-    expect(await statusOf()).toBe('cancelled');
+    expect(await statusOf()).toBe('active');
 
     // A stale event (older than the last applied) must not overwrite newer state.
-    await applyDodoState(uid, { type: 'subscription.active', currentPeriodEnd: future, occurredAt: t1 });
-    expect(await statusOf()).toBe('cancelled');
+    await applyDodoState(uid, { status: 'on_hold', currentPeriodEnd: future, occurredAt: t1 });
+    expect(await statusOf()).toBe('active');
 
-    await applyDodoState(uid, { type: 'subscription.expired', currentPeriodEnd: null, occurredAt: t3 });
+    await applyDodoState(uid, { status: 'cancelled', currentPeriodEnd: future, occurredAt: t3 });
     expect(await planOf()).toBe('free');
-    expect(await statusOf()).toBe('expired');
+    expect(await statusOf()).toBe('cancelled');
   });
 });
 
@@ -76,6 +89,21 @@ describe('recordWebhook idempotency', () => {
     const id = `wh_test_${Date.now()}`;
     expect(await recordWebhook(id, 'subscription.active', { a: 1 })).toBe(true);
     expect(await recordWebhook(id, 'subscription.active', { a: 1 })).toBe(false);
+    await db.execute(sql`DELETE FROM webhook_event WHERE webhook_id = ${id}`);
+  });
+});
+
+describe('transactional webhook idempotency', () => {
+  it('rolls back the webhook id when entitlement application fails', async () => {
+    const id = `wh_rollback_${Date.now()}`;
+    await expect(
+      applyWebhookState(id, 'subscription.active', { safe: true }, 'missing-user', {
+        status: 'active',
+        occurredAt: new Date(),
+      }),
+    ).rejects.toBeTruthy();
+
+    expect(await recordWebhook(id, 'subscription.active', { retry: true })).toBe(true);
     await db.execute(sql`DELETE FROM webhook_event WHERE webhook_id = ${id}`);
   });
 });

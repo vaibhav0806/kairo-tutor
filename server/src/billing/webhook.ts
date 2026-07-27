@@ -1,18 +1,70 @@
 import type { FastifyInstance } from 'fastify';
 import { Webhook } from 'standardwebhooks';
-import { dodoWebhookSecret } from '../config/env';
+import { dodoProductId, dodoWebhookSecret } from '../config/env';
 import {
-  applyDodoState,
+  applyWebhookState,
   recordWebhook,
   userFromCheckoutSession,
   userIdByCustomer,
-  type DodoEventType,
+  type BillingStatus,
+  type DodoSubscriptionState,
 } from './service';
 
-/**
- * Dodo webhook receiver. Registered as its own plugin so its raw-body content-type parser stays
- * encapsulated (HMAC verification needs the exact bytes — the rest of the app parses JSON normally).
- */
+const SUBSCRIPTION_EVENTS = new Set([
+  'subscription.active',
+  'subscription.updated',
+  'subscription.renewed',
+  'subscription.plan_changed',
+  'subscription.update_payment_method',
+  'subscription.on_hold',
+  'subscription.cancelled',
+  'subscription.expired',
+  'subscription.failed',
+]);
+
+function fallbackStatus(type: string): BillingStatus | null {
+  if (type === 'subscription.active' || type === 'subscription.renewed' || type === 'subscription.plan_changed') {
+    return 'active';
+  }
+  if (type === 'subscription.on_hold') return 'on_hold';
+  if (type === 'subscription.cancelled') return 'cancelled';
+  if (type === 'subscription.expired') return 'expired';
+  if (type === 'subscription.failed') return 'failed';
+  return null;
+}
+
+function billingStatus(value: unknown, type: string): BillingStatus | null {
+  if (['pending', 'active', 'on_hold', 'cancelled', 'expired', 'failed'].includes(String(value))) {
+    return value as BillingStatus;
+  }
+  return fallbackStatus(type);
+}
+
+function eventTime(payloadTimestamp: unknown, headerTimestamp: string): Date {
+  const payloadDate = typeof payloadTimestamp === 'string' ? new Date(payloadTimestamp) : null;
+  if (payloadDate && Number.isFinite(payloadDate.getTime())) return payloadDate;
+  const headerDate = new Date(Number(headerTimestamp) * 1000);
+  return Number.isFinite(headerDate.getTime()) ? headerDate : new Date();
+}
+
+function stateFromSubscription(
+  type: string,
+  data: Record<string, any>,
+  occurredAt: Date,
+): DodoSubscriptionState | null {
+  const status = billingStatus(data.status, type);
+  if (!status) return null;
+  return {
+    status,
+    subscriptionId: data.subscription_id,
+    customerId: data.customer?.customer_id ?? data.customer_id,
+    productId: data.product_id,
+    currentPeriodEnd: data.next_billing_date ? new Date(data.next_billing_date) : null,
+    cancelAtPeriodEnd: Boolean(data.cancel_at_next_billing_date),
+    occurredAt,
+  };
+}
+
 export async function dodoWebhookRoutes(app: FastifyInstance) {
   app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
 
@@ -27,52 +79,76 @@ export async function dodoWebhookRoutes(app: FastifyInstance) {
       'webhook-timestamp': String(req.headers['webhook-timestamp'] ?? ''),
     };
 
-    let payload: { type?: string; data?: Record<string, unknown> };
+    let payload: { timestamp?: string; type?: string; data?: Record<string, unknown> };
     try {
       payload = new Webhook(secret).verify(raw, headers) as typeof payload;
     } catch {
+      req.log.warn('dodo webhook signature rejected');
       return reply.status(400).send({ error: 'bad_signature', code: 'bad_request' });
     }
 
-    // Idempotency — a re-delivered event is a no-op.
-    const fresh = await recordWebhook(headers['webhook-id'], payload.type ?? 'unknown', payload);
-    if (!fresh) return reply.send({ ok: true, duplicate: true });
-
-    const type = payload.type ?? '';
+    const type = payload.type ?? 'unknown';
     const data = (payload.data ?? {}) as Record<string, any>;
-    // Dodo nests the customer id under data.customer.customer_id (NOT data.customer_id); the
-    // product id lives in data.product_cart[]. Resolve the user three ways, most-specific first:
-    // subscription events carry our metadata.user_id; payment.succeeded carries only the
-    // checkout_session_id (mapped at checkout); everything else falls back to the stored customer.
-    const customerId = data?.customer?.customer_id ?? data?.customer_id;
-    const sessionId = data?.checkout_session_id ?? data?.session_id;
-    const userId =
-      data?.metadata?.user_id ??
-      (await userFromCheckoutSession(sessionId)) ??
-      (await userIdByCustomer(customerId));
+    const customerId = data.customer?.customer_id ?? data.customer_id;
+    const sessionId = data.checkout_session_id ?? data.session_id;
+    const metadataUserId = typeof data.metadata?.user_id === 'string' ? data.metadata.user_id : null;
+    const sessionUserId = await userFromCheckoutSession(sessionId);
+    const customerUserId = await userIdByCustomer(customerId);
+    const occurredAt = eventTime(payload.timestamp, headers['webhook-timestamp']);
 
-    // Test mode reliably sends `payment.succeeded` (with checkout_session_id + customer) but often
-    // NOT `subscription.active`. Treat a mapped subscription-checkout payment as activation so we
-    // always capture the customer id (needed for the billing portal) and grant Pro.
-    const billable = type.startsWith('subscription.') || type === 'payment.succeeded';
-    if (billable && userId) {
-      const evType: DodoEventType = type.startsWith('subscription.')
-        ? (type as DodoEventType)
-        : 'subscription.active';
-      await applyDodoState(userId, {
-        type: evType,
-        subscriptionId: data?.subscription_id,
+    let state: DodoSubscriptionState | null = null;
+    let userId: string | null = null;
+    if (SUBSCRIPTION_EVENTS.has(type)) {
+      state = stateFromSubscription(type, data, occurredAt);
+      userId = metadataUserId ?? sessionUserId ?? customerUserId;
+    } else if (type === 'payment.succeeded' && data.subscription_id && sessionUserId) {
+      // Test mode may deliver payment.succeeded before subscription.active. Only a mapped checkout
+      // with a real subscription id may take this fallback path; unrelated customer payments cannot.
+      state = {
+        status: 'active',
+        subscriptionId: data.subscription_id,
         customerId,
-        productId: data?.product_id ?? data?.product_cart?.[0]?.product_id,
-        currentPeriodEnd: data?.next_billing_date ? new Date(data.next_billing_date) : null,
-        occurredAt: headers['webhook-timestamp']
-          ? new Date(Number(headers['webhook-timestamp']) * 1000)
-          : new Date(),
-      });
-      req.log.info({ type, mappedFrom: sessionId ? 'session' : 'meta/customer', hasCustomer: Boolean(customerId) }, 'dodo entitlement applied');
-    } else {
-      req.log.info({ type, hasSession: Boolean(sessionId), hasCustomer: Boolean(customerId) }, 'dodo webhook: no user mapped');
+        productId: dodoProductId,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        occurredAt,
+      };
+      userId = sessionUserId;
     }
-    return reply.send({ ok: true });
+
+    const eventProductId = state?.productId;
+    if (state && dodoProductId && eventProductId && eventProductId !== dodoProductId) {
+      const fresh = await recordWebhook(headers['webhook-id'], type, payload);
+      req.log.warn({ type, duplicate: !fresh }, 'ignored webhook for another product');
+      return reply.send({ ok: true, ignored: true });
+    }
+
+    if (state && !userId) {
+      // Do not record this event yet: a retry may arrive after checkout/customer attribution commits.
+      req.log.warn(
+        { type, hasSession: Boolean(sessionId), hasCustomer: Boolean(customerId) },
+        'billable webhook has no user mapping; requesting retry',
+      );
+      return reply.status(503).send({ error: 'billing_user_not_ready', code: 'provider_error' });
+    }
+
+    if (state && userId) {
+      const result = await applyWebhookState(headers['webhook-id'], type, payload, userId, state);
+      req.log.info(
+        {
+          type,
+          result,
+          status: state.status,
+          scheduledCancel: state.cancelAtPeriodEnd ?? false,
+          hasCustomer: Boolean(state.customerId),
+        },
+        'dodo entitlement processed',
+      );
+      return reply.send({ ok: true, duplicate: result === 'duplicate' });
+    }
+
+    const fresh = await recordWebhook(headers['webhook-id'], type, payload);
+    req.log.info({ type, duplicate: !fresh }, 'dodo webhook acknowledged without entitlement change');
+    return reply.send({ ok: true, duplicate: !fresh });
   });
 }
