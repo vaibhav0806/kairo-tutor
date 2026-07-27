@@ -34,6 +34,7 @@ export function SettingsView() {
   const [launchAtLogin, setLaunch] = useState(false);
   const [version, setVersion] = useState('');
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const startWindowDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const target = event.target as Element;
@@ -115,11 +116,14 @@ export function SettingsView() {
     await invoke('set_launch_at_login', { enabled }).catch(() => {});
   };
   const withBusy = (fn: () => Promise<void>) => async () => {
+    setActionError('');
     setBusy(true);
     try {
       await fn();
     } catch (error) {
-      klog('notch', 'warn', 'settings action failed', { error: String(error) });
+      const message = String(error).replace(/^.*?:\s*/, '');
+      setActionError(message);
+      klog('settings', 'warn', 'settings action failed', { error: String(error) });
     }
     setBusy(false);
   };
@@ -187,13 +191,18 @@ export function SettingsView() {
           </div>
           {isPro ? (
             <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(() => bridge.openBillingPortal())}>
-              Manage subscription
+              {busy ? 'Opening…' : 'Manage subscription'}
             </button>
           ) : (
             <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout())}>
               Upgrade to Pro — $10/mo
             </button>
           )}
+          {actionError ? (
+            <p className="s-action-error" role="alert">
+              {actionError}
+            </p>
+          ) : null}
         </section>
 
         {/* Display name */}

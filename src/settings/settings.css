@@ -102,6 +102,12 @@
 .s-sub {
   margin-top: -4px;
 }
+.s-action-error {
+  margin: 0;
+  color: #9f2d24;
+  font-size: 12px;
+  line-height: 1.4;
+}
 
 .settings-row {
   display: flex;

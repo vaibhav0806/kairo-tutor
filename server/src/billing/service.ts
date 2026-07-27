@@ -100,6 +100,22 @@ export async function userIdByCustomer(customerId?: string): Promise<string | nu
   return r.rows.length ? (r.rows[0] as { user_id: string }).user_id : null;
 }
 
+/** Recover a legacy/missed-webhook customer mapping without trusting a fuzzy email match. */
+export function customerIdForEmail(
+  customers: Array<{ customer_id: string; email: string }>,
+  email: string,
+): string | null {
+  const wanted = email.trim().toLowerCase();
+  return customers.find((customer) => customer.email.trim().toLowerCase() === wanted)?.customer_id ?? null;
+}
+
+export async function rememberDodoCustomer(userId: string, customerId: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE subscription
+       SET dodo_customer_id = ${customerId}, updated_at = now()
+     WHERE user_id = ${userId}`);
+}
+
 /** Remember which user started a checkout session, so a later `payment.succeeded` (which carries
  * only the `checkout_session_id`) can be attributed back to them. Stored at checkout time. */
 export async function rememberCheckoutSession(sessionId: string, userId: string): Promise<void> {

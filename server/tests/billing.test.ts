@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db, pool } from '../src/db/client';
 import { ensureUserRows } from '../src/usage/service';
-import { applyDodoState, isProNow, recordWebhook } from '../src/billing/service';
+import { applyDodoState, customerIdForEmail, isProNow, recordWebhook } from '../src/billing/service';
 
 const uid = 'test-user-billing';
 
@@ -77,5 +77,16 @@ describe('recordWebhook idempotency', () => {
     expect(await recordWebhook(id, 'subscription.active', { a: 1 })).toBe(true);
     expect(await recordWebhook(id, 'subscription.active', { a: 1 })).toBe(false);
     await db.execute(sql`DELETE FROM webhook_event WHERE webhook_id = ${id}`);
+  });
+});
+
+describe('customerIdForEmail', () => {
+  it('recovers only an exact case-insensitive customer match', () => {
+    const customers = [
+      { customer_id: 'cus_wrong', email: 'someone@example.com' },
+      { customer_id: 'cus_right', email: ' Founder@Example.com ' },
+    ];
+    expect(customerIdForEmail(customers, 'founder@example.com')).toBe('cus_right');
+    expect(customerIdForEmail(customers, 'founder+other@example.com')).toBeNull();
   });
 });

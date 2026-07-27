@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { env, dodoApiKey, dodoProductId } from '../config/env';
 import { requireAuth } from '../plugins/auth-verify';
-import { rememberCheckoutSession } from './service';
+import { customerIdForEmail, rememberCheckoutSession, rememberDodoCustomer } from './service';
 
 function dodoClient(): DodoPayments | null {
   if (!dodoApiKey) return null;
@@ -54,11 +54,37 @@ export async function billingRoutes(app: FastifyInstance) {
     const client = dodoClient();
     if (!client) return reply.status(503).send({ error: 'billing_not_configured', code: 'provider_error' });
 
-    const s = await db.execute(sql`SELECT dodo_customer_id FROM subscription WHERE user_id = ${req.userId!}`);
-    const customerId = (s.rows[0] as { dodo_customer_id: string | null } | undefined)?.dodo_customer_id;
-    if (!customerId) return reply.status(400).send({ error: 'no_customer', code: 'bad_request' });
+    const s = await db.execute(sql`
+      SELECT s.dodo_customer_id, u.email
+        FROM subscription s
+        JOIN "user" u ON u.id = s.user_id
+       WHERE s.user_id = ${req.userId!}`);
+    const account = s.rows[0] as { dodo_customer_id: string | null; email: string } | undefined;
+    let customerId = account?.dodo_customer_id ?? null;
 
-    const portal = (await client.customers.customerPortal.create(customerId)) as { link?: string; url?: string };
-    return { url: portal.link ?? portal.url };
+    // Early test-mode checkouts could grant Pro from payment.succeeded without persisting the nested
+    // customer id. Recover once from Dodo's exact-email filter, then store the mapping permanently.
+    if (!customerId && account?.email) {
+      const customers = await client.customers.list({ email: account.email, page_size: 20 });
+      customerId = customerIdForEmail(customers.items, account.email);
+      if (customerId) {
+        await rememberDodoCustomer(req.userId!, customerId);
+        req.log.info('billing portal: recovered missing customer mapping');
+      }
+    }
+    if (!customerId) {
+      req.log.warn('billing portal: customer mapping unavailable');
+      return reply.status(409).send({ error: 'customer_not_ready', code: 'billing_sync_pending' });
+    }
+
+    const portal = await client.customers.customerPortal.create(customerId, {
+      return_url: 'kairo://billing-done',
+    });
+    if (!portal.link) {
+      req.log.error('billing portal: provider returned no link');
+      return reply.status(502).send({ error: 'portal_link_missing', code: 'provider_error' });
+    }
+    req.log.info('billing portal session created');
+    return { url: portal.link };
   });
 }

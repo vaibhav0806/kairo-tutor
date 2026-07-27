@@ -266,6 +266,7 @@ pub(crate) async fn start_checkout(app: AppHandle) -> Result<(), String> {
 /// Open the Dodo customer portal (manage / cancel): POST `/v1/billing/portal` → open the url.
 #[tauri::command]
 pub(crate) async fn open_billing_portal(app: AppHandle) -> Result<(), String> {
+    let _timer = crate::klog::timer("app", "billing_portal");
     let jwt = fetch_jwt(&app).await.ok_or_else(|| "signed out".to_string())?;
     let url = format!("{}/v1/billing/portal", backend_url());
     let response = shared_http_client()
@@ -275,7 +276,24 @@ pub(crate) async fn open_billing_portal(app: AppHandle) -> Result<(), String> {
         .send()
         .await
         .map_err(|error| error.to_string())?;
+    let status = response.status();
     let body: Value = response.json().await.map_err(|error| error.to_string())?;
+    if !status.is_success() {
+        let code = body
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("billing_error");
+        crate::klog!(app, warn, status = status.as_u16(), code, "billing portal request failed");
+        return Err(match code {
+            "billing_sync_pending" => {
+                "Your billing account is still syncing. Please try again in a moment.".to_string()
+            }
+            "provider_error" => {
+                "The subscription portal is temporarily unavailable. Please try again.".to_string()
+            }
+            _ => "Could not open your subscription settings. Please try again.".to_string(),
+        });
+    }
     let portal_url = body
         .get("url")
         .and_then(Value::as_str)
