@@ -1,10 +1,5 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
-import { OnboardingApp } from './onboarding/OnboardingApp';
-import { CursorApp } from './cursor/CursorApp';
-import { NotchApp } from './notch/NotchApp';
-import { OverlayApp } from './overlay/OverlayApp';
 import { installGlobalErrorLogging, klog } from './core/logger';
 import { applyAccent, getAccent, onAccentChanged } from './core/accent';
 // The website's three faces, so the app reads as the same product (kairo/src/app/layout.tsx):
@@ -14,6 +9,21 @@ import '@fontsource-variable/geist';
 import '@fontsource-variable/bricolage-grotesque';
 import '@fontsource-variable/geist-mono';
 import './styles.css';
+
+// Each native window uses the same HTML entry but needs only one UI. Route-level chunks keep the
+// always-running notch/cursor windows from parsing onboarding, settings, and overlay code (including
+// their large icon/motion trees) at startup.
+const App = lazy(() => import('./App').then((module) => ({ default: module.App })));
+const OnboardingApp = lazy(() =>
+  import('./onboarding/OnboardingApp').then((module) => ({ default: module.OnboardingApp }))
+);
+const CursorApp = lazy(() =>
+  import('./cursor/CursorApp').then((module) => ({ default: module.CursorApp }))
+);
+const NotchApp = lazy(() => import('./notch/NotchApp').then((module) => ({ default: module.NotchApp })));
+const OverlayApp = lazy(() =>
+  import('./overlay/OverlayApp').then((module) => ({ default: module.OverlayApp }))
+);
 
 // Record uncaught errors/rejections from this WebView into the shared Kairo log.
 installGlobalErrorLogging();
@@ -34,10 +44,12 @@ const RootApp =
           ? OnboardingApp
           : App;
 
-klog('boot', 'info', 'webview mounted');
+klog('boot', 'info', 'webview mounted', { route: window.location.hash || 'main' });
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <RootApp />
+    <Suspense fallback={null}>
+      <RootApp />
+    </Suspense>
   </StrictMode>
 );
