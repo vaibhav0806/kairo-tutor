@@ -10,6 +10,10 @@ services:
     container_name: kairo-server
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Non-secret selector. Runtime + migration guards verify the live Dodo mode and exact
+      # production Neon endpoint before serving or changing data.
+      KAIRO_SERVER_TARGET: hosted
     # Cap container logs (shared box) — 3 x 10MB rolling, never fills the disk.
     logging:
       driver: json-file

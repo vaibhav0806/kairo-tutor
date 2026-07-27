@@ -1,7 +1,9 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { assertStaticEnvironment } from './targets';
 
 const Env = z.object({
+  KAIRO_SERVER_TARGET: z.enum(['local', 'hosted']).default('local'),
   PORT: z.coerce.number().default(8787),
   PUBLIC_BASE_URL: z.string().url(),
   DATABASE_URL: z.string().min(1),
@@ -27,6 +29,7 @@ const Env = z.object({
 });
 
 export const env = Env.parse(process.env);
+assertStaticEnvironment(env);
 export type AppEnv = typeof env;
 
 // The Dodo key + webhook secret + product id in effect, chosen by DODO_ENV (test vs live).

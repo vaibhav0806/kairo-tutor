@@ -16,7 +16,7 @@ fi
 echo "==> build image"
 docker compose build
 
-echo "==> migrate (forward-only, prod Neon branch)"
+echo "==> migrate (forward-only; guarded hosted/live + prod Neon target)"
 docker compose run --rm kairo-server node dist/db/migrate.js
 
 echo "==> (re)start service"

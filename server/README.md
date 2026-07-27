@@ -12,6 +12,17 @@ npm run db:migrate -w @kairo/server
 npm run server:dev            # from repo root — tsx watch on :8787
 ```
 
+The environment pairing is deliberate and guarded:
+
+| Server target | Base URL | Neon branch | Dodo |
+| --- | --- | --- | --- |
+| `local` (default) | `http://localhost:8787` | `dev` | test mode |
+| `hosted` (set by Docker Compose) | `https://api.meetkairo.xyz` | `production` | live mode |
+
+Both startup and migration read Neon's real endpoint metadata and refuse to run if the connection
+does not match the selected target. This makes switching a connection string alone insufficient to
+accidentally run local tests against production.
+
 `.env` must have (see `.env.example`):
 - `DATABASE_URL` — the Neon **pooled** connection string (host contains `-pooler`).
 - `BETTER_AUTH_SECRET` — `openssl rand -base64 32`.

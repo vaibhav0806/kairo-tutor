@@ -27,6 +27,10 @@ Secrets never reach the browser or the desktop bundle.
 ## Neon + migrations
 
 - **Drizzle** ORM, `pg` (node-postgres) `Pool` on the **pooled** Neon URL.
+- Environment mapping is fixed in `src/config/targets.ts`: `local` = Neon `dev` + Dodo test mode;
+  `hosted` = Neon `production` + Dodo live mode. Docker Compose sets the hosted selector; local
+  commands default to local. Startup and migrations verify Neon's actual endpoint and fail closed
+  on any cross-environment mix. Do not bypass this guard.
 - Migrations are **forward-only**, checked into `server/drizzle/`, reviewed in-PR, dry-run on a
   Neon branch first. **Never** auto-apply on boot; run `src/db/migrate.ts` as a deploy step.
   Never hand-edit an already-applied migration.
@@ -50,6 +54,8 @@ Secrets never reach the browser or the desktop bundle.
 - Local end-to-end testing uses `npm run billing:test:listen` from the repo root. It applies
   migrations, verifies `DODO_ENV=test_mode`, and runs Dodo's signed CLI relay to
   `http://localhost:8787/webhooks/dodo`. Never bypass signature checks for local testing.
+- Never point test-mode Dodo at the hosted API. Test checkouts, webhook relays, account resets, and
+  simulated lifecycle events belong only to the local server and Neon `dev` branch.
 - A Hetzner live cutover requires explicit user approval in the current request and the preflight
   in root `AGENTS.md`. Change only the environment selector after preflight; never copy live values
   into a command, repo file, local env, test, or log. Do not generate a live checkout as an agent.

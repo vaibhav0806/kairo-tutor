@@ -26,6 +26,15 @@ NEVER paste a live key into code, logs, tests, or committed config. Provider key
 - Never create or simulate a live transaction. After switching, use read-only provider checks plus
   `/readyz`; the founder performs the first real checkout.
 
+## Backend data environments
+
+- The pairing is fixed: local server → Neon `dev` + Dodo test mode; Hetzner server → Neon
+  `production` + Dodo live mode.
+- `server/src/config/targets.ts` is the single committed environment map. Server startup and every
+  migration verify the actual Neon endpoint and refuse mismatched combinations.
+- Never use the hosted API for test-mode checkout, webhook, account-reset, or lifecycle simulation.
+  Run the local server plus `npm run billing:test:listen`; all such data belongs in Neon `dev`.
+
 ## Commit discipline
 Work on `main` (no branches unless the user says so). Commit each change as you go — small,
 revertible commits, not one big batch. No unrelated refactors in a feature change. End every
