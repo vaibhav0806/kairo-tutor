@@ -4,5 +4,6 @@ fn main() {
     // recompile on a change unless we declare it here — so a dev build (true) and the
     // production DMG build (false) reliably bake the right value.
     println!("cargo:rerun-if-env-changed=KAIRO_SHOW_IN_CAPTURE");
+    println!("cargo:rerun-if-env-changed=KAIRO_BACKEND_TARGET");
     tauri_build::build();
 }

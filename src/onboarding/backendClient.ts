@@ -1,10 +1,11 @@
 import type { MeResponse } from '@kairo/shared';
-import { KAIRO_BACKEND_URL } from './config';
+import { getKairoBackendUrl } from './config';
 
 /** Speak a scripted onboarding line. Returns base64 WAV audio, or null if unavailable. */
 export async function onboardingTts(text: string): Promise<string | null> {
   try {
-    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding/tts`, {
+    const backendUrl = await getKairoBackendUrl();
+    const res = await fetch(`${backendUrl}/v1/onboarding/tts`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -21,7 +22,8 @@ export async function onboardingTts(text: string): Promise<string | null> {
 /** "Talk to me" practice: send what the user said, get Kairo's dynamic spoken reply. */
 export async function onboardingChat(transcript: string, name: string): Promise<string> {
   try {
-    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding/chat`, {
+    const backendUrl = await getKairoBackendUrl();
+    const res = await fetch(`${backendUrl}/v1/onboarding/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ transcript, name }),
@@ -41,7 +43,8 @@ export async function saveOnboarding(
   accent = '',
 ): Promise<boolean> {
   try {
-    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/onboarding`, {
+    const backendUrl = await getKairoBackendUrl();
+    const res = await fetch(`${backendUrl}/v1/onboarding`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${jwt}` },
       body: JSON.stringify({ displayName, source, accent }),
@@ -55,7 +58,8 @@ export async function saveOnboarding(
 /** Fetch the signed-in user's profile (name/email/usage). Null if signed out / offline. */
 export async function getMe(jwt: string): Promise<MeResponse | null> {
   try {
-    const res = await fetch(`${KAIRO_BACKEND_URL}/v1/me`, {
+    const backendUrl = await getKairoBackendUrl();
+    const res = await fetch(`${backendUrl}/v1/me`, {
       headers: { authorization: `Bearer ${jwt}` },
     });
     if (!res.ok) return null;

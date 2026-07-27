@@ -21,11 +21,10 @@ pub(crate) const STT_PROVIDER: &str = "sarvam"; // sarvam | elevenlabs | mock
 pub(crate) const TTS_PROVIDER: &str = "sarvam";
 
 // ---------------------------------------------------------------- Backend (auth + proxy)
-// The Kairo backend base URL. Auth (Google sign-in) always goes through it; when
-// USE_BACKEND_PROXY is true, provider calls route through it too (holding the real keys
-// server-side). Prod = https://api.meetkairo.xyz. Runtime-overridable via KAIRO_BACKEND_URL
-// (e.g. http://localhost:8787 to point at a local backend during dev).
-pub(crate) const KAIRO_BACKEND_URL: &str = "https://api.meetkairo.xyz";
+// `npm run app:local` / `npm run app:hosted` select exactly one destination for auth,
+// onboarding, billing, and provider proxying. Native exposes the resolved URL to every WebView.
+pub(crate) const KAIRO_LOCAL_BACKEND_URL: &str = "http://localhost:8787";
+pub(crate) const KAIRO_HOSTED_BACKEND_URL: &str = "https://api.meetkairo.xyz";
 // Master switch for routing provider calls through the backend proxy. Prod default `true` so the
 // desktop bundle never ships provider keys. Override at runtime with KAIRO_USE_BACKEND_PROXY=false
 // to use the direct-provider path (needs local .env keys) for offline/local dev.

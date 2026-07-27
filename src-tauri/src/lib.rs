@@ -1005,6 +1005,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            proxy::get_backend_url,
             get_active_app,
             get_permission_status,
             request_required_permissions,

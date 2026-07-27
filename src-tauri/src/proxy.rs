@@ -12,7 +12,7 @@ use tauri::AppHandle;
 
 use crate::auth::fetch_jwt;
 use crate::constants;
-use crate::env::{provider_env, provider_env_optional};
+use crate::env::provider_env_optional;
 use crate::tutor::shared_http_client;
 
 // Mirrors `ASK_ID_HEADER` in packages/shared (Rust can't import the TS constant).
@@ -53,10 +53,26 @@ async fn proxy_post_builder(
     authed_post(app, path, timeout).await
 }
 
-/// The Kairo backend base URL. Runtime-overridable via `KAIRO_BACKEND_URL` (no rebuild);
-/// otherwise the compiled default. Both auth and the provider proxy resolve through this.
+fn backend_url_for_target(target: Option<&str>) -> &'static str {
+    match target {
+        Some("local") => constants::KAIRO_LOCAL_BACKEND_URL,
+        Some("hosted") | None => constants::KAIRO_HOSTED_BACKEND_URL,
+        Some(other) => {
+            crate::klog!(app, warn, target = other, "unknown backend target; using hosted");
+            constants::KAIRO_HOSTED_BACKEND_URL
+        }
+    }
+}
+
+/// The single backend URL baked into this packaged build.
 pub(crate) fn backend_url() -> String {
-    provider_env("KAIRO_BACKEND_URL", constants::KAIRO_BACKEND_URL)
+    backend_url_for_target(option_env!("KAIRO_BACKEND_TARGET")).to_string()
+}
+
+/// WebViews use this instead of maintaining a second frontend URL.
+#[tauri::command]
+pub(crate) fn get_backend_url() -> String {
+    backend_url()
 }
 
 /// True when provider calls should route through the backend proxy. Runtime-overridable
@@ -318,4 +334,18 @@ pub(crate) async fn vision_tutor(
         object.insert("_provider".to_string(), Value::String(provider_hint.to_string()));
     }
     proxy_post_json(app, "/v1/vision/tutor", &body, Some(ask_id), timeout).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::backend_url_for_target;
+    use crate::constants::{KAIRO_HOSTED_BACKEND_URL, KAIRO_LOCAL_BACKEND_URL};
+
+    #[test]
+    fn backend_target_is_centralized_and_safe_by_default() {
+        assert_eq!(backend_url_for_target(Some("local")), KAIRO_LOCAL_BACKEND_URL);
+        assert_eq!(backend_url_for_target(Some("hosted")), KAIRO_HOSTED_BACKEND_URL);
+        assert_eq!(backend_url_for_target(None), KAIRO_HOSTED_BACKEND_URL);
+        assert_eq!(backend_url_for_target(Some("typo")), KAIRO_HOSTED_BACKEND_URL);
+    }
 }
