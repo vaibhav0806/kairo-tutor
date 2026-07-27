@@ -5,6 +5,7 @@ import { db } from '../db/client';
 import { env, dodoApiKey, dodoProductId } from '../config/env';
 import { requireAuth } from '../plugins/auth-verify';
 import { customerIdForEmail, rememberCheckoutSession, rememberDodoCustomer } from './service';
+import { hasManageableSubscription, type SubStatus } from '@kairo/shared';
 
 function dodoClient(): DodoPayments | null {
   if (!dodoApiKey) return null;
@@ -55,11 +56,22 @@ export async function billingRoutes(app: FastifyInstance) {
     if (!client) return reply.status(503).send({ error: 'billing_not_configured', code: 'provider_error' });
 
     const s = await db.execute(sql`
-      SELECT s.dodo_customer_id, u.email
+      SELECT s.status, s.dodo_customer_id, u.email
         FROM subscription s
         JOIN "user" u ON u.id = s.user_id
        WHERE s.user_id = ${req.userId!}`);
-    const account = s.rows[0] as { dodo_customer_id: string | null; email: string } | undefined;
+    const account = s.rows[0] as {
+      status: SubStatus;
+      dodo_customer_id: string | null;
+      email: string;
+    } | undefined;
+    if (!account || !hasManageableSubscription(account.status)) {
+      req.log.info({ status: account?.status ?? 'missing' }, 'billing portal: no managed subscription');
+      return reply.status(409).send({
+        error: 'no_billing_subscription',
+        code: 'no_billing_subscription',
+      });
+    }
     let customerId = account?.dodo_customer_id ?? null;
 
     // Early test-mode checkouts could grant Pro from payment.succeeded without persisting the nested

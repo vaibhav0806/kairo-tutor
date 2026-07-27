@@ -285,6 +285,9 @@ pub(crate) async fn open_billing_portal(app: AppHandle) -> Result<(), String> {
             .unwrap_or("billing_error");
         crate::klog!(app, warn, status = status.as_u16(), code, "billing portal request failed");
         return Err(match code {
+            "no_billing_subscription" => {
+                "This Pro access is complimentary and has no subscription to manage.".to_string()
+            }
             "billing_sync_pending" => {
                 "Your billing account is still syncing. Please try again in a moment.".to_string()
             }
