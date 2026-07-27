@@ -8,6 +8,7 @@ import { createNativeBridge, type NativePermissionStatus, type NativePermissionK
 import { getAuthStatus, onAuthChanged, signOut, startGoogleAuth } from '../onboarding/authClient';
 import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
+import { KairoLockup } from '../components/KairoMark';
 import './settings.css';
 
 type SkillInfo = { slug: string; name: string; description: string; enabled: boolean };
@@ -127,7 +128,7 @@ export function SettingsView() {
     return (
       <div className="settings-scrim">
         <div className="settings-card">
-          <div className="settings-brand">kairo</div>
+          <KairoLockup className="settings-brand" />
           <h2 className="settings-h2">You're signed out</h2>
           <p className="settings-muted">Sign in to use Kairo.</p>
           <button className="s-btn s-btn-primary" onClick={() => void startGoogleAuth()}>
@@ -142,7 +143,7 @@ export function SettingsView() {
     <div className="settings-scrim">
       <div className="settings-card">
         <div className="settings-head">
-          <div className="settings-brand">kairo</div>
+          <KairoLockup className="settings-brand" />
           <span className="settings-title">Settings</span>
         </div>
 

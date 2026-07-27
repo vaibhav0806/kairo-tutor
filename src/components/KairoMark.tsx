@@ -1,0 +1,60 @@
+//! The Kairo logo, inlined.
+//!
+//! The paths are the same curves as `public/brand/kairo-mark.svg` (traced by `scripts/brand/`).
+//! They're inlined rather than loaded from `public/` because Vite runs with `base: './'` and the
+//! four WebViews are hash-routed, so an absolute `/brand/...` URL doesn't resolve the same way in
+//! every one. Inlining also means the mark paints on the first frame with no extra request.
+//!
+//! `tests/brandMark.test.ts` asserts these paths stay identical to the SVG file and to the copy in
+//! the server's OAuth success page — update all three together, or that test fails.
+
+const BODY =
+  'M3542 9389 c-88 -44 -122 -139 -122 -343 0 -165 14 -233 72 -356 60 -127 118 -207 213 -299 48 -46 85 -84 83 -86 -2 -2 -50 2 -108 7 -58 5 -156 8 -218 6 l-114 -3 -29 -33 c-61 -68 -26 -160 112 -302 49 -49 85 -90 81 -90 -14 0 -253 -140 -337 -198 -383 -261 -722 -651 -963 -1107 -71 -136 -83 -162 -159 -345 -69 -166 -160 -472 -188 -633 -75 -416 -82 -781 -25 -1167 11 -74 22 -151 25 -170 8 -52 68 -261 110 -379 65 -187 224 -482 344 -640 31 -40 65 -85 75 -100 35 -46 258 -265 346 -338 82 -68 173 -130 330 -225 295 -178 694 -310 1170 -387 100 -16 248 -29 580 -51 339 -22 390 -30 471 -70 87 -44 136 -126 159 -262 20 -121 39 -344 45 -528 10 -337 19 -373 96 -429 36 -27 51 -31 103 -31 52 0 70 5 117 34 92 55 378 271 485 365 22 20 60 53 85 75 112 98 345 317 449 424 318 324 476 504 655 747 49 66 118 161 155 210 36 50 104 151 149 225 46 74 94 151 106 170 52 81 206 385 225 445 7 22 16 45 20 50 27 35 143 383 189 570 33 133 32 125 61 355 37 285 43 666 15 895 -6 49 -30 227 -40 293 -15 98 -36 186 -99 402 -148 507 -407 976 -780 1414 -220 260 -526 514 -841 700 -125 74 -447 236 -468 236 -5 0 -70 23 -145 51 -165 62 -582 168 -799 204 -268 44 -418 74 -519 105 -53 17 -107 32 -120 34 -31 6 -160 65 -260 119 -128 69 -334 219 -489 355 -116 102 -209 127 -303 81z';
+const FACE =
+  'M4752 7145 c-239 -25 -527 -89 -717 -160 -284 -106 -560 -289 -749 -496 -456 -498 -663 -1295 -521 -2005 31 -154 71 -268 145 -419 144 -291 360 -485 700 -630 205 -87 522 -152 920 -187 196 -17 943 -17 1155 0 377 31 748 104 956 188 468 189 752 553 848 1084 103 565 -5 1203 -280 1665 -318 534 -854 854 -1590 951 -172 22 -687 28 -867 9z m1815 -2237 c-2 -29 -3 -6 -3 52 0 58 1 81 3 53 2 -29 2 -77 0 -105z';
+const EYES =
+  'M4022 5665 c-78 -22 -111 -42 -170 -103 -118 -123 -171 -313 -172 -612 0 -292 58 -489 180 -611 69 -69 119 -92 216 -97 96 -5 138 6 211 55 100 67 177 202 208 366 9 45 18 145 22 222 13 321 -49 557 -184 691 -83 83 -206 118 -311 89z M6082 5670 c-101 -21 -206 -108 -262 -220 -130 -259 -133 -725 -6 -985 45 -92 110 -159 192 -197 60 -28 72 -30 152 -26 105 5 169 35 239 112 123 137 169 328 160 662 -5 212 -21 293 -82 422 -79 167 -241 263 -393 232z';
+
+/**
+ * The mark on its own. Sized in `em` by default so it tracks the surrounding type; pass `size` for
+ * a fixed pixel box. Decorative by default — the lockup beside it carries the name.
+ */
+export function KairoMark({ size, className }: { size?: number; className?: string }) {
+  const box = size ? `${size}px` : undefined;
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 1024 1024"
+      width={box}
+      height={box}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <g transform="translate(0,1024) scale(0.1,-0.1)">
+        <path fill="#5c26f1" d={BODY} />
+        <path fill="#fefefe" d={FACE} />
+        <path fill="#0f0e1a" d={EYES} />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * Mark + wordmark, the same lockup the website's header uses (lowercase, Bricolage 740, tight
+ * tracking). The caller's `className` supplies the type; `.kairo-lockup` only handles the layout,
+ * so one component fits the hero, the sign-in card, settings and the permission screen.
+ */
+export function KairoLockup({
+  className,
+  label = 'kairo'
+}: {
+  className?: string;
+  label?: string;
+}) {
+  return (
+    <span className={className ? `kairo-lockup ${className}` : 'kairo-lockup'}>
+      <KairoMark />
+      <span>{label}</span>
+    </span>
+  );
+}

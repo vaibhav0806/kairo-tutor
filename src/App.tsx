@@ -8,6 +8,7 @@ import {
 import { getAuthStatus, onAuthChanged } from './onboarding/authClient';
 import { syncUserName } from './onboarding/userName';
 import { SettingsView } from './settings/SettingsView';
+import { KairoLockup } from './components/KairoMark';
 
 // The main window is normally hidden. Rust only reveals it on first run when TCC
 // permissions still need granting (see lib.rs setup). So this component is purely
@@ -146,7 +147,7 @@ export function App() {
     <main className="app-shell">
       <section className="topbar" aria-label="Tutor status">
         <div>
-          <p className="eyebrow">Kairo Tutor</p>
+          <KairoLockup className="app-lockup" />
           <h1>Enable Kairo permissions</h1>
         </div>
         <div className="status-pill">Provider: {env.aiProvider}</div>

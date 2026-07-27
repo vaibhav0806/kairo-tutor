@@ -5,6 +5,7 @@ import { ACT5_SIGNIN } from '../copy';
 import { getAuthStatus, onAuthChanged, startGoogleAuth } from '../authClient';
 import { syncUserName } from '../userName';
 import { TempPanel } from './TempPanel';
+import { KairoLockup } from '../../components/KairoMark';
 
 /**
  * Act 5a — sign in (master spec §4). The Google button opens the system browser; on the deep-link
@@ -48,7 +49,7 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
   return (
     <TempPanel>
       <div className="ob-signin">
-        <span className="ob-signin-mark">Kairo</span>
+        <KairoLockup className="ob-signin-mark" />
         {signedIn ? (
           <span className="ob-signin-done">Signed in — one sec…</span>
         ) : (

@@ -9,6 +9,7 @@ import { useCoach } from '../useCoach';
 import { ACT_LINES, HERO_COPY } from '../copy';
 import { ACCENT_PRESETS } from '../accentPresets';
 import blenderShot from '../../assets/onboarding/blender-viewport.webp';
+import { KairoLockup, KairoMark } from '../../components/KairoMark';
 
 // The fixed hero violet (landing accent). Act 0 shows BEFORE the color step, so the hero is
 // deliberately decoupled from the user's chosen accent — it always reads in this violet.
@@ -274,9 +275,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
                 exit={reduce ? undefined : { opacity: 0, x: -14, filter: 'blur(4px)' }}
                 transition={{ duration: 0.2 }}
               >
-                {/* LOGO SLOT — the real Kairo logo drops in here (an <img>/inline SVG) beside or in
-                    place of the wordmark once the team ships it. */}
-                <div className="ob-hero-mark">{HERO_COPY.wordmark}</div>
+                <KairoLockup className="ob-hero-mark" label={HERO_COPY.wordmark} />
                 <h1 className="ob-hero-h1">{HERO_COPY.h1}</h1>
                 <p className="ob-hero-sub">{HERO_COPY.sub}</p>
                 <button type="button" className="ob-hero-cta" onClick={goColor}>
@@ -292,6 +291,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
                 animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                 transition={{ duration: 0.28 }}
               >
+                <KairoLockup className="ob-hero-mark" label={HERO_COPY.wordmark} />
                 <div className="ob-color-head">
                   <span className="ob-color-dot" style={{ background: hex }} aria-hidden />
                   <span className="ob-color-kicker">your color</span>
@@ -347,7 +347,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
 
           <aside ref={noteRef} className="ob-hero-note">
             <div className="ob-hero-note-head">
-              <span className="ob-hero-note-glyph">k</span>
+              <KairoMark className="ob-hero-note-glyph" />
               <span>Kairo sees Blender</span>
               <span className="ob-hero-note-listen"><i /><i /><i /></span>
             </div>
