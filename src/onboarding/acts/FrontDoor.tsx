@@ -94,9 +94,17 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
   // notch… that's where I live!"), when the pet actually comes alive on the real desktop.
   const goColor = () => {
     if (phase !== 'hero') return;
+    const startedAt = performance.now();
     klog('onboarding', 'info', 'hero get-started');
-    playSound('morph'); // user gesture → unlocks the shared AudioContext + whoosh cue
     setPhase('color');
+    // Keep the audio unlock in the pointer gesture, but measure the next painted frame so this
+    // interaction cannot quietly regress into another noticeable pause.
+    playSound('morph');
+    window.requestAnimationFrame(() => {
+      klog('onboarding', 'debug', 'hero color frame painted', {
+        ms: Math.round(performance.now() - startedAt)
+      });
+    });
   };
 
   // Live recolor on every wheel move: paints this window instantly + the emitted accent:changed reaches
@@ -240,15 +248,15 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
           onAnimationComplete={() => void onCardAnimationComplete()}
         >
         <div className="ob-hero-left">
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence mode="sync" initial={false}>
             {phase === 'hero' ? (
               <motion.div
                 key="hero"
                 className="ob-front-hero"
                 initial={reduce ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={reduce ? undefined : { opacity: 0, x: -14, filter: 'blur(4px)' }}
-                transition={{ duration: 0.2 }}
+                exit={reduce ? undefined : { opacity: 0, x: -10 }}
+                transition={{ duration: 0.16, ease: 'easeOut' }}
               >
                 <KairoLockup className="ob-hero-mark" label={HERO_COPY.wordmark} />
                 <h1 className="ob-hero-h1">{HERO_COPY.h1}</h1>
@@ -262,9 +270,9 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
               <motion.div
                 key="color"
                 className="ob-front-color"
-                initial={reduce ? false : { opacity: 0, x: 14, filter: 'blur(4px)' }}
-                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                transition={{ duration: 0.28 }}
+                initial={reduce ? false : { opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               >
                 <KairoLockup className="ob-hero-mark" label={HERO_COPY.wordmark} />
                 <div className="ob-color-head">

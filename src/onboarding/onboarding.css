@@ -270,6 +270,7 @@ body.onboarding-document {
   flex-direction: column;
   gap: 12px;
   width: 100%;
+  grid-area: 1 / 1;
 }
 .ob-front-color {
   display: flex;
@@ -277,6 +278,7 @@ body.onboarding-document {
   align-items: center;
   gap: 16px;
   width: 100%;
+  grid-area: 1 / 1;
 }
 
 /* Curated accent preset swatches. 4×2 grid; selected = canvas gap + ink ring. */
@@ -408,10 +410,8 @@ body.onboarding-document {
 /* ---- Hero, left half -------------------------------------------------------------------------- */
 .ob-hero-left {
   padding: 44px 40px 34px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  justify-content: center;
+  display: grid;
+  align-items: center;
 }
 /* Same lockup as the site header (lowercase, Bricolage 740, -0.065em). */
 .ob-hero-mark {

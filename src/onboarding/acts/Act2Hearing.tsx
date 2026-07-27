@@ -8,6 +8,8 @@ import { ACT_LINES, ACT2_CHIP } from '../copy';
 import { runTalkTurn } from '../demoController';
 import type { ActProps } from './actTypes';
 
+const MIC_PROMPT_DELAY_MS = 1200;
+
 // Act 2 — "Can you hear me?" (master spec §4). Primes the mic (Screen Recording + Input Monitoring
 // are NOT needed here — the ⌥⌃ tap watches modifier keys only, which are exempt), then the
 // hold-⌥⌃-say-hi drill: the chord is the ONLY Next. Renders null — the notch caption + the live pet
@@ -74,14 +76,34 @@ export function Act2Hearing({ name, onAdvance }: ActProps) {
     const micGranted = async () => (await bridge.getPermissionStatus()).microphone === 'granted';
 
     void (async () => {
-      // A short beat after Kairo's intro line (act1_wake) so the mic line doesn't tread on its tail.
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // A small breath after Kairo's intro, without making the permission moment feel sluggish.
+      await new Promise((resolve) => setTimeout(resolve, 180));
       if (isCancelled()) return;
       // STEP 1 — microphone only. Ask, then WAIT until it's genuinely granted before moving on.
       if (!(await micGranted())) {
-        await say([ACT_LINES.act2_mic]);
+        let promptTimer: number | null = null;
+        let promptStartedAt = 0;
+        let promptPromise: Promise<unknown> | null = null;
+        const requestPrompt = () => {
+          if (promptPromise) return promptPromise;
+          promptStartedAt = performance.now();
+          klog('onboarding', 'info', 'act2 mic prompt requested');
+          promptPromise = bridge.requestMicrophone();
+          return promptPromise;
+        };
+        // The line front-loads what the permission is for. Show the OS prompt while the short
+        // reassurance continues instead of waiting for the entire recording to finish.
+        await say([ACT_LINES.act2_mic], {
+          onStart: () => {
+            promptTimer = window.setTimeout(() => void requestPrompt(), MIC_PROMPT_DELAY_MS);
+          }
+        });
         if (isCancelled()) return;
-        await bridge.requestMicrophone(); // mic-only OS prompt
+        if (promptTimer !== null) window.clearTimeout(promptTimer);
+        await requestPrompt();
+        klog('onboarding', 'debug', 'act2 mic prompt resolved', {
+          ms: Math.round(performance.now() - promptStartedAt)
+        });
         // Leave the SPOKEN mic line up while we wait (no unspoken "waiting…" text — mandate §).
         await waitUntil(micGranted);
         if (isCancelled()) return;
