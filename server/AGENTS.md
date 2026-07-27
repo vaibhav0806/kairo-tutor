@@ -46,6 +46,9 @@ Secrets never reach the browser or the desktop bundle.
 
 - Test keys in dev; **live keys only on the Hetzner prod env**. Never commit any Dodo key.
 - Verify webhook signatures over the **raw** body (Standard Webhooks HMAC).
+- Local end-to-end testing uses `npm run billing:test:listen` from the repo root. It applies
+  migrations, verifies `DODO_ENV=test_mode`, and runs Dodo's signed CLI relay to
+  `http://localhost:8787/webhooks/dodo`. Never bypass signature checks for local testing.
 
 ## Verify gate (before "done")
 

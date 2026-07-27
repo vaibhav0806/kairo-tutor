@@ -25,6 +25,8 @@ commit message with:
 
 ## How to run things
 - Desktop → `npm run app` (see "Run / build" below).
+- Desktop against local backend → `npm run app:local`.
+- Desktop against hosted backend → `npm run app:hosted`.
 - Server → `npm run server:dev` (see [`server/AGENTS.md`](./server/AGENTS.md)).
 
 ---
@@ -56,6 +58,8 @@ signature, and relaunch:
 ```bash
 npm run app             # quit → build+sign → verify signature → launch
 npm run app -- --check  # same, but run typecheck + tests + cargo check first
+npm run app:local       # same packaged workflow, every request → http://localhost:8787
+npm run app:hosted      # same packaged workflow, every request → https://api.meetkairo.xyz
 ```
 
 Signing is automatic (`tauri.conf.json` → `bundle.macOS.signingIdentity =
@@ -165,6 +169,34 @@ Non-secret config is centralized — **`.env` holds ONLY API keys.**
   constant); timeouts, toggles, and logging flags are read directly from the constant.
 - Transcript + answer logging is **always on** (`constants::LOG_TRANSCRIPTS = true`) —
   no env var. Set it to `false` in `constants.rs` to log lengths only.
+- Backend selection is centralized in native code. Use `npm run app:local` or
+  `npm run app:hosted`; every WebView asks native for that same URL. Do not add a
+  frontend URL mirror or put `KAIRO_BACKEND_URL` in `.env`.
+
+## Local Dodo subscription testing
+
+Use Dodo's official CLI listener for genuine signed test-mode webhooks without exposing
+localhost or weakening signature verification.
+
+```bash
+# Terminal 1
+npm run server:dev
+
+# One-time / when the CLI login expires: choose TEST MODE in the browser flow
+npm run billing:test:login
+
+# Terminal 2: applies migrations, refuses non-test Dodo config, then forwards to localhost
+npm run billing:test:listen
+
+# Terminal 3: packaged app, consistently pointed at the same local backend
+npm run app:local
+```
+
+Rehearse: Free → checkout → webhook grants Pro → Manage subscription → schedule/cancel
+in the portal → webhook updates/revokes Pro. Watch the Fastify output and
+`~/Library/Logs/Kairo/kairo-latest.log`. Never use `dodo wh trigger` for an end-to-end
+proof: generated events are unsigned. Never disable webhook signature verification.
+`CLAUDE.md` is an `@AGENTS.md` stub, so these instructions apply there automatically.
 
 ## Logging is MANDATORY
 
