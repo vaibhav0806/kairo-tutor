@@ -87,9 +87,13 @@ input {
   font: inherit;
 }
 
+/* ---- Main window: the permission-recovery screen ---------------------------------------------
+   Normally hidden — Rust only reveals it when TCC grants are still missing (once they're all
+   granted this window renders SettingsView instead). Same language as every other surface. */
 .app-shell {
   min-height: 100vh;
   padding: 24px;
+  background: var(--canvas);
 }
 
 .topbar {
@@ -101,46 +105,58 @@ input {
   max-width: 1180px;
 }
 
-.topbar h1,
-.panel h2,
-.response h2 {
+.topbar h1 {
   margin: 0;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 670;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+  color: var(--ink-strong);
 }
 
 .eyebrow {
-  color: #59636d;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   margin: 0 0 6px;
   text-transform: uppercase;
 }
 
 .status-pill {
-  background: #dff3ea;
-  border: 1px solid #9bd4bd;
-  border-radius: 999px;
-  color: #16583e;
-  font-weight: 700;
-  padding: 8px 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-button);
+  color: var(--ink-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 7px 11px;
   white-space: nowrap;
 }
 
 .permission-onboarding {
   align-items: start;
-  background: #ffffff;
-  border: 1px solid #d9e0e4;
-  border-radius: 8px;
+  background: var(--canvas-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-offset);
   display: grid;
   gap: 16px;
   grid-template-columns: 220px 1fr auto;
   margin: 0 auto 24px;
   max-width: 1180px;
-  padding: 18px;
+  padding: 20px;
 }
 
 .permission-onboarding h2 {
   margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 670;
+  letter-spacing: -0.045em;
+  color: var(--ink-strong);
 }
 
 .permission-list {
@@ -161,118 +177,63 @@ input {
 }
 
 .permission-item strong {
-  color: #26313a;
+  color: var(--ink);
 }
 
 .permission-item span {
-  color: #59636d;
+  color: var(--ink-muted);
 }
 
+/* Pending = the site's --notice; granted = --verify. Both need a readable ink on a light chip,
+   so the text is a darkened cut of the same hue. */
 .permission-state {
-  background: #fff5df;
-  border: 1px solid #e7c46d;
-  border-radius: 999px;
-  color: #805500;
-  font-size: 0.86rem;
-  font-weight: 700;
-  padding: 6px 10px;
+  background: color-mix(in srgb, var(--notice) 26%, var(--canvas-raised));
+  border: 1px solid color-mix(in srgb, var(--notice) 55%, var(--hairline));
+  border-radius: var(--radius-button);
+  color: #6b4c00;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 5px 9px;
   white-space: nowrap;
 }
 
 .permission-state.granted {
-  background: #dff3ea;
-  border-color: #9bd4bd;
-  color: #16583e;
+  background: color-mix(in srgb, var(--verify) 26%, var(--canvas-raised));
+  border-color: color-mix(in srgb, var(--verify) 55%, var(--hairline));
+  color: #527b09;
 }
 
 .primary-button {
-  background: #2f5f98;
-  border: 0;
-  border-radius: 8px;
+  background: var(--ink-strong);
+  border: 1px solid var(--ink-strong);
+  border-radius: var(--radius-button);
+  box-shadow: var(--shadow-offset);
   color: #ffffff;
   cursor: pointer;
-  font-weight: 700;
-  padding: 12px 18px;
+  font-weight: 680;
+  padding: 13px 20px;
   white-space: nowrap;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.workspace {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: 280px 1fr;
-  margin: 0 auto;
-  max-width: 1180px;
+.primary-button:hover:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: var(--shadow-offset-hover);
 }
 
-.panel,
-.response {
-  background: #ffffff;
-  border: 1px solid #d9e0e4;
-  border-radius: 8px;
-  padding: 18px;
+.primary-button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
-.panel p {
-  color: #4f5d68;
-  margin: 12px 0 0;
-}
-
-.tutor-surface {
-  display: grid;
-  gap: 16px;
-}
-
-.screen-preview {
-  background: #26313a;
-  border: 1px solid #151c22;
-  border-radius: 8px;
-  color: #eef5f7;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  overflow: hidden;
-  position: relative;
-}
-
-.toolbar {
-  background: #394650;
-  border-bottom: 1px solid #151c22;
-  padding: 10px 14px;
-  position: relative;
-  z-index: 5;
-}
-
-.screen-preview-stage {
-  background: #26313a;
-  min-height: 300px;
-  overflow: hidden;
-  position: relative;
-  width: 100%;
-}
-
-.screen-empty {
-  align-items: center;
-  color: #d8e1e7;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  height: 100%;
-  justify-content: center;
-  padding: 24px;
-  text-align: center;
-}
-
-.screen-empty span {
-  color: #9fadb8;
-  font-size: 0.9rem;
-}
-
-.screen-capture-image {
-  height: 100%;
-  inset: 0;
-  object-fit: fill;
-  position: absolute;
-  user-select: none;
-  width: 100%;
+.permission-hint {
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  margin: 4px 0 0;
+  max-width: 62ch;
 }
 
 .annotation-canvas {
@@ -1460,76 +1421,22 @@ input {
   cursor: crosshair;
 }
 
-.timeline {
-  background: #20282f;
-  border-top: 1px solid #151c22;
-  padding: 14px;
-  position: relative;
-  z-index: 5;
-}
-
-.ask-row {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr auto;
-}
-
-.annotation-toolbar {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.annotation-toolbar button {
-  background: #eef2f4;
-  border: 1px solid #c4cdd4;
-  border-radius: 8px;
-  color: #26313a;
-  cursor: pointer;
-  font-weight: 700;
-  padding: 8px 10px;
-  text-transform: capitalize;
-}
-
-.annotation-toolbar button.selected {
-  background: #26313a;
-  border-color: #26313a;
-  color: #ffffff;
-}
-
-.annotation-toolbar span {
-  color: #59636d;
-  font-size: 0.9rem;
-}
-
-.ask-row input {
-  border: 1px solid #c4cdd4;
-  border-radius: 8px;
-  padding: 12px 14px;
-}
-
-.ask-row button {
-  background: #2f5f98;
-  border: 0;
-  border-radius: 8px;
-  color: #ffffff;
-  cursor: pointer;
-  font-weight: 700;
-  min-width: 88px;
-  padding: 12px 18px;
-}
-
 .secondary-button {
-  background: #eef2f4;
-  border: 1px solid #c4cdd4;
-  border-radius: 8px;
-  color: #26313a;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-button);
+  color: var(--ink-subtle);
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 640;
   margin-top: 14px;
-  padding: 10px 12px;
+  padding: 11px 12px;
   width: 100%;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.secondary-button:hover {
+  background: var(--surface-soft);
+  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
 }
 
 .permission-grid {

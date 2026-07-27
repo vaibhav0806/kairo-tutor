@@ -1,4 +1,6 @@
-/* Settings — Editorial Light, compact, accent-aware. Mirrors the onboarding .ob-card. */
+/* Settings — compact and accent-aware, in the website's visual language (see the tokens in
+   ../styles.css): cool canvas, Bricolage lockup, Geist Mono labels, near-square edges, hairline
+   borders and one hard offset shadow. Mirrors the onboarding .ob-card. */
 .settings-scrim {
   position: fixed;
   inset: 0;
@@ -7,9 +9,13 @@
   justify-content: center;
   align-items: flex-start;
   padding: 34px 20px 22px;
-  background: #f4efe7;
-  font-family: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  color: #1a1622;
+  background: var(--canvas);
+  font-family: var(--font-body);
+  color: var(--ink);
+
+  /* The offset shadow, tinted by the user's accent (same trick as onboarding). */
+  --s-accent: var(--kairo-accent, #665cff);
+  --s-shadow: 6px 6px 0 color-mix(in srgb, var(--s-accent) 18%, transparent);
 }
 
 .settings-card {
@@ -18,17 +24,10 @@
   padding: 20px 22px 16px;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(20, 16, 28, 0.06);
-  border-radius: 22px;
-  background: radial-gradient(
-    130% 80% at 50% -10%,
-    color-mix(in srgb, var(--kairo-accent, #7c3aed) 7%, #fdfbf7) 0%,
-    #faf7f2 45%,
-    #f6f1e9 100%
-  );
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.7) inset,
-    0 26px 60px -30px rgba(30, 20, 45, 0.28);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  background: var(--canvas-raised);
+  box-shadow: var(--s-shadow);
 }
 
 .settings-head {
@@ -37,32 +36,42 @@
   justify-content: space-between;
   margin-bottom: 4px;
 }
+/* The site's header lockup: lowercase, Bricolage 740, tight tracking. */
 .settings-brand {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 740;
+  line-height: 1;
+  letter-spacing: -0.065em;
+  color: var(--ink-strong);
+  text-transform: lowercase;
 }
 .settings-title {
-  font-size: 12px;
-  color: rgba(26, 22, 34, 0.45);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-muted);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
 }
 .settings-h2 {
   margin: 8px 0 2px;
-  font-size: 18px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 670;
+  letter-spacing: -0.04em;
+  color: var(--ink-strong);
 }
 
 .settings-muted {
   margin: 0;
   font-size: 12.5px;
-  color: rgba(26, 22, 34, 0.52);
+  color: var(--ink-muted);
 }
 
 .s-section {
   padding: 13px 0;
-  border-top: 1px solid rgba(20, 16, 28, 0.07);
+  border-top: 1px solid var(--hairline);
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -72,11 +81,12 @@
   padding-top: 8px;
 }
 .s-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(26, 22, 34, 0.4);
+  color: var(--ink-muted);
 }
 .s-sub {
   margin-top: -4px;
@@ -94,6 +104,7 @@
 .settings-name {
   font-size: 15px;
   font-weight: 600;
+  color: var(--ink);
 }
 .s-item-name {
   font-size: 13.5px;
@@ -110,53 +121,72 @@
   display: flex;
 }
 .settings-plan-badge {
-  font-size: 12px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: rgba(20, 16, 28, 0.05);
-  color: rgba(26, 22, 34, 0.7);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-button);
+  background: var(--surface-soft);
+  color: var(--ink-subtle);
 }
 .settings-plan-pro {
-  background: color-mix(in srgb, var(--kairo-accent, #7c3aed) 15%, transparent);
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 68%, #1a1622);
+  background: color-mix(in srgb, var(--s-accent) 14%, transparent);
+  color: color-mix(in srgb, var(--s-accent) 68%, var(--ink));
 }
 
-/* Buttons */
+/* Buttons — the site's shape: near-square, ink fill for the primary action, and a hard offset
+   shadow the button slides into on hover. */
 .s-btn {
   appearance: none;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: var(--radius-button);
   font-family: inherit;
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 640;
   padding: 10px 16px;
-  transition: transform 120ms ease, opacity 120ms ease;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 160ms ease,
+    opacity 120ms ease;
 }
 .s-btn:disabled {
   opacity: 0.45;
   cursor: default;
 }
-.s-btn:active:not(:disabled) {
-  transform: scale(0.98);
-}
 .s-btn-primary {
-  background: #1a1622;
-  color: #fdfbf7;
+  background: var(--ink-strong);
+  border-color: var(--ink-strong);
+  color: #ffffff;
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--s-accent) 19%, transparent);
+}
+.s-btn-primary:hover:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--s-accent) 26%, transparent);
+}
+.s-btn-primary:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: 1px 1px 0 color-mix(in srgb, var(--s-accent) 30%, transparent);
 }
 .s-btn-ghost {
   background: transparent;
-  color: rgba(26, 22, 34, 0.72);
-  border: 1px solid rgba(20, 16, 28, 0.14);
+  color: var(--ink-subtle);
+  border-color: var(--hairline);
   padding: 7px 14px;
   font-size: 12.5px;
 }
+.s-btn-ghost:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
 .s-btn-mini {
   background: transparent;
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 70%, #1a1622);
-  border: 1px solid color-mix(in srgb, var(--kairo-accent, #7c3aed) 35%, transparent);
+  color: color-mix(in srgb, var(--s-accent) 70%, var(--ink));
+  border-color: color-mix(in srgb, var(--s-accent) 35%, transparent);
   padding: 5px 12px;
   font-size: 12px;
+}
+.s-btn-mini:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--s-accent) 55%, transparent);
 }
 
 .s-input {
@@ -164,15 +194,15 @@
   min-width: 0;
   font-family: inherit;
   font-size: 13.5px;
-  color: #1a1622;
+  color: var(--ink);
   padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(20, 16, 28, 0.14);
-  background: rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-inset);
+  border: 1px solid var(--hairline);
+  background: var(--canvas-soft);
   outline: none;
 }
 .s-input:focus {
-  border-color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 55%, transparent);
+  border-color: color-mix(in srgb, var(--s-accent) 55%, transparent);
 }
 
 /* Accent swatches */
@@ -189,11 +219,11 @@
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
-  box-shadow: 0 0 0 1px rgba(20, 16, 28, 0.1);
+  box-shadow: 0 0 0 1px var(--hairline);
 }
 .s-swatch-active {
-  border-color: #fdfbf7;
-  box-shadow: 0 0 0 2px #1a1622;
+  border-color: var(--canvas-raised);
+  box-shadow: 0 0 0 2px var(--ink);
 }
 .s-swatch-custom {
   position: relative;
@@ -209,9 +239,10 @@
   cursor: pointer;
 }
 
+/* Confirmation text — the site's dark lime, the readable end of --verify. */
 .s-ok {
   font-size: 12px;
-  color: color-mix(in srgb, #10b981 75%, #1a1622);
+  color: #527b09;
 }
 
 /* iOS-style toggle */
@@ -222,13 +253,13 @@
   width: 40px;
   height: 24px;
   border-radius: 999px;
-  background: rgba(20, 16, 28, 0.18);
+  background: rgb(11 13 18 / 0.18);
   position: relative;
   transition: background 160ms ease;
   flex-shrink: 0;
 }
 .s-toggle-on {
-  background: var(--kairo-accent, #7c3aed);
+  background: var(--s-accent);
 }
 .s-toggle-knob {
   position: absolute;
@@ -237,8 +268,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(11 13 18 / 0.25);
   transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .s-toggle-on .s-toggle-knob {
@@ -251,7 +282,7 @@
   justify-content: space-between;
   padding-top: 12px;
   margin-top: 4px;
-  border-top: 1px solid rgba(20, 16, 28, 0.07);
+  border-top: 1px solid var(--hairline);
 }
 .s-link {
   appearance: none;
@@ -261,7 +292,7 @@
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 500;
-  color: color-mix(in srgb, var(--kairo-accent, #7c3aed) 72%, #1a1622);
+  color: color-mix(in srgb, var(--s-accent) 72%, var(--ink));
 }
 .s-link:hover {
   text-decoration: underline;
@@ -276,7 +307,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(20, 16, 28, 0.3);
+  background: rgb(11 13 18 / 0.3);
   backdrop-filter: blur(2px);
 }
 .s-modal {
@@ -286,10 +317,10 @@
   display: flex;
   flex-direction: column;
   padding: 18px 18px 14px;
-  border-radius: 20px;
-  background: #fdfbf7;
-  border: 1px solid rgba(20, 16, 28, 0.08);
-  box-shadow: 0 30px 70px -20px rgba(30, 20, 45, 0.4);
+  border-radius: var(--radius-card);
+  background: var(--canvas-raised);
+  border: 1px solid var(--hairline);
+  box-shadow: 8px 8px 0 color-mix(in srgb, var(--s-accent) 20%, transparent);
 }
 .s-modal-head {
   display: flex;
@@ -298,8 +329,11 @@
   margin-bottom: 4px;
 }
 .s-modal-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 670;
+  letter-spacing: -0.04em;
+  color: var(--ink-strong);
 }
 .s-modal-list {
   margin-top: 10px;
@@ -313,17 +347,17 @@
   align-items: flex-start;
   gap: 11px;
   padding: 9px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-inset);
   cursor: pointer;
 }
 .s-check-row:hover {
-  background: rgba(20, 16, 28, 0.04);
+  background: var(--surface-soft);
 }
 .s-check-row input[type='checkbox'] {
   margin-top: 2px;
   width: 16px;
   height: 16px;
-  accent-color: var(--kairo-accent, #7c3aed);
+  accent-color: var(--s-accent);
   cursor: pointer;
   flex-shrink: 0;
 }
