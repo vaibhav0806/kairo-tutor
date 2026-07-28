@@ -293,18 +293,64 @@ pub(crate) async fn transcribe_audio(
     Err(format!("Unsupported KAIRO_STT_PROVIDER={provider}."))
 }
 
+/// Which TTS engine this process talks to. On the proxy path the answer is "whatever the server
+/// resolved for this user" — the desktop deliberately does not know, and reports `server`.
+pub(crate) fn tts_provider_for(proxied: bool) -> String {
+    if proxied {
+        "server".to_string()
+    } else {
+        provider_env("KAIRO_TTS_PROVIDER", constants::TTS_PROVIDER)
+    }
+}
+
+/// The silent result used for `mock` and for empty text — playback treats it as a no-op.
+pub(crate) fn silent_synthesis_result(provider: String) -> SpeechSynthesisResult {
+    SpeechSynthesisResult {
+        audio_base64: String::new(),
+        mime_type: "audio/mpeg".to_string(),
+        provider,
+    }
+}
+
 #[tauri::command]
 pub(crate) async fn synthesize_speech(
+    app: tauri::AppHandle,
     input: SynthesizeSpeechInput,
 ) -> Result<SpeechSynthesisResult, String> {
     let _t = crate::klog::timer("tts", "synthesize");
-    let provider = provider_env("KAIRO_TTS_PROVIDER", constants::TTS_PROVIDER);
+    let proxied = crate::proxy::proxy_enabled();
+    let provider = tts_provider_for(proxied);
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(constants::TTS_TIMEOUT_MS));
     let text = input.text.trim();
     if provider == "mock" || text.is_empty() {
+        return Ok(silent_synthesis_result(provider));
+    }
+
+    // Proxy path: the backend picks the engine and normalizes the response, so this branch is
+    // vendor-agnostic. Without it the buffered fallback was direct-key only — meaning it could
+    // never succeed in a shipped build, and a failed stream had nothing to fall back to.
+    if proxied {
+        let body = json!({ "text": text });
+        let value: Value = crate::proxy::proxy_post_json(&app, "/v1/tts", &body, None, timeout)
+            .await
+            .map_err(|error| format!("TTS via proxy failed: {}", error.describe()))?;
+        let audio_base64 = value
+            .get("audio_base64")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if audio_base64.is_empty() {
+            return Err("TTS response did not include audio.".to_string());
+        }
+        let mime_type = value
+            .get("mime_type")
+            .and_then(Value::as_str)
+            .unwrap_or("audio/wav")
+            .to_string();
+        crate::klog!(tts, info, bytes = audio_base64.len(), mime = %mime_type, "tts buffered via proxy");
         return Ok(SpeechSynthesisResult {
-            audio_base64: String::new(),
-            mime_type: "audio/mpeg".to_string(),
+            audio_base64,
+            mime_type,
             provider,
         });
     }
@@ -399,11 +445,14 @@ pub(crate) enum TtsStreamMsg {
     },
 }
 
-// Streaming text-to-speech: forwards raw PCM chunks to the frontend as they arrive
-// from Sarvam's /text-to-speech/stream endpoint, so playback can begin at first byte
-// (~200-400ms) instead of waiting for the whole clip to synthesize. The frontend
-// schedules the PCM via the Web Audio API. Sarvam only — other providers return Err
-// so the caller transparently falls back to the buffered `synthesize_speech`.
+// Streaming text-to-speech: forwards raw PCM chunks to the frontend as they arrive,
+// so playback can begin at first byte (~200-400ms) instead of waiting for the whole
+// clip to synthesize. The frontend schedules the PCM via the Web Audio API.
+//
+// On the proxy path (every shipped build) the desktop sends ONLY the text: the backend
+// resolves the user's chosen engine + voice and composes the vendor request, so both
+// Sarvam and ElevenLabs stream through this same loop. The direct path stays Sarvam-only
+// — it exists for local dev against `constants.rs`, where no user preference exists.
 #[tauri::command]
 pub(crate) async fn synthesize_speech_stream(
     app: tauri::AppHandle,
@@ -411,7 +460,12 @@ pub(crate) async fn synthesize_speech_stream(
     on_chunk: tauri::ipc::Channel<TtsStreamMsg>,
 ) -> Result<(), String> {
     let _t = crate::klog::timer("tts", "synthesize_stream");
-    let provider = provider_env("KAIRO_TTS_PROVIDER", constants::TTS_PROVIDER);
+    let proxied = crate::proxy::proxy_enabled();
+    let provider = if proxied {
+        "server".to_string()
+    } else {
+        provider_env("KAIRO_TTS_PROVIDER", constants::TTS_PROVIDER)
+    };
     let timeout = Duration::from_millis(input.timeout_ms.unwrap_or(constants::TTS_TIMEOUT_MS));
     let text = input.text.trim();
     let sample_rate = constants::SARVAM_TTS_STREAM_SAMPLE_RATE;
@@ -420,28 +474,32 @@ pub(crate) async fn synthesize_speech_stream(
         let _ = on_chunk.send(TtsStreamMsg::End);
         return Ok(());
     }
-    if provider != "sarvam" {
-        // No streaming path for this provider; let the caller fall back to buffered.
+    if !proxied && provider != "sarvam" {
+        // Direct dev path has no streaming shape for this vendor; fall back to buffered.
         return Err(format!("streaming TTS unsupported for provider {provider}"));
     }
 
-    let stream_body = json!({
-        "text": text,
-        "target_language_code": provider_env("SARVAM_TTS_LANGUAGE_CODE", constants::SARVAM_TTS_LANGUAGE_CODE),
-        "speaker": provider_env("SARVAM_TTS_SPEAKER", constants::SARVAM_TTS_SPEAKER),
-        "model": provider_env("SARVAM_TTS_MODEL", constants::SARVAM_TTS_MODEL),
-        "output_audio_codec": "linear16",
-        "speech_sample_rate": sample_rate,
-    });
+    let stream_body = if proxied {
+        json!({ "text": text })
+    } else {
+        json!({
+            "text": text,
+            "target_language_code": provider_env("SARVAM_TTS_LANGUAGE_CODE", constants::SARVAM_TTS_LANGUAGE_CODE),
+            "speaker": provider_env("SARVAM_TTS_SPEAKER", constants::SARVAM_TTS_SPEAKER),
+            "model": provider_env("SARVAM_TTS_MODEL", constants::SARVAM_TTS_MODEL),
+            "output_audio_codec": "linear16",
+            "speech_sample_rate": sample_rate,
+        })
+    };
 
-    // Proxy path: the backend pipes Sarvam's stream straight through, so the chunk loop
+    // Proxy path: the backend pipes the vendor stream straight through, so the chunk loop
     // below reads it exactly as it reads the vendor stream.
-    let response = if crate::proxy::proxy_enabled() {
+    let response = if proxied {
         match crate::proxy::proxy_stream_request(&app, "/v1/tts/stream", &stream_body, timeout).await
         {
             Ok(response) => response,
             Err(error) => {
-                let message = format!("Sarvam TTS stream via proxy failed: {}", error.describe());
+                let message = format!("TTS stream via proxy failed: {}", error.describe());
                 let _ = on_chunk.send(TtsStreamMsg::Error {
                     message: message.clone(),
                 });
@@ -479,7 +537,7 @@ pub(crate) async fn synthesize_speech_stream(
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
         let message = format!(
-            "Sarvam TTS stream HTTP {status}: {}",
+            "TTS stream HTTP {status}: {}",
             body.chars().take(200).collect::<String>()
         );
         let _ = on_chunk.send(TtsStreamMsg::Error {
@@ -514,7 +572,7 @@ pub(crate) async fn synthesize_speech_stream(
             }
             Ok(None) => break,
             Err(error) => {
-                let message = format!("Sarvam TTS stream read failed: {error}");
+                let message = format!("TTS stream read failed: {error}");
                 let _ = on_chunk.send(TtsStreamMsg::Error {
                     message: message.clone(),
                 });

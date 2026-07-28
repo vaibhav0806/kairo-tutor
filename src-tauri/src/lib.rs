@@ -1292,13 +1292,13 @@ mod tests {
     fn mock_speech_synthesis_returns_silent_audio_result() {
         std::env::set_var("KAIRO_TTS_PROVIDER", "mock");
 
-        let result = tauri::async_runtime::block_on(crate::speech::synthesize_speech(
-            SynthesizeSpeechInput {
-                text: "Hello from Kairo.".to_string(),
-                timeout_ms: None,
-            },
-        ))
-        .expect("mock synthesis should not fail");
+        // Direct (dev) path honours the env/constant; the proxy path reports `server` because the
+        // engine is chosen per-user on the backend and the desktop never learns which one ran.
+        let provider = crate::speech::tts_provider_for(false);
+        assert_eq!(provider, "mock");
+        assert_eq!(crate::speech::tts_provider_for(true), "server");
+
+        let result = crate::speech::silent_synthesis_result(provider);
 
         assert_eq!(result.audio_base64, "");
         assert_eq!(result.mime_type, "audio/mpeg");
