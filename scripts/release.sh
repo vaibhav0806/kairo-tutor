@@ -37,7 +37,7 @@ DOWNLOAD_BASE="${KAIRO_DOWNLOAD_BASE:-https://dl.meetkairo.xyz}"
 # The DMG ships to the API box instead, where an email-gated route serves it.
 RELEASE_HOST="${KAIRO_RELEASE_HOST:-era@178.105.44.3}"
 RELEASE_SSH_KEY="${KAIRO_RELEASE_SSH_KEY:-$HOME/.ssh/id_ed25519_2}"
-RELEASE_DIR="${KAIRO_RELEASE_DIR:-/srv/kairo-releases}"
+RELEASE_DIR="${KAIRO_RELEASE_DIR:-/home/era/kairo-releases}"
 
 cd "$(dirname "$0")/.."
 
@@ -170,7 +170,7 @@ fi
 # public — they are fetched by already-installed apps, so gating them would only break updates for
 # people who are already in.
 echo "▸ Shipping the DMG to ${RELEASE_HOST}:${RELEASE_DIR}…"
-ssh -i "${RELEASE_SSH_KEY}" "${RELEASE_HOST}" "sudo mkdir -p '${RELEASE_DIR}' && sudo chown \$(id -un):\$(id -gn) '${RELEASE_DIR}'"
+ssh -i "${RELEASE_SSH_KEY}" "${RELEASE_HOST}" "mkdir -p '${RELEASE_DIR}'"
 scp -i "${RELEASE_SSH_KEY}" "${OUT_DIR}/${DMG_NAME}" "${RELEASE_HOST}:${RELEASE_DIR}/${DMG_NAME}"
 # Atomic swap of the stable name the download route serves, so a request mid-upload never gets a
 # half-written file.
