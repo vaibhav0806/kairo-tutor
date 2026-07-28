@@ -54,6 +54,51 @@ export const ONBOARDING_SOURCES = [
   'Other',
 ] as const;
 
+/** TTS engines a user can pick between. The server decides which are actually enabled. */
+export type TtsProvider = 'sarvam' | 'elevenlabs';
+
+export const TTS_PROVIDERS: readonly TtsProvider[] = ['sarvam', 'elevenlabs'] as const;
+
+export function isTtsProvider(value: unknown): value is TtsProvider {
+  return typeof value === 'string' && (TTS_PROVIDERS as readonly string[]).includes(value);
+}
+
+/**
+ * One selectable voice, normalized across providers. Sarvam publishes no voice-list API and no
+ * per-voice metadata, so its entries come from a curated server-side table; ElevenLabs entries are
+ * fetched live from `GET /v2/voices`. The desktop cannot tell the two apart.
+ */
+export interface Voice {
+  id: string;
+  provider: TtsProvider;
+  name: string;
+  gender: 'male' | 'female' | 'unknown';
+  /** BCP-47 codes the voice is good for, e.g. `['hi-IN', 'en-IN']`. Empty = unspecified. */
+  languages: string[];
+  description?: string;
+  /** Sample audio to play in Settings. ElevenLabs ships one; Sarvam previews are synthesized. */
+  previewUrl?: string | null;
+}
+
+/** Response of `GET /v1/voices?provider=…`. */
+export interface VoicesResponse {
+  provider: TtsProvider;
+  voices: Voice[];
+}
+
+/** Response of `GET /v1/preferences`. `availableProviders` is server policy, not user choice. */
+export interface PreferencesResponse {
+  ttsProvider: TtsProvider;
+  ttsVoiceId: string;
+  availableProviders: TtsProvider[];
+}
+
+/** Body of `PATCH /v1/preferences`. Both fields optional; server validates the pair. */
+export interface PreferencesPatch {
+  ttsProvider?: TtsProvider;
+  ttsVoiceId?: string;
+}
+
 /** Typed error the desktop branches on (401 / 402 / 5xx bodies share this envelope). */
 export type ErrorCode =
   | 'quota_exceeded'

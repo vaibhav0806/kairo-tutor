@@ -5,7 +5,13 @@ import { providers } from '../config/providers';
 import { forwardJson } from '../proxy/forward';
 import { streamPassthrough } from '../proxy/stream';
 import { rateLimit } from '../lib/ratelimit';
+import { SARVAM_DEFAULT_VOICE_ID } from '../speech/catalog';
+import { SARVAM_TTS_LANGUAGE_CODE, SARVAM_TTS_MODEL } from '../speech/config';
+import { streamTarget, TTS_TEXT_LIMIT } from '../speech/synthesis';
 import { saveProfile } from './service';
+
+/** Onboarding always speaks in Kairo's default voice — the scripted lines are tuned to it. */
+const ONBOARDING_VOICE_ID = SARVAM_DEFAULT_VOICE_ID;
 
 /** Drop the `_provider` routing hint before forwarding to the vision provider. */
 function dropProviderHint(body: unknown): unknown {
@@ -38,9 +44,9 @@ export async function onboardingRoutes(app: FastifyInstance) {
     const text = (req.body?.text ?? '').slice(0, 600);
     const { json } = await forwardJson('sarvam', '/text-to-speech', {
       text,
-      target_language_code: 'en-IN',
-      speaker: 'shubh',
-      model: 'bulbul:v3',
+      target_language_code: SARVAM_TTS_LANGUAGE_CODE,
+      speaker: ONBOARDING_VOICE_ID,
+      model: SARVAM_TTS_MODEL,
       pace: 1.0, // natural, to match the cached lines
       speech_sample_rate: 44100,
       encoding: 'WAV',
@@ -145,8 +151,13 @@ export async function onboardingRoutes(app: FastifyInstance) {
   });
 
   // Onboarding streaming TTS — the unauthenticated sibling of /v1/tts/stream (demo voice replies).
-  app.post('/v1/onboarding/tts/stream', async (req, reply) => {
+  // Pinned to the default engine + voice: onboarding runs before sign-in, so there is no user row
+  // to hold a preference, and the scripted lines are tuned against this voice.
+  app.post<{ Body: { text?: string } }>('/v1/onboarding/tts/stream', async (req, reply) => {
     if (!rateLimit(`obtts:${req.ip}`, 60, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
-    await streamPassthrough('sarvam', '/text-to-speech/stream', req.body, reply);
+    const text = (req.body?.text ?? '').slice(0, TTS_TEXT_LIMIT).trim();
+    if (!text) return reply.status(400).send({ error: 'bad_text', code: 'bad_request' });
+    const target = streamTarget(text, { provider: 'sarvam', voiceId: ONBOARDING_VOICE_ID });
+    await streamPassthrough(target.providerId, target.path, target.body, reply);
   });
 }

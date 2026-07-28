@@ -2,6 +2,7 @@ import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, pgEnum } from 
 import { user } from './auth';
 
 export const planT = pgEnum('plan_t', ['free', 'pro']);
+export const ttsProviderT = pgEnum('tts_provider_t', ['sarvam', 'elevenlabs']);
 export const subStatusT = pgEnum('sub_status_t', [
   'none',
   'pending',
@@ -83,6 +84,21 @@ export const oauthCode = pgTable('oauth_code', {
     .references(() => user.id, { onDelete: 'cascade' }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   used: boolean('used').notNull().default(false),
+});
+
+/**
+ * Per-user speech settings. Both columns are nullable on purpose: null means "no preference", so
+ * the server default applies and a user who never opened Settings follows whatever the deployment
+ * is configured to use. Stored server-side rather than on disk so a reinstall — which alpha testers
+ * do constantly — keeps the voice they picked.
+ */
+export const userPreference = pgTable('user_preference', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  ttsProvider: ttsProviderT('tts_provider'),
+  ttsVoiceId: text('tts_voice_id'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** Onboarding answers + waitlist state (one row per user, written when onboarding completes). */
