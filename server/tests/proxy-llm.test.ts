@@ -7,6 +7,7 @@ vi.mock('../src/proxy/forward', () => ({
 
 import { sql } from 'drizzle-orm';
 import { buildApp } from '../src/app';
+import { inviteTestEmail, revokeTestEmail } from './helpers/invite';
 import { db, pool } from '../src/db/client';
 import { ensureUserRows, ONBOARDING_VISION_CAP } from '../src/usage/service';
 import { mintCode } from '../src/auth/codes';
@@ -19,6 +20,7 @@ beforeAll(async () => {
     VALUES (${uid}, 'Px', 'px@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await db.execute(sql`DELETE FROM usage_event WHERE user_id = ${uid}`);
   await ensureUserRows(uid);
+  await inviteTestEmail('px@t.dev');
   await db.execute(sql`UPDATE usage_counter SET used_free = 0, onboarding_used = 0, plan = 'free', free_limit = 1 WHERE user_id = ${uid}`);
   // Mark onboarding complete so /v1/vision/tutor exercises the METERED path (not the tutorial budget).
   await db.execute(sql`INSERT INTO profile (user_id, onboarding_completed_at, waitlisted)
@@ -32,6 +34,7 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM profile WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM usage_counter WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM subscription WHERE user_id = ${uid}`);
+  await revokeTestEmail('px@t.dev');
   await db.execute(sql`DELETE FROM "user" WHERE id = ${uid}`);
   await app.close();
   await pool.end();

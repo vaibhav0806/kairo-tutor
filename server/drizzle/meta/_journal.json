@@ -50,6 +50,13 @@
       "when": 1785239447936,
       "tag": "0006_puzzling_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785242599571,
+      "tag": "0007_numerous_cerise",
+      "breakpoints": true
     }
   ]
 }

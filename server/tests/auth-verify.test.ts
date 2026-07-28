@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { exportJWK, generateKeyPair, jwtVerify, SignJWT, type JSONWebKeySet } from 'jose';
 import { buildApp } from '../src/app';
+import { inviteTestEmail, revokeTestEmail } from './helpers/invite';
 import { db, pool } from '../src/db/client';
 import { env } from '../src/config/env';
 import { createCachedJwks } from '../src/auth/jwks';
@@ -17,6 +18,7 @@ beforeAll(async () => {
   await db.execute(sql`INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
     VALUES (${uid}, 'Av', 'av@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await ensureUserRows(uid);
+  await inviteTestEmail('av@t.dev');
 });
 
 afterAll(async () => {
@@ -24,6 +26,7 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM oauth_code WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM usage_counter WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM subscription WHERE user_id = ${uid}`);
+  await revokeTestEmail('av@t.dev');
   await db.execute(sql`DELETE FROM "user" WHERE id = ${uid}`);
   await app.close();
   await pool.end();

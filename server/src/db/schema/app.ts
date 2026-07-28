@@ -87,6 +87,22 @@ export const oauthCode = pgTable('oauth_code', {
 });
 
 /**
+ * Closed-alpha allowlist. Sign-in is gated on the Google account's email appearing here, so access
+ * is granted per-person from the waitlist rather than to anyone who finds the DMG.
+ *
+ * Emails are stored lowercase (the check constraint is added in the migration) because Google
+ * returns whatever casing the user typed, and an invite must not miss on capitalization.
+ */
+export const accessInvite = pgTable('access_invite', {
+  email: text('email').primaryKey(),
+  /** Free-text provenance: which batch, who vouched, why. Never shown to the user. */
+  note: text('note'),
+  invitedAt: timestamp('invited_at', { withTimezone: true }).notNull().defaultNow(),
+  /** First successful sign-in with this email. Null = invited but never used. */
+  redeemedAt: timestamp('redeemed_at', { withTimezone: true }),
+});
+
+/**
  * Per-user speech settings. Both columns are nullable on purpose: null means "no preference", so
  * the server default applies and a user who never opened Settings follows whatever the deployment
  * is configured to use. Stored server-side rather than on disk so a reinstall — which alpha testers

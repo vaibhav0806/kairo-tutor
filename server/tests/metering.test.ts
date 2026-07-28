@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db, pool } from '../src/db/client';
 import { ensureUserRows, reserve, refund } from '../src/usage/service';
+import { inviteTestEmail, revokeTestEmail } from './helpers/invite';
 
 const uid = 'test-user-metering';
 
@@ -11,6 +12,7 @@ beforeAll(async () => {
     VALUES (${uid}, 'Mt', 'mt@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await db.execute(sql`DELETE FROM usage_event WHERE user_id = ${uid}`);
   await ensureUserRows(uid);
+  await inviteTestEmail('mt@t.dev');
   await db.execute(sql`UPDATE usage_counter SET used_free = 0, plan = 'free', free_limit = 3 WHERE user_id = ${uid}`);
 });
 
@@ -18,6 +20,7 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM usage_event WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM usage_counter WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM subscription WHERE user_id = ${uid}`);
+  await revokeTestEmail('mt@t.dev');
   await db.execute(sql`DELETE FROM "user" WHERE id = ${uid}`);
   await pool.end();
 });

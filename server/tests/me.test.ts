@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { buildApp } from '../src/app';
+import { inviteTestEmail, revokeTestEmail } from './helpers/invite';
 import { db, pool } from '../src/db/client';
 import { ensureUserRows } from '../src/usage/service';
 import { mintCode } from '../src/auth/codes';
@@ -13,6 +14,7 @@ beforeAll(async () => {
   await db.execute(sql`INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at)
     VALUES (${uid}, 'Me', 'me@t.dev', true, now(), now()) ON CONFLICT (id) DO NOTHING`);
   await ensureUserRows(uid);
+  await inviteTestEmail('me@t.dev');
   await db.execute(sql`UPDATE usage_counter SET used_free = 0, plan = 'free', free_limit = 10 WHERE user_id = ${uid}`);
 });
 
@@ -21,6 +23,7 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM oauth_code WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM usage_counter WHERE user_id = ${uid}`);
   await db.execute(sql`DELETE FROM subscription WHERE user_id = ${uid}`);
+  await revokeTestEmail('me@t.dev');
   await db.execute(sql`DELETE FROM "user" WHERE id = ${uid}`);
   await app.close();
   await pool.end();
