@@ -48,7 +48,10 @@ mod tutor;
 use tutor::{run_ack_turn, run_gate_turn, run_tutor_turn};
 
 mod speech;
-use speech::{synthesize_speech, synthesize_speech_stream, transcribe_audio};
+use speech::{
+    get_speech_preferences, list_voices, preview_voice, set_speech_preferences, synthesize_speech,
+    synthesize_speech_stream, transcribe_audio,
+};
 
 mod audio;
 use audio::spawn_audio_capture;
@@ -1058,6 +1061,10 @@ pub fn run() {
             transcribe_audio,
             synthesize_speech,
             synthesize_speech_stream,
+            list_voices,
+            get_speech_preferences,
+            set_speech_preferences,
+            preview_voice,
             save_gesture_debug_image,
             proxy::check_paywalled,
             proxy::fetch_me,

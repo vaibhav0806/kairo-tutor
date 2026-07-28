@@ -4,7 +4,13 @@ import type { ScreenRegion, UserAnnotation, VisualTarget } from '../core/types';
 import type { TutorTurnInput } from '../core/orchestrator';
 import type { NotchAnnotationTool } from '../notch/annotationActions';
 import type { NotchPayload } from '../notch/types';
-import type { MeResponse } from '@kairo/shared';
+import type {
+  MeResponse,
+  PreferencesPatch,
+  PreferencesResponse,
+  TtsProvider,
+  VoicesResponse,
+} from '@kairo/shared';
 
 export type NativeInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -209,12 +215,19 @@ export type NativeBridge = {
   transcribeAudio(input: NativeTranscribeAudioInput): Promise<NativeTranscriptionResult>;
   synthesizeSpeech(input: NativeSynthesizeSpeechInput): Promise<NativeSpeechSynthesisResult>;
   // Streaming TTS: PCM chunks arrive on `onChunk` as they're synthesized; resolves
-  // when the stream completes. Sarvam only — other providers reject (caller falls
-  // back to the buffered synthesizeSpeech).
+  // when the stream completes. Both server-side engines stream; only the direct-key
+  // dev path can reject (caller then falls back to the buffered synthesizeSpeech).
   synthesizeSpeechStream(
     input: NativeSynthesizeSpeechInput,
     onChunk: Channel<NativeTtsStreamMsg>
   ): Promise<void>;
+  // Voice settings. The catalog and the stored choice both live on the backend, so these
+  // are authed passthroughs — null when signed out or the backend is unreachable.
+  listVoices(provider?: TtsProvider): Promise<VoicesResponse | null>;
+  getSpeechPreferences(): Promise<PreferencesResponse | null>;
+  setSpeechPreferences(patch: PreferencesPatch): Promise<PreferencesResponse>;
+  // Speak one fixed line in `voiceId` so it can be auditioned before saving.
+  previewVoice(provider: TtsProvider, voiceId: string): Promise<NativeSpeechSynthesisResult>;
   // Debug-only: persist the exact composited JPEG (base64, no data: prefix) sent to
   // fable and return its path. Gated by gestureConfig.debugImages; null on failure.
   saveGestureDebugImage(base64: string): Promise<string | null>;
@@ -715,6 +728,35 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
 
     async synthesizeSpeechStream(input, onChunk) {
       await invoke<void>('synthesize_speech_stream', { input, onChunk });
+    },
+
+    async listVoices(provider) {
+      try {
+        return await invoke<VoicesResponse>('list_voices', { provider: provider ?? null });
+      } catch {
+        return null;
+      }
+    },
+
+    async getSpeechPreferences() {
+      try {
+        return await invoke<PreferencesResponse>('get_speech_preferences');
+      } catch {
+        return null;
+      }
+    },
+
+    // Deliberately not swallowed: a failed save must surface in Settings, or the user believes
+    // they changed voice when they did not.
+    async setSpeechPreferences(patch) {
+      return invoke<PreferencesResponse>('set_speech_preferences', {
+        ttsProvider: patch.ttsProvider ?? null,
+        ttsVoiceId: patch.ttsVoiceId ?? null,
+      });
+    },
+
+    async previewVoice(provider, voiceId) {
+      return invoke<NativeSpeechSynthesisResult>('preview_voice', { provider, voiceId });
     },
 
     async saveGestureDebugImage(base64) {

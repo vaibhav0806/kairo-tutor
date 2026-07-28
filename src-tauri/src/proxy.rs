@@ -157,6 +157,52 @@ pub(crate) async fn proxy_post_json(
         .map_err(|error| ProxyError::Failed(format!("parse: {error}")))
 }
 
+/// GET a backend `path` as JSON with the session JWT attached.
+pub(crate) async fn proxy_get_json(
+    app: &AppHandle,
+    path: &str,
+    timeout: Duration,
+) -> Result<Value, ProxyError> {
+    let jwt = fetch_jwt(app).await.ok_or(ProxyError::NoAuth)?;
+    let url = format!("{}{}", backend_url(), path);
+    let response = shared_http_client()
+        .get(&url)
+        .bearer_auth(jwt)
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|error| ProxyError::Failed(format!("network: {error}")))?;
+    check_status(response)
+        .await?
+        .json::<Value>()
+        .await
+        .map_err(|error| ProxyError::Failed(format!("parse: {error}")))
+}
+
+/// PATCH a JSON `body` to a backend `path` (settings writes) and return the updated resource.
+pub(crate) async fn proxy_patch_json(
+    app: &AppHandle,
+    path: &str,
+    body: &Value,
+    timeout: Duration,
+) -> Result<Value, ProxyError> {
+    let jwt = fetch_jwt(app).await.ok_or(ProxyError::NoAuth)?;
+    let url = format!("{}{}", backend_url(), path);
+    let response = shared_http_client()
+        .patch(&url)
+        .bearer_auth(jwt)
+        .timeout(timeout)
+        .json(body)
+        .send()
+        .await
+        .map_err(|error| ProxyError::Failed(format!("network: {error}")))?;
+    check_status(response)
+        .await?
+        .json::<Value>()
+        .await
+        .map_err(|error| ProxyError::Failed(format!("parse: {error}")))
+}
+
 /// POST a multipart `form` (STT audio upload) and return the raw JSON response.
 pub(crate) async fn proxy_post_multipart(
     app: &AppHandle,

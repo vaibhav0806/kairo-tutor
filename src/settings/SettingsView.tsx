@@ -9,6 +9,7 @@ import { getAuthStatus, onAuthChanged, signOut, startGoogleAuth } from '../onboa
 import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import { KairoLockup } from '../components/KairoMark';
+import { VoiceSettings } from './VoiceSettings';
 import { ACCENT_PRESETS } from '../onboarding/accentPresets';
 import {
   billingNotice,
@@ -300,6 +301,9 @@ export function SettingsView() {
             </button>
           </div>
         </section>
+
+        {/* Voice — engine + speaker, both stored server-side */}
+        <VoiceSettings bridge={bridge} />
 
         {/* Accent color */}
         <section className="s-section">

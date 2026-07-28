@@ -593,3 +593,99 @@ pub(crate) async fn synthesize_speech_stream(
     );
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Voice settings
+//
+// The voice catalog and the user's choice both live on the backend (Sarvam has no voice-list API,
+// so its shortlist is curated server-side; ElevenLabs' list is fetched live there). These commands
+// are thin JWT-authed passthroughs so the settings webview never handles a session token.
+// ---------------------------------------------------------------------------
+
+const VOICE_TIMEOUT: Duration = Duration::from_secs(12);
+
+/// Voices selectable for `provider` (defaults to the user's current engine when omitted).
+#[tauri::command]
+pub(crate) async fn list_voices(
+    app: tauri::AppHandle,
+    provider: Option<String>,
+) -> Result<Value, String> {
+    let path = match provider.as_deref() {
+        Some(p) if !p.is_empty() => format!("/v1/voices?provider={p}"),
+        _ => "/v1/voices".to_string(),
+    };
+    let value = crate::proxy::proxy_get_json(&app, &path, VOICE_TIMEOUT)
+        .await
+        .map_err(|error| error.describe())?;
+    let count = value.get("voices").and_then(Value::as_array).map_or(0, Vec::len);
+    crate::klog!(tts, debug, provider = %provider.unwrap_or_default(), count = count, "voice catalog loaded");
+    Ok(value)
+}
+
+/// The user's current engine + voice, plus which engines this deployment allows.
+#[tauri::command]
+pub(crate) async fn get_speech_preferences(app: tauri::AppHandle) -> Result<Value, String> {
+    crate::proxy::proxy_get_json(&app, "/v1/preferences", VOICE_TIMEOUT)
+        .await
+        .map_err(|error| error.describe())
+}
+
+/// Change engine and/or voice. Returns the resolved preferences the server actually stored.
+#[tauri::command]
+pub(crate) async fn set_speech_preferences(
+    app: tauri::AppHandle,
+    tts_provider: Option<String>,
+    tts_voice_id: Option<String>,
+) -> Result<Value, String> {
+    let mut body = serde_json::Map::new();
+    if let Some(provider) = tts_provider.as_deref().filter(|p| !p.is_empty()) {
+        body.insert("ttsProvider".into(), Value::String(provider.to_string()));
+    }
+    if let Some(voice) = tts_voice_id.as_deref().filter(|v| !v.is_empty()) {
+        body.insert("ttsVoiceId".into(), Value::String(voice.to_string()));
+    }
+    let value = crate::proxy::proxy_patch_json(&app, "/v1/preferences", &Value::Object(body), VOICE_TIMEOUT)
+        .await
+        .map_err(|error| error.describe())?;
+    crate::klog!(
+        tts,
+        info,
+        // `Value::as_str` resolves to tracing's own `Value` trait inside klog! — use a closure.
+        provider = %value.get("ttsProvider").and_then(|v| v.as_str()).unwrap_or("?"),
+        voice = %value.get("ttsVoiceId").and_then(|v| v.as_str()).unwrap_or("?"),
+        "speech preferences saved"
+    );
+    Ok(value)
+}
+
+/// Synthesize the fixed preview line in one voice so it can be auditioned before saving.
+#[tauri::command]
+pub(crate) async fn preview_voice(
+    app: tauri::AppHandle,
+    provider: String,
+    voice_id: String,
+) -> Result<SpeechSynthesisResult, String> {
+    let _t = crate::klog::timer("tts", "preview_voice");
+    let body = json!({ "provider": provider, "voiceId": voice_id });
+    let value = crate::proxy::proxy_post_json(&app, "/v1/voices/preview", &body, None, VOICE_TIMEOUT)
+        .await
+        .map_err(|error| format!("Voice preview failed: {}", error.describe()))?;
+
+    let audio_base64 = value
+        .get("audio_base64")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if audio_base64.is_empty() {
+        return Err("Voice preview returned no audio.".to_string());
+    }
+    Ok(SpeechSynthesisResult {
+        audio_base64,
+        mime_type: value
+            .get("mime_type")
+            .and_then(Value::as_str)
+            .unwrap_or("audio/wav")
+            .to_string(),
+        provider,
+    })
+}
