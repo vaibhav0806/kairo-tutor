@@ -31,6 +31,7 @@
     "db:generate": "npm run db:generate -w @kairo/server",
     "db:migrate": "npm run db:migrate -w @kairo/server",
     "invite": "npm run invite -w @kairo/server --",
+    "invite:prod": "bash server/scripts/invite-prod.sh",
     "billing:test:prepare": "npm run db:migrate && node server/scripts/verify-billing-test-env.mjs",
     "billing:test:login": "node server/scripts/dodo-test-login.mjs",
     "billing:test:listen": "npm run billing:test:prepare && npx --yes dodopayments-cli@3.4.0 wh listen http://localhost:8787/webhooks/dodo"

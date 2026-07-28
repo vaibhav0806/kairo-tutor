@@ -276,6 +276,29 @@ captured automatically (installed once in `main.tsx`).
   hot thread. **Never** do blocking I/O or heavy formatting on the audio callback,
   event-tap runloop, or UI thread — just `klog!` and move on.
 
+## Closed alpha access
+
+Kairo is invite-only. One list (`access_invite`) gates BOTH sign-in and the download, keyed on
+email — the same emails the waitlist already collects.
+
+```bash
+npm run invite:prod -- list                    # who is in, and who has actually signed in
+npm run invite:prod -- add someone@example.com # let them in
+npm run invite:prod -- remove someone@example.com
+```
+
+- Sign-in is gated at session-issue time (`/auth/callback` + `/auth/exchange`), not per request.
+  An uninvited person completes Google sign-in but never receives a token.
+- The DMG has **no public URL**. `POST /v1/download/request` checks the email and returns a
+  15-minute HMAC token; `GET /v1/download/dmg` serves the file from the box. Never publish a DMG
+  to the public R2 bucket — that silently reopens the gate.
+- Updater artifacts DO stay public on R2. They are fetched by already-installed apps, so gating
+  them would only break updates for people who are already in.
+- Removing an invite blocks future sign-ins; existing session tokens live up to 30 days. To cut
+  someone off now, delete their `session` rows too.
+- Uninvited download attempts land in `download_request` — that is the list to pick the next
+  batch from.
+
 ## Shipping a release (alpha)
 
 ```bash
