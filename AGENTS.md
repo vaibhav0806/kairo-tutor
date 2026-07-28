@@ -168,6 +168,25 @@ override at runtime but you never need to set them. Grounding is swappable:
 `anthropic` (Opus, default), `openrouter` (Qwen, cheaper), or `qwen` (direct
 DashScope). No Sonnet for grounding.
 
+**Speech is the exception — the server owns it.** `STT_PROVIDER` / `TTS_PROVIDER` in
+`constants.rs` apply ONLY to the direct-key dev path (`KAIRO_USE_BACKEND_PROXY=false`).
+Every shipped build proxies, and on that path the desktop sends `{ text }` and nothing
+else: `server/src/speech/` picks the engine, the voice, the model, the codec and the
+language. Consequences to respect:
+
+- Never add a vendor field to a speech request body in `speech.rs`'s proxy branch — it
+  will be ignored at best and will fight the server's choice at worst.
+- Flipping engines in production is `KAIRO_TTS_PROVIDER` / `KAIRO_TTS_PROVIDERS_ENABLED`
+  on Hetzner plus a restart. It must never require a new DMG.
+- A user's engine + voice live in the `user_preference` table, not on disk, so a
+  reinstall keeps them.
+- Sarvam publishes **no voice-list API**. Its shortlist is curated in
+  `server/src/speech/catalog.ts`; ElevenLabs is fetched live from `GET /v2/voices`.
+  Both are normalized, so the desktop cannot tell them apart.
+- Any new TTS engine must stream raw 24kHz PCM before it becomes selectable. Buffered-only
+  turns first-audio from ~200-400ms into a whole-clip wait, which reads to users as "the
+  app got slow", not "I changed voice".
+
 ## Configuration
 
 Non-secret config is centralized — **`.env` holds ONLY API keys.**
@@ -256,6 +275,32 @@ captured automatically (installed once in `main.tsx`).
 - The logger is non-blocking by design; it drops lines under load rather than stall a
   hot thread. **Never** do blocking I/O or heavy formatting on the audio callback,
   event-tap runloop, or UI thread — just `klog!` and move on.
+
+## Shipping a release (alpha)
+
+```bash
+npm run updater:keygen              # ONCE, on the release machine — never in CI, never committed
+npm run release                     # build + sign + stage dist/release/ (dry run)
+npm run release -- --publish        # …and upload to R2
+npm run release -- --universal      # Apple silicon + Intel in one artifact (slower)
+```
+
+Three facts that will bite if forgotten:
+
+1. **Releases must be built on the machine holding the `Kairo Tutor Local Dev` cert.**
+   macOS ties TCC grants (Screen Recording, Accessibility, Input Monitoring) to the
+   signing identity. A build signed under a different identity looks like a different
+   app: every alpha user silently loses their grants and the app appears broken. Export
+   the cert as a password-protected `.p12` into the password manager — today it exists
+   only in one login keychain, and losing it forces every user to re-grant.
+2. **The updater's minisign private key is unrecoverable.** Installed apps verify against
+   the public key baked into their bundle, so a regenerated keypair can never reach them.
+   Back it up before the first public build.
+3. **First install needs `xattr`; updates do not.** We sign with our own cert rather than
+   a paid Apple Developer ID, so macOS quarantines the download and (since macOS 15)
+   right-click → Open no longer bypasses it. Updater-installed bundles are not
+   quarantined, so the cost is one-time. Notarizing with a Developer ID removes it
+   entirely and is the right move before pushing volume.
 
 ## Testing / verification
 

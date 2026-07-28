@@ -3,8 +3,9 @@
 # Cut an alpha release: build the DMG + updater artifact, sign both, write the
 # updater manifest, and (optionally) publish everything to Cloudflare R2.
 #
-#   npm run release              # build + sign + write dist/release/, no upload
-#   npm run release -- --publish # …then upload to R2
+#   npm run release                # build + sign + write dist/release/, no upload
+#   npm run release -- --publish   # …then upload to R2
+#   npm run release -- --universal # Apple silicon + Intel in one artifact (slower build)
 #
 # Two DIFFERENT signatures are involved and they are unrelated:
 #   1. Apple codesigning — the local self-signed "Kairo Tutor Local Dev" cert. It is
@@ -28,7 +29,6 @@
 set -euo pipefail
 
 APP_NAME="Kairo Tutor"
-BUNDLE_DIR="src-tauri/target/release/bundle"
 OUT_DIR="dist/release"
 R2_BUCKET="${KAIRO_R2_BUCKET:-kairo-downloads}"
 # Public base the download page + updater point at (Cloudflare R2 custom domain).
@@ -37,7 +37,30 @@ DOWNLOAD_BASE="${KAIRO_DOWNLOAD_BASE:-https://dl.meetkairo.xyz}"
 cd "$(dirname "$0")/.."
 
 PUBLISH=false
-[[ "${1:-}" == "--publish" ]] && PUBLISH=true
+UNIVERSAL=false
+for arg in "$@"; do
+  case "${arg}" in
+    --publish) PUBLISH=true ;;
+    --universal) UNIVERSAL=true ;;
+    *) echo "✗ Unknown flag: ${arg} (expected --publish and/or --universal)" >&2; exit 1 ;;
+  esac
+done
+
+# A universal binary carries both an arm64 and an x86_64 slice; macOS runs the native one on each
+# machine, so a single artifact serves Apple silicon and Intel with no Rosetta and no perf cost.
+# It roughly doubles build time, hence opt-in. Note: this makes the app *launch* on Intel — it is
+# not a substitute for actually testing there.
+BUILD_TARGET_ARGS=()
+BUNDLE_ROOT="src-tauri/target/release/bundle"
+if [[ "${UNIVERSAL}" == true ]]; then
+  if ! rustup target list --installed | grep -q '^x86_64-apple-darwin$'; then
+    echo "✗ The x86_64-apple-darwin Rust target is missing (needed for a universal build)." >&2
+    echo "  Install it with:  rustup target add x86_64-apple-darwin" >&2
+    exit 1
+  fi
+  BUILD_TARGET_ARGS=(--target universal-apple-darwin)
+  BUNDLE_ROOT="src-tauri/target/universal-apple-darwin/release/bundle"
+fi
 
 VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 PUBKEY="$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey || ''")"
@@ -78,11 +101,11 @@ sleep 1
 # Keep Kairo's own UI out of user captures + the tutor's screenshot (same flag as `npm run dist`).
 export KAIRO_SHOW_IN_CAPTURE=false
 echo "▸ Building app + dmg (updater artifacts on)…"
-npm run tauri:build -- --bundles app,dmg
+npm run tauri:build -- "${BUILD_TARGET_ARGS[@]}" --bundles app,dmg
 
 # --- 3. collect artifacts ---------------------------------------------------
-DMG_FILE="$(ls -t "${BUNDLE_DIR}"/dmg/*.dmg 2>/dev/null | head -1 || true)"
-UPDATER_ARCHIVE="$(ls -t "${BUNDLE_DIR}"/macos/*.app.tar.gz 2>/dev/null | head -1 || true)"
+DMG_FILE="$(ls -t "${BUNDLE_ROOT}"/dmg/*.dmg 2>/dev/null | head -1 || true)"
+UPDATER_ARCHIVE="$(ls -t "${BUNDLE_ROOT}"/macos/*.app.tar.gz 2>/dev/null | head -1 || true)"
 UPDATER_SIG="${UPDATER_ARCHIVE}.sig"
 
 for artifact in "${DMG_FILE}" "${UPDATER_ARCHIVE}" "${UPDATER_SIG}"; do
@@ -105,22 +128,25 @@ ARCHIVE_NAME="Kairo-Tutor-${VERSION}.app.tar.gz"
 cp "${DMG_FILE}" "${OUT_DIR}/${DMG_NAME}"
 cp "${UPDATER_ARCHIVE}" "${OUT_DIR}/${ARCHIVE_NAME}"
 
-# arm64 only for now. A universal build adds a darwin-x86_64 entry pointing at the
-# same archive — a universal binary carries both slices, so one artifact serves both.
+# A universal build serves both architectures from ONE archive (both slices are inside), so it
+# lists darwin-x86_64 as well. An arm64-only build must NOT list x86_64: an Intel user would
+# download an app that cannot run.
 SIGNATURE="$(cat "${UPDATER_SIG}")" \
 VERSION="${VERSION}" \
+UNIVERSAL="${UNIVERSAL}" \
 ARCHIVE_URL="${DOWNLOAD_BASE}/updater/${ARCHIVE_NAME}" \
 node -e '
+  const platform = {
+    signature: process.env.SIGNATURE.trim(),
+    url: process.env.ARCHIVE_URL,
+  };
+  const platforms = { "darwin-aarch64": platform };
+  if (process.env.UNIVERSAL === "true") platforms["darwin-x86_64"] = platform;
   const manifest = {
     version: process.env.VERSION,
     notes: "See https://meetkairo.xyz/download",
     pub_date: new Date().toISOString(),
-    platforms: {
-      "darwin-aarch64": {
-        signature: process.env.SIGNATURE.trim(),
-        url: process.env.ARCHIVE_URL,
-      },
-    },
+    platforms,
   };
   require("node:fs").writeFileSync("dist/release/latest.json", JSON.stringify(manifest, null, 2) + "\n");
 '
