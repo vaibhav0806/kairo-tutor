@@ -103,6 +103,18 @@ export const accessInvite = pgTable('access_invite', {
 });
 
 /**
+ * Who asked for the download, and whether they cleared the invite gate. Uninvited requests are the
+ * alpha's real waiting list — one place to pick the next batch from — and invited ones tell us how
+ * many people who were let in actually came to get it.
+ */
+export const downloadRequest = pgTable('download_request', {
+  email: text('email').primaryKey(),
+  invited: boolean('invited').notNull().default(false),
+  requestCount: integer('request_count').notNull().default(1),
+  requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Per-user speech settings. Both columns are nullable on purpose: null means "no preference", so
  * the server default applies and a user who never opened Settings follows whatever the deployment
  * is configured to use. Stored server-side rather than on disk so a reinstall — which alpha testers

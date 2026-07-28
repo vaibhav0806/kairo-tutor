@@ -24,6 +24,10 @@ const Env = z.object({
   KAIRO_TTS_PROVIDER: z.enum(['sarvam', 'elevenlabs']).default('sarvam'),
   /** Comma-separated allowlist of engines a user may switch to in Settings. */
   KAIRO_TTS_PROVIDERS_ENABLED: z.string().default('sarvam,elevenlabs'),
+  // Where the release DMG sits on the box. It is served through an email-gated route rather than
+  // from a public URL, so the closed alpha actually stays closed.
+  KAIRO_RELEASES_DIR: z.string().default('/srv/kairo-releases'),
+  KAIRO_RELEASE_DMG_NAME: z.string().default('Kairo-Tutor-latest.dmg'),
   DODO_ENV: z.enum(['test_mode', 'live_mode']).default('test_mode'),
   // Dodo keys — SAME names as the root .env (one source of truth, no confusion). The active
   // key + webhook secret are selected by DODO_ENV (see dodoApiKey / dodoWebhookSecret below).

@@ -10,6 +10,7 @@ import { speechRoutes } from './proxy/speech';
 import { billingRoutes } from './billing/routes';
 import { dodoWebhookRoutes } from './billing/webhook';
 import { onboardingRoutes } from './onboarding/routes';
+import { downloadRoutes } from './download/routes';
 import { registerErrorHandler } from './plugins/error-handler';
 import { healthRoutes } from './health/routes';
 import { requestPath } from './logging';
@@ -54,6 +55,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(billingRoutes);
   await app.register(dodoWebhookRoutes);
   await app.register(onboardingRoutes);
+  await app.register(downloadRoutes);
 
   return app;
 }
