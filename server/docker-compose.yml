@@ -14,6 +14,11 @@ services:
       # Non-secret selector. Runtime + migration guards verify the live Dodo mode and exact
       # production Neon endpoint before serving or changing data.
       KAIRO_SERVER_TARGET: hosted
+      # Release DMGs, mounted read-only. They are served through the email-gated download route
+      # rather than from a public URL, which is what keeps the alpha closed.
+      KAIRO_RELEASES_DIR: /srv/kairo-releases
+    volumes:
+      - /srv/kairo-releases:/srv/kairo-releases:ro
     # Cap container logs (shared box) — 3 x 10MB rolling, never fills the disk.
     logging:
       driver: json-file

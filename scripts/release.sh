@@ -31,8 +31,13 @@ set -euo pipefail
 APP_NAME="Kairo Tutor"
 OUT_DIR="dist/release"
 R2_BUCKET="${KAIRO_R2_BUCKET:-kairo-downloads}"
-# Public base the download page + updater point at (Cloudflare R2 custom domain).
+# Public base for UPDATER artifacts only (Cloudflare R2 custom domain). The DMG is deliberately
+# NOT published here — see below.
 DOWNLOAD_BASE="${KAIRO_DOWNLOAD_BASE:-https://dl.meetkairo.xyz}"
+# The DMG ships to the API box instead, where an email-gated route serves it.
+RELEASE_HOST="${KAIRO_RELEASE_HOST:-era@178.105.44.3}"
+RELEASE_SSH_KEY="${KAIRO_RELEASE_SSH_KEY:-$HOME/.ssh/id_ed25519_2}"
+RELEASE_DIR="${KAIRO_RELEASE_DIR:-/srv/kairo-releases}"
 
 cd "$(dirname "$0")/.."
 
@@ -160,16 +165,24 @@ if [[ "${PUBLISH}" != true ]]; then
   exit 0
 fi
 
-echo "▸ Uploading to R2 bucket ${R2_BUCKET}…"
-# The DMG keeps a versioned name AND a stable "latest" alias so meetkairo.xyz/download
-# never has to be edited for a release.
-npx --yes wrangler r2 object put "${R2_BUCKET}/${DMG_NAME}" --file "${OUT_DIR}/${DMG_NAME}" --remote
-npx --yes wrangler r2 object put "${R2_BUCKET}/Kairo-Tutor-latest.dmg" --file "${OUT_DIR}/${DMG_NAME}" --remote
+# The DMG goes to the API box, NOT to public R2: the download is gated on an invited email, and a
+# public object URL would hand the build to anyone who has the link. Updater artifacts DO stay
+# public — they are fetched by already-installed apps, so gating them would only break updates for
+# people who are already in.
+echo "▸ Shipping the DMG to ${RELEASE_HOST}:${RELEASE_DIR}…"
+ssh -i "${RELEASE_SSH_KEY}" "${RELEASE_HOST}" "sudo mkdir -p '${RELEASE_DIR}' && sudo chown \$(id -un):\$(id -gn) '${RELEASE_DIR}'"
+scp -i "${RELEASE_SSH_KEY}" "${OUT_DIR}/${DMG_NAME}" "${RELEASE_HOST}:${RELEASE_DIR}/${DMG_NAME}"
+# Atomic swap of the stable name the download route serves, so a request mid-upload never gets a
+# half-written file.
+ssh -i "${RELEASE_SSH_KEY}" "${RELEASE_HOST}" \
+  "cp '${RELEASE_DIR}/${DMG_NAME}' '${RELEASE_DIR}/.latest.tmp' && mv '${RELEASE_DIR}/.latest.tmp' '${RELEASE_DIR}/Kairo-Tutor-latest.dmg'"
+
+echo "▸ Uploading updater artifacts to R2 bucket ${R2_BUCKET}…"
 npx --yes wrangler r2 object put "${R2_BUCKET}/updater/${ARCHIVE_NAME}" --file "${OUT_DIR}/${ARCHIVE_NAME}" --remote
 # latest.json LAST: until it lands, the new archive is simply unreferenced. Uploading it
 # first would point every installed app at an archive that may not have finished uploading.
 npx --yes wrangler r2 object put "${R2_BUCKET}/updater/latest.json" --file "${OUT_DIR}/latest.json" --remote
 
 echo "✓ Published v${VERSION}"
-echo "  Download: ${DOWNLOAD_BASE}/Kairo-Tutor-latest.dmg"
+echo "  Download: https://meetkairo.xyz/download (email-gated; the DMG has no public URL)"
 echo "  Manifest: ${DOWNLOAD_BASE}/updater/latest.json"
