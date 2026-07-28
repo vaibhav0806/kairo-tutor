@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+#
+# Cut an alpha release: build the DMG + updater artifact, sign both, write the
+# updater manifest, and (optionally) publish everything to Cloudflare R2.
+#
+#   npm run release              # build + sign + write dist/release/, no upload
+#   npm run release -- --publish # …then upload to R2
+#
+# Two DIFFERENT signatures are involved and they are unrelated:
+#   1. Apple codesigning — the local self-signed "Kairo Tutor Local Dev" cert. It is
+#      what macOS ties TCC grants to, so every release MUST be signed with the same
+#      identity or users silently lose Screen Recording / Accessibility on update.
+#      It is NOT trusted by Gatekeeper, which is why first-time installers run xattr.
+#   2. Updater minisign — an Ed25519 keypair we own, used to sign the update archive.
+#      Independent of Apple; this is what makes unnotarized self-updates safe.
+#
+# The minisign PRIVATE key never lives in this repo. Generate it once:
+#   npm run updater:keygen
+# then paste the printed public key into src-tauri/tauri.conf.json → plugins.updater.pubkey
+# and export these before releasing (from your password manager):
+#   export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/kairo-updater.key)"
+#   export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="…"
+#
+# LOSING THE PRIVATE KEY IS UNRECOVERABLE: every already-installed app verifies against
+# the embedded public key, so a new keypair cannot update them. They would all have to
+# reinstall by hand. Back it up before the first public build.
+
+set -euo pipefail
+
+APP_NAME="Kairo Tutor"
+BUNDLE_DIR="src-tauri/target/release/bundle"
+OUT_DIR="dist/release"
+R2_BUCKET="${KAIRO_R2_BUCKET:-kairo-downloads}"
+# Public base the download page + updater point at (Cloudflare R2 custom domain).
+DOWNLOAD_BASE="${KAIRO_DOWNLOAD_BASE:-https://dl.meetkairo.xyz}"
+
+cd "$(dirname "$0")/.."
+
+PUBLISH=false
+[[ "${1:-}" == "--publish" ]] && PUBLISH=true
+
+VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+PUBKEY="$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey || ''")"
+
+# --- 0. refuse to ship an unverifiable build --------------------------------
+if [[ -z "${PUBKEY}" ]]; then
+  cat >&2 <<'MSG'
+✗ plugins.updater.pubkey is empty in src-tauri/tauri.conf.json.
+
+  Shipping without it produces a build that can never self-update — and once users
+  have it installed, the only fix is asking every one of them to reinstall by hand.
+
+  Run:  npm run updater:keygen
+  then paste the printed public key into tauri.conf.json and re-run this script.
+MSG
+  exit 1
+fi
+
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  echo "✗ TAURI_SIGNING_PRIVATE_KEY is not set — the updater archive would ship unsigned." >&2
+  echo "  export TAURI_SIGNING_PRIVATE_KEY=\"\$(cat ~/.tauri/kairo-updater.key)\"" >&2
+  exit 1
+fi
+
+echo "▸ Releasing ${APP_NAME} v${VERSION}"
+
+# --- 1. pre-flight ----------------------------------------------------------
+echo "▸ Pre-flight: typecheck + tests + cargo check…"
+npm run typecheck
+npm run test
+cargo check --manifest-path src-tauri/Cargo.toml
+
+osascript -e "quit app \"${APP_NAME}\"" 2>/dev/null || true
+pkill -x kairo-tutor 2>/dev/null || true
+sleep 1
+
+# --- 2. build ---------------------------------------------------------------
+# Keep Kairo's own UI out of user captures + the tutor's screenshot (same flag as `npm run dist`).
+export KAIRO_SHOW_IN_CAPTURE=false
+echo "▸ Building app + dmg (updater artifacts on)…"
+npm run tauri:build -- --bundles app,dmg
+
+# --- 3. collect artifacts ---------------------------------------------------
+DMG_FILE="$(ls -t "${BUNDLE_DIR}"/dmg/*.dmg 2>/dev/null | head -1 || true)"
+UPDATER_ARCHIVE="$(ls -t "${BUNDLE_DIR}"/macos/*.app.tar.gz 2>/dev/null | head -1 || true)"
+UPDATER_SIG="${UPDATER_ARCHIVE}.sig"
+
+for artifact in "${DMG_FILE}" "${UPDATER_ARCHIVE}" "${UPDATER_SIG}"; do
+  if [[ -z "${artifact}" || ! -f "${artifact}" ]]; then
+    echo "✗ Missing build artifact: ${artifact:-<none produced>}" >&2
+    echo "  Expected a .dmg, a .app.tar.gz and its .sig (createUpdaterArtifacts must be true)." >&2
+    exit 1
+  fi
+done
+
+echo "▸ Verifying the DMG signature…"
+codesign --verify --strict --verbose=2 "${DMG_FILE}"
+
+# --- 4. stage + write the updater manifest ----------------------------------
+rm -rf "${OUT_DIR}"
+mkdir -p "${OUT_DIR}"
+
+DMG_NAME="Kairo-Tutor-${VERSION}.dmg"
+ARCHIVE_NAME="Kairo-Tutor-${VERSION}.app.tar.gz"
+cp "${DMG_FILE}" "${OUT_DIR}/${DMG_NAME}"
+cp "${UPDATER_ARCHIVE}" "${OUT_DIR}/${ARCHIVE_NAME}"
+
+# arm64 only for now. A universal build adds a darwin-x86_64 entry pointing at the
+# same archive — a universal binary carries both slices, so one artifact serves both.
+SIGNATURE="$(cat "${UPDATER_SIG}")" \
+VERSION="${VERSION}" \
+ARCHIVE_URL="${DOWNLOAD_BASE}/updater/${ARCHIVE_NAME}" \
+node -e '
+  const manifest = {
+    version: process.env.VERSION,
+    notes: "See https://meetkairo.xyz/download",
+    pub_date: new Date().toISOString(),
+    platforms: {
+      "darwin-aarch64": {
+        signature: process.env.SIGNATURE.trim(),
+        url: process.env.ARCHIVE_URL,
+      },
+    },
+  };
+  require("node:fs").writeFileSync("dist/release/latest.json", JSON.stringify(manifest, null, 2) + "\n");
+'
+
+echo "✓ Staged in ${OUT_DIR}:"
+ls -lh "${OUT_DIR}"
+
+# --- 5. publish -------------------------------------------------------------
+if [[ "${PUBLISH}" != true ]]; then
+  echo "▸ Dry run — nothing uploaded. Re-run with --publish to ship."
+  exit 0
+fi
+
+echo "▸ Uploading to R2 bucket ${R2_BUCKET}…"
+# The DMG keeps a versioned name AND a stable "latest" alias so meetkairo.xyz/download
+# never has to be edited for a release.
+npx --yes wrangler r2 object put "${R2_BUCKET}/${DMG_NAME}" --file "${OUT_DIR}/${DMG_NAME}" --remote
+npx --yes wrangler r2 object put "${R2_BUCKET}/Kairo-Tutor-latest.dmg" --file "${OUT_DIR}/${DMG_NAME}" --remote
+npx --yes wrangler r2 object put "${R2_BUCKET}/updater/${ARCHIVE_NAME}" --file "${OUT_DIR}/${ARCHIVE_NAME}" --remote
+# latest.json LAST: until it lands, the new archive is simply unreferenced. Uploading it
+# first would point every installed app at an archive that may not have finished uploading.
+npx --yes wrangler r2 object put "${R2_BUCKET}/updater/latest.json" --file "${OUT_DIR}/latest.json" --remote
+
+echo "✓ Published v${VERSION}"
+echo "  Download: ${DOWNLOAD_BASE}/Kairo-Tutor-latest.dmg"
+echo "  Manifest: ${DOWNLOAD_BASE}/updater/latest.json"

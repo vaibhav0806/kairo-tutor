@@ -17,6 +17,8 @@
     "app:local": "KAIRO_BACKEND_TARGET=local bash scripts/rebuild-run.sh",
     "app:hosted": "KAIRO_BACKEND_TARGET=hosted bash scripts/rebuild-run.sh",
     "dist": "bash scripts/build-dmg.sh",
+    "release": "bash scripts/release.sh",
+    "updater:keygen": "bash scripts/updater-keygen.sh",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
