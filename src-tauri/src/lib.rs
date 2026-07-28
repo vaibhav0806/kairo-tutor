@@ -47,6 +47,9 @@ mod grounding;
 mod tutor;
 use tutor::{run_ack_turn, run_gate_turn, run_tutor_turn};
 
+mod updater;
+use updater::{check_for_update, install_update};
+
 mod speech;
 use speech::{
     get_speech_preferences, list_voices, preview_voice, set_speech_preferences, synthesize_speech,
@@ -805,6 +808,8 @@ pub fn run() {
         .manage(AudioCapture::default())
         .plugin(tauri_nspanel::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -907,6 +912,9 @@ pub fn run() {
                     klog!(app, error, "failed to pre-create cursor panel: {error}");
                 }
             }
+            // Self-update poll: one delayed check, then every few hours. Surfaces a banner only —
+            // installing is always the user's click, never a swap under a live session.
+            crate::updater::spawn_update_watch(app.handle().clone());
             // Context watcher: detect app/tab switches + scroll/click so stale
             // guidance is cleared when the user moves on. Threads idle-cheap until armed.
             let context_watch = app.state::<ContextWatch>().inner().clone();
@@ -1062,6 +1070,8 @@ pub fn run() {
             synthesize_speech,
             synthesize_speech_stream,
             list_voices,
+            check_for_update,
+            install_update,
             get_speech_preferences,
             set_speech_preferences,
             preview_voice,

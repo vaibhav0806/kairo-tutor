@@ -99,11 +99,19 @@
       "desktop": {
         "schemes": ["kairo"]
       }
+    },
+    "updater": {
+      "endpoints": ["https://dl.meetkairo.xyz/updater/latest.json"],
+      "pubkey": "",
+      "windows": {
+        "installMode": "passive"
+      }
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "category": "Education",
     "icon": [
       "icons/32x32.png",

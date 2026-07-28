@@ -81,6 +81,13 @@ export type NativeSpeechSynthesisResult = {
   provider: string;
 };
 
+// A pending self-update (mirrors the Rust `UpdateInfo`). Emitted on `updater:available` too.
+export type NativeUpdateInfo = {
+  version: string;
+  currentVersion: string;
+  notes?: string | null;
+};
+
 // A message on the streaming-TTS channel (mirrors the Rust `TtsStreamMsg` enum).
 // `chunk.data` is base64 raw PCM (linear16, s16le, mono) at `start.sampleRate`.
 export type NativeTtsStreamMsg =
@@ -228,6 +235,10 @@ export type NativeBridge = {
   setSpeechPreferences(patch: PreferencesPatch): Promise<PreferencesResponse>;
   // Speak one fixed line in `voiceId` so it can be auditioned before saving.
   previewVoice(provider: TtsProvider, voiceId: string): Promise<NativeSpeechSynthesisResult>;
+  // Self-update. `checkForUpdate` resolves null when already current and rejects when the
+  // endpoint is unreachable; `installUpdate` downloads, installs and restarts into the new build.
+  checkForUpdate(): Promise<NativeUpdateInfo | null>;
+  installUpdate(): Promise<void>;
   // Debug-only: persist the exact composited JPEG (base64, no data: prefix) sent to
   // fable and return its path. Gated by gestureConfig.debugImages; null on failure.
   saveGestureDebugImage(base64: string): Promise<string | null>;
@@ -757,6 +768,16 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
 
     async previewVoice(provider, voiceId) {
       return invoke<NativeSpeechSynthesisResult>('preview_voice', { provider, voiceId });
+    },
+
+    // Both reject rather than swallow: "couldn't reach the update server" and "you're up to date"
+    // must look different to the user.
+    async checkForUpdate() {
+      return (await invoke<NativeUpdateInfo | null>('check_for_update')) ?? null;
+    },
+
+    async installUpdate() {
+      await invoke<void>('install_update');
     },
 
     async saveGestureDebugImage(base64) {

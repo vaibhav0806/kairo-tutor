@@ -10,6 +10,7 @@ import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import { KairoLockup } from '../components/KairoMark';
 import { VoiceSettings } from './VoiceSettings';
+import { UpdateSettings } from './UpdateSettings';
 import { ACCENT_PRESETS } from '../onboarding/accentPresets';
 import {
   billingNotice,
@@ -365,6 +366,9 @@ export function SettingsView() {
             })}
           </section>
         )}
+
+        {/* Software update */}
+        <UpdateSettings bridge={bridge} version={version} />
 
         {/* Launch at login */}
         <section className="s-section">

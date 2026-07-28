@@ -37,3 +37,5 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"
