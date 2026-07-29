@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Voice } from '@kairo/shared';
 import { filterVoices, languageLabel, languagesInCatalogue } from '../src/settings/VoicePicker';
+import { filterSkills } from '../src/settings/SkillsDialog';
 
 const voice = (partial: Partial<Voice> & { id: string; name: string }): Voice => ({
   provider: 'sarvam',
@@ -77,5 +78,22 @@ describe('filterVoices', () => {
 
   it('returns nothing when the combination excludes everything', () => {
     expect(filterVoices(CATALOGUE, '', { language: 'Tamil', gender: 'male' })).toEqual([]);
+  });
+});
+
+describe('filterSkills', () => {
+  const skills = [
+    { slug: 'blender', name: 'Blender', description: '3D modelling guidance', enabled: true },
+    { slug: 'figma', name: 'Figma', description: 'Design tool walkthroughs', enabled: true },
+    { slug: 'excel', name: 'Excel', description: 'Spreadsheet formulas', enabled: false }
+  ];
+
+  it('returns everything for an empty query', () => {
+    expect(filterSkills(skills, '  ')).toHaveLength(3);
+  });
+
+  it('matches the name and the description', () => {
+    expect(filterSkills(skills, 'design').map((s) => s.slug)).toEqual(['figma']);
+    expect(filterSkills(skills, 'BLEND').map((s) => s.slug)).toEqual(['blender']);
   });
 });

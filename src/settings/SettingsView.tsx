@@ -13,6 +13,7 @@ import { notify, notifySaving } from '../core/notify';
 import { KairoLockup } from '../components/KairoMark';
 import { KButton } from '../components/KButton';
 import { VoiceSettings } from './VoiceSettings';
+import { SkillsDialog, type SkillInfo } from './SkillsDialog';
 import { UpdateSettings } from './UpdateSettings';
 import { ACCENT_PRESETS } from '../onboarding/accentPresets';
 import {
@@ -22,8 +23,6 @@ import {
   type BillingReturnStatus,
 } from './billingState';
 import './settings.css';
-
-type SkillInfo = { slug: string; name: string; description: string; enabled: boolean };
 
 const PERMISSIONS: { key: NativePermissionKey; label: string }[] = [
   { key: 'screenRecording', label: 'Screen Recording' },
@@ -414,34 +413,12 @@ export function SettingsView() {
         </div>
       </div>
 
-      {skillsOpen && (
-        <div className="s-modal-scrim" onClick={() => setSkillsOpen(false)}>
-          <div className="s-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="s-modal-head">
-              <span className="s-modal-title">Skills</span>
-              <KButton variant="ghost" onClick={() => setSkillsOpen(false)}>
-                Done
-              </KButton>
-            </div>
-            <p className="settings-muted">Uncheck a skill to hide it from Kairo entirely.</p>
-            <div className="s-modal-list">
-              {skills.map((s) => (
-                <label className="s-check-row" key={s.slug}>
-                  <input
-                    type="checkbox"
-                    checked={s.enabled}
-                    onChange={(e) => void toggleSkill(s.slug, e.target.checked)}
-                  />
-                  <span className="s-check-body">
-                    <span className="s-item-name">{s.name}</span>
-                    <span className="settings-muted s-check-desc">{s.description}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <SkillsDialog
+        skills={skills}
+        open={skillsOpen}
+        onOpenChange={setSkillsOpen}
+        onToggle={(slug, enabled) => void toggleSkill(slug, enabled)}
+      />
     </div>
   );
 }

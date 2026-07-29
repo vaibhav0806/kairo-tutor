@@ -1855,3 +1855,22 @@ input {
     transition: none;
   }
 }
+
+/* Dense rows (the skills dialog) get a smaller switch so the list stays scannable. */
+.kswitch-sm {
+  height: 20px;
+  width: 34px;
+}
+.kswitch-sm .kswitch-knob {
+  height: 16px;
+  width: 16px;
+}
+.kswitch-sm[data-checked] .kswitch-knob {
+  transform: translateX(14px);
+}
+.kswitch-sm:active .kswitch-knob {
+  width: 20px;
+}
+.kswitch-sm[data-checked]:active .kswitch-knob {
+  transform: translateX(10px);
+}
