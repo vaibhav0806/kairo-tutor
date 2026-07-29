@@ -334,3 +334,193 @@
   font-size: 12px;
   color: var(--danger, #b42318);
 }
+
+/* ---- Voice picker (VoicePicker.tsx) ----------------------------------------------------------
+   An inline panel rather than a floating popover: the settings window is one narrow column, so a
+   list that expands in place cannot be clipped, needs no portal, and keeps the section header
+   visible while you search. */
+.vp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vp-current {
+  align-items: center;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-inset);
+  display: flex;
+  gap: 9px;
+  padding: 8px 10px;
+}
+.vp-current-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.vp-current-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.vp-change {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-button);
+  color: var(--ink-subtle);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: auto;
+  padding: 5px 11px;
+  transition: background-color var(--dur-fast) ease;
+}
+.vp-change:hover {
+  background: var(--surface-soft);
+}
+
+/* Preview. Deliberately a separate control from the row's select action — pressing it must never
+   change the saved voice. */
+.vp-play {
+  align-items: center;
+  appearance: none;
+  background: var(--canvas-raised);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--ink-subtle);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  font-size: 9px;
+  height: 24px;
+  justify-content: center;
+  padding: 0;
+  transition:
+    border-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    transform var(--dur-fast) var(--ease-out);
+  width: 24px;
+}
+.vp-play:hover:not(:disabled) {
+  border-color: rgb(var(--kairo-accent-rgb, 102 92 255) / 0.5);
+  color: color-mix(in srgb, rgb(var(--kairo-accent-rgb, 102 92 255)) 70%, var(--ink));
+}
+.vp-play:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.vp-play:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.vp-panel {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-inset);
+  background: var(--canvas-raised);
+  overflow: hidden;
+}
+.vp-search {
+  align-items: center;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink-muted);
+  display: flex;
+  gap: 8px;
+  padding: 8px 11px;
+}
+.vp-search input {
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+  outline: none;
+}
+.vp-clear {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+
+.vp-filters {
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 10px;
+}
+.vp-chip {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  padding: 3px 9px;
+  transition:
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    color var(--dur-fast) ease;
+}
+.vp-chip:hover {
+  color: var(--ink);
+}
+.vp-chip[data-on='true'] {
+  background: rgb(var(--kairo-accent-rgb, 102 92 255) / 0.12);
+  border-color: rgb(var(--kairo-accent-rgb, 102 92 255) / 0.4);
+  color: color-mix(in srgb, rgb(var(--kairo-accent-rgb, 102 92 255)) 62%, var(--ink));
+}
+
+.vp-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 216px;
+  overflow-y: auto;
+}
+.vp-row {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 9px;
+  padding: 7px 10px;
+}
+.vp-row:hover {
+  background: var(--surface-soft);
+}
+.vp-row[data-selected='true'] {
+  background: rgb(var(--kairo-accent-rgb, 102 92 255) / 0.08);
+}
+.vp-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.vp-row-name {
+  font-size: 13px;
+  font-weight: 550;
+}
+.vp-row-meta {
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vp-check {
+  color: color-mix(in srgb, rgb(var(--kairo-accent-rgb, 102 92 255)) 70%, var(--ink));
+  font-size: 12px;
+  margin-left: auto;
+}
+.vp-empty {
+  padding: 14px 11px;
+  text-align: center;
+}

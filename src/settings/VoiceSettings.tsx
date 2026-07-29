@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PreferencesResponse, TtsProvider, Voice } from '@kairo/shared';
 import type { NativeBridge } from '../native/nativeBridge';
 import { klog } from '../core/logger';
-import { KButton } from '../components/KButton';
 import { Segmented } from '../components/Segmented';
+import { notify, notifySaving } from '../core/notify';
+import { VoicePicker } from './VoicePicker';
 
 const PROVIDER_LABEL: Record<TtsProvider, string> = {
   sarvam: 'Sarvam',
@@ -53,11 +54,20 @@ export function VoiceSettings({ bridge }: { bridge: NativeBridge }) {
     };
   }, [bridge, loadVoices]);
 
+  // Optimistic: paint the choice immediately and reconcile with whatever the server actually
+  // stored. The picker used to disable itself for the whole round-trip, which made every voice
+  // change feel like the app had stalled.
   const save = async (patch: { ttsProvider?: TtsProvider; ttsVoiceId?: string }) => {
+    if (!prefs) return;
+    const previous = prefs;
     setError('');
     setSaving(true);
+    setPrefs({ ...prefs, ...patch });
     try {
-      const next = await bridge.setSpeechPreferences(patch);
+      const next = await notifySaving(bridge.setSpeechPreferences(patch), {
+        pending: 'Saving voice…',
+        success: patch.ttsProvider ? 'Voice engine changed' : 'Voice saved',
+      });
       setPrefs(next);
       // The server may land on a different voice than requested (engine switch → that engine's
       // default), so the list is reloaded from what it actually stored, not from the request.
@@ -67,25 +77,33 @@ export function VoiceSettings({ bridge }: { bridge: NativeBridge }) {
         voice: next.ttsVoiceId,
       });
     } catch (err) {
-      setError(String(err).replace(/^.*?:\s*/, ''));
+      setPrefs(previous);
       klog('settings', 'warn', 'voice preference save failed', { error: String(err) });
     }
     setSaving(false);
   };
 
+  // Auditioning is not choosing: this plays ANY voice id without writing preferences.
   const preview = async (voiceId: string) => {
     if (!prefs) return;
-    setError('');
     setPreviewing(voiceId);
     try {
       const audio = await bridge.previewVoice(prefs.ttsProvider, voiceId);
       audioRef.current?.pause();
       const element = new Audio(`data:${audio.mimeType};base64,${audio.audioBase64}`);
       audioRef.current = element;
+      // Hold the ❚❚ state for the length of the clip, so the row shows what is playing.
+      element.addEventListener('ended', () => setPreviewing((current) => (current === voiceId ? '' : current)));
       await element.play();
+      klog('settings', 'debug', 'voice previewed', { voice: voiceId });
+      return;
     } catch (err) {
-      setError(String(err).replace(/^.*?:\s*/, ''));
       klog('settings', 'warn', 'voice preview failed', { error: String(err) });
+      notify({
+        tone: 'error',
+        message: "Couldn't play that voice",
+        detail: String(err).replace(/^.*?:\s*/, ''),
+      });
     }
     setPreviewing('');
   };
@@ -109,8 +127,6 @@ export function VoiceSettings({ bridge }: { bridge: NativeBridge }) {
     );
   }
 
-  const selected = voices.find((voice) => voice.id === prefs.ttsVoiceId);
-
   return (
     <section className="s-section">
       <div className="s-label">Voice</div>
@@ -131,36 +147,25 @@ export function VoiceSettings({ bridge }: { bridge: NativeBridge }) {
       )}
       <p className="settings-muted s-voice-blurb">{PROVIDER_BLURB[prefs.ttsProvider]}</p>
 
-      <div className="settings-row">
-        <select
-          className="s-input"
-          value={prefs.ttsVoiceId}
-          disabled={saving || voices.length === 0}
-          onChange={(e) => void save({ ttsVoiceId: e.target.value })}
-        >
-          {voices.map((voice) => (
-            <option key={voice.id} value={voice.id}>
-              {voice.name}
-              {voice.gender !== 'unknown' ? ` · ${voice.gender}` : ''}
-            </option>
-          ))}
-        </select>
-        <KButton
-          variant="ghost"
-          disabled={voices.length === 0}
-          busy={!!previewing}
-          onClick={() => void preview(prefs.ttsVoiceId)}
-        >
-          {previewing ? 'Playing…' : 'Preview'}
-        </KButton>
-      </div>
+      <VoicePicker
+        voices={voices}
+        selectedId={prefs.ttsVoiceId}
+        busy={saving}
+        previewingId={previewing}
+        onSelect={(voiceId) => {
+          if (voiceId !== prefs.ttsVoiceId) void save({ ttsVoiceId: voiceId });
+        }}
+        onPreview={(voiceId) => void preview(voiceId)}
+      />
 
-      {selected?.description && (
-        <p className="settings-muted s-voice-desc">{selected.description}</p>
-      )}
+      {/* A catalogue that failed to load is a STATE, not an event — it stays inline, with a way
+          out, rather than flashing past in a toast. */}
       {error && (
         <p className="settings-muted s-voice-error" role="alert">
-          {error}
+          {error}{' '}
+          <button type="button" className="s-link" onClick={() => void loadVoices(prefs.ttsProvider)}>
+            Retry
+          </button>
         </p>
       )}
     </section>
