@@ -106,7 +106,10 @@ sleep 1
 # Keep Kairo's own UI out of user captures + the tutor's screenshot (same flag as `npm run dist`).
 export KAIRO_SHOW_IN_CAPTURE=false
 echo "▸ Building app + dmg (updater artifacts on)…"
-npm run tauri:build -- "${BUILD_TARGET_ARGS[@]}" --bundles app,dmg
+# Updater artifacts are enabled HERE rather than in tauri.conf.json, because producing them
+# requires the minisign private key — and a plain `npm run app` must never need a release secret.
+npm run tauri:build -- "${BUILD_TARGET_ARGS[@]}" --bundles app,dmg \
+  --config '{"bundle":{"createUpdaterArtifacts":true}}'
 
 # --- 3. collect artifacts ---------------------------------------------------
 DMG_FILE="$(ls -t "${BUNDLE_ROOT}"/dmg/*.dmg 2>/dev/null | head -1 || true)"
