@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { segmentGesturePath, type TimedPoint } from '../notch/gestureSegmenter';
 import { gestureConfig } from '../config/gesture';
+import { klog } from '../core/logger';
 import type { OverlayDisplayBounds } from './OverlayApp';
 
 // Renders the user's fading cursor-gesture trail on a <canvas>, drawn imperatively in one rAF loop —
@@ -49,9 +50,52 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
     };
     let accentRgb = readVarRgb();
 
+    // A pre-rendered glow sprite for the comet head. ctx.shadowBlur runs a real blur pass on every
+    // fill, so doing it per frame is one of the most expensive things canvas 2D offers; the glow
+    // never changes shape, so it is drawn once here and blitted after that.
+    const glowRadius = cfg.glowRadiusCssPx + cfg.headDotRadiusCssPx;
+    const glow = document.createElement('canvas');
+    glow.width = Math.ceil(glowRadius * 2 * dpr);
+    glow.height = Math.ceil(glowRadius * 2 * dpr);
+    let glowTint = '';
+    const paintGlowSprite = (rgb: string) => {
+      const gctx = glow.getContext('2d');
+      if (!gctx) return;
+      gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      gctx.clearRect(0, 0, glowRadius * 2, glowRadius * 2);
+      const gradient = gctx.createRadialGradient(
+        glowRadius,
+        glowRadius,
+        0,
+        glowRadius,
+        glowRadius,
+        glowRadius
+      );
+      gradient.addColorStop(0, `rgb(${rgb})`);
+      gradient.addColorStop(cfg.headDotRadiusCssPx / glowRadius, `rgba(${rgb}, 0.85)`);
+      gradient.addColorStop(1, `rgba(${rgb}, 0)`);
+      gctx.fillStyle = gradient;
+      gctx.beginPath();
+      gctx.arc(glowRadius, glowRadius, glowRadius, 0, Math.PI * 2);
+      gctx.fill();
+      glowTint = rgb;
+    };
+
     let raf = 0;
     let cancelled = false;
     const unlisteners: Array<() => void> = [];
+    // The region actually painted last frame. Clearing the WHOLE canvas each frame damaged a
+    // full-screen transparent layer — 7.6M pixels on this display — which forces WebKit to re-upload
+    // it and the window server to recomposite the entire desktop area, 60 times a second, for a
+    // trail that occupies a few hundred pixels. Clearing only what was drawn keeps the damage rect
+    // the size of the comet.
+    // Held in an object: TypeScript's control-flow analysis cannot see that the `mark` closure
+    // below reassigns a bare `let`, and would narrow it to `never` after the clear.
+    const damage: { rect: { x0: number; y0: number; x1: number; y1: number } | null } = { rect: null };
+    let frames = 0;
+    let worstFrameMs = 0;
+    let cachedStrokes: ReturnType<typeof segmentGesturePath> = [];
+    let cachedSignature = '';
     // listen() resolves async; if we unmount before it does, dispose immediately so we never leak the
     // cursor:mouse / ptt:recording listeners across many turns.
     const addUnlisten = (u: () => void) => {
@@ -72,12 +116,40 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
       const now = performance.now();
       const maxAge = cfg.holdMs + cfg.fadeMs + cfg.windowMs + 200;
       bufferRef.current = bufferRef.current.filter((p) => now - p.t <= maxAge);
-      ctx.clearRect(0, 0, cssW, cssH);
+
+      // Erase exactly what the previous frame painted — nothing else on this canvas is ours.
+      const previous = damage.rect;
+      if (previous) {
+        ctx.clearRect(previous.x0, previous.y0, previous.x1 - previous.x0, previous.y1 - previous.y0);
+        damage.rect = null;
+      }
+      // Pad by half the stroke, the glow, and a pixel of slop for the quadratic's overshoot.
+      const pad = cfg.trailWidthCssPx / 2 + glowRadius + 2;
+      const mark = (x: number, y: number) => {
+        const rect = damage.rect;
+        if (!rect) {
+          damage.rect = { x0: x - pad, y0: y - pad, x1: x + pad, y1: y + pad };
+          return;
+        }
+        if (x - pad < rect.x0) rect.x0 = x - pad;
+        if (y - pad < rect.y0) rect.y0 = y - pad;
+        if (x + pad > rect.x1) rect.x1 = x + pad;
+        if (y + pad > rect.y1) rect.y1 = y + pad;
+      };
+
       const buf = bufferRef.current;
       ctx.globalAlpha = 1;
       ctx.lineWidth = cfg.trailWidthCssPx;
 
-      const strokes = segmentGesturePath(buf, cfg);
+      // Re-segment only when the buffer actually changed. During a hold that is every frame, but
+      // the ~600ms fade after release redraws a stream nobody is adding to — no need to re-derive
+      // the same strokes 40 more times on the way out.
+      const signature = buf.length === 0 ? '' : `${buf.length}:${buf[0].t}:${buf[buf.length - 1].t}`;
+      if (signature !== cachedSignature) {
+        cachedStrokes = segmentGesturePath(buf, cfg);
+        cachedSignature = signature;
+      }
+      const strokes = cachedStrokes;
       for (const stroke of strokes) {
         const pts = stroke.points;
         if (pts.length < 2) continue;
@@ -101,12 +173,15 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
         }
         ctx.beginPath();
         ctx.moveTo(px(pts[0]), py(pts[0]));
+        mark(px(pts[0]), py(pts[0]));
         for (let i = 1; i < pts.length - 1; i++) {
           const mx = (px(pts[i]) + px(pts[i + 1])) / 2;
           const my = (py(pts[i]) + py(pts[i + 1])) / 2;
           ctx.quadraticCurveTo(px(pts[i]), py(pts[i]), mx, my);
+          mark(px(pts[i]), py(pts[i]));
         }
         ctx.lineTo(px(pts[pts.length - 1]), py(pts[pts.length - 1]));
+        mark(px(pts[pts.length - 1]), py(pts[pts.length - 1]));
         ctx.stroke();
       }
 
@@ -116,14 +191,37 @@ export function GestureLayer({ displayBounds }: { displayBounds: OverlayDisplayB
         const last = buf[buf.length - 1];
         const headFade = smoothFade(now - last.t);
         if (headFade > 0.02) {
-          ctx.shadowBlur = cfg.glowRadiusCssPx;
-          ctx.shadowColor = `rgb(${accentRgb})`;
-          ctx.fillStyle = `rgba(${accentRgb}, ${(cfg.headOpacity * headFade).toFixed(3)})`;
-          ctx.beginPath();
-          ctx.arc(px(last), py(last), cfg.headDotRadiusCssPx, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.shadowBlur = 0;
+          if (glowTint !== accentRgb) paintGlowSprite(accentRgb);
+          const hx = px(last);
+          const hy = py(last);
+          ctx.globalAlpha = cfg.headOpacity * headFade;
+          ctx.drawImage(glow, hx - glowRadius, hy - glowRadius, glowRadius * 2, glowRadius * 2);
+          ctx.globalAlpha = 1;
+          mark(hx, hy);
         }
+      }
+
+      // Keep the damage rect inside the canvas — clearRect outside it is wasted work.
+      const painted = damage.rect;
+      if (painted) {
+        painted.x0 = Math.max(0, painted.x0);
+        painted.y0 = Math.max(0, painted.y0);
+        painted.x1 = Math.min(cssW, painted.x1);
+        painted.y1 = Math.min(cssH, painted.y1);
+      }
+
+      // Frame cost, sampled: the trail is the one surface that has to keep up with the hand, so a
+      // regression here should be visible in the log rather than only in the feel.
+      const frameMs = performance.now() - now;
+      if (frameMs > worstFrameMs) worstFrameMs = frameMs;
+      frames += 1;
+      if (frames % 240 === 0) {
+        klog('overlay', 'debug', 'gesture trail frames', {
+          frames,
+          points: buf.length,
+          worst_ms: Number(worstFrameMs.toFixed(2))
+        });
+        worstFrameMs = 0;
       }
 
       // Keep animating only while there's something to draw or we're recording; otherwise stop the loop

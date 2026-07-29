@@ -35,6 +35,16 @@ const KAIRO_BUNDLE_ID: &str = "com.kairo.tutor";
 /// FX (`cursor:listening` / `cursor:thinking`) still fire so the practice steps feel like
 /// the real product. Toggled by the `set_onboarding_ptt` command.
 pub(crate) static ONBOARDING_PTT: AtomicBool = AtomicBool::new(false);
+
+/// True for exactly as long as a ⌥⌃ hold is live (set on promote, cleared on release).
+///
+/// The mouse tracker in `panels.rs` polls `cursor_position` and broadcasts `cursor:mouse`; the
+/// hold-to-point trail is drawn from that stream, so the poll interval IS the trail's sample rate.
+/// At the idle 16ms that is ~62Hz, which on a 120Hz display means the comet is built from half the
+/// positions the hand actually visited — it reads as lag no amount of frontend work can remove.
+/// While this flag is set the tracker polls twice as fast; the rest of the time it stays cheap,
+/// because this thread runs for the entire life of the app.
+pub(crate) static POINTING: AtomicBool = AtomicBool::new(false);
 // Ignore activity for the first moment after arming so the reveal itself (or the
 // click/key that triggered the ask) never counts as "the user moved on".
 const CONTEXT_SETTLE_MS: u64 = 500;
@@ -342,6 +352,8 @@ fn recv_until(rx: &Receiver<PttEvent>, deadline: Instant) -> Option<Wake> {
 // (the frontend `shouldIdleClose` guard keys off this so the capsule can't auto-hide).
 fn ptt_promote(app: &tauri::AppHandle) {
     crate::klog!(ptt, info, "hold confirmed → listening");
+    // The trail is now being drawn from the cursor stream — sample it at the higher rate.
+    POINTING.store(true, Ordering::SeqCst);
     let _ = app.emit("cursor:listening", ());
     // Onboarding owns this press: tell the onboarding window only, keep the notch inert.
     if ONBOARDING_PTT.load(Ordering::SeqCst) {
@@ -363,6 +375,7 @@ fn ptt_promote(app: &tauri::AppHandle) {
 }
 
 fn ptt_commit(app: &tauri::AppHandle, held: Duration) {
+    POINTING.store(false, Ordering::SeqCst);
     let onboarding = ONBOARDING_PTT.load(Ordering::SeqCst);
     if onboarding {
         if let Some(win) = app.get_webview_window("onboarding") {
@@ -429,6 +442,7 @@ fn spawn_ptt_controller(app: tauri::AppHandle, rx: Receiver<PttEvent>) {
             };
             let Some(wake) = wake else {
                 crate::klog!(ptt, warn, "PTT controller channel closed; exiting");
+                POINTING.store(false, Ordering::SeqCst); // never leave the tracker in fast mode
                 break;
             };
             let is_max_record = matches!(

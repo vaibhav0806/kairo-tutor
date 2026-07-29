@@ -18,25 +18,43 @@ function turn(a: TimedPoint, b: TimedPoint, c: TimedPoint): number {
   return Math.abs(ang);
 }
 
-// The slice of points within `windowMs` ending at index i.
-function windowEndingAt(points: TimedPoint[], i: number, windowMs: number): TimedPoint[] {
+// First index of the window within `windowMs` ending at index i.
+function windowStartFor(points: TimedPoint[], i: number, windowMs: number): number {
   const endT = points[i].t;
   let start = i;
   while (start > 0 && endT - points[start - 1].t <= windowMs) start--;
-  return points.slice(start, i + 1);
+  return start;
 }
 
-export function classifyWindow(win: TimedPoint[], cfg: GestureConfig): 'rest' | 'gesture' | 'travel' {
-  if (win.length < 2) return 'rest';
+/**
+ * Classify points[start..=end] in place.
+ *
+ * Index-based rather than slice-based on purpose: the cosmetic trail re-segments the whole buffer
+ * every animation frame, and the old version allocated one array per point per frame — at 125Hz
+ * sampling that is a few hundred short-lived arrays a second feeding the GC while the user is
+ * mid-gesture, which is exactly when a pause is most visible. Same maths, no allocation.
+ */
+function classifyRange(
+  points: TimedPoint[],
+  start: number,
+  end: number,
+  cfg: GestureConfig
+): 'rest' | 'gesture' | 'travel' {
+  if (end - start < 1) return 'rest';
   let path = 0;
-  for (let i = 1; i < win.length; i++) path += dist(win[i - 1], win[i]);
+  for (let i = start + 1; i <= end; i++) path += dist(points[i - 1], points[i]);
   if (path < cfg.minPathPx) return 'rest';
   let turning = 0;
-  for (let i = 2; i < win.length; i++) turning += turn(win[i - 2], win[i - 1], win[i]);
-  const net = dist(win[0], win[win.length - 1]);
+  for (let i = start + 2; i <= end; i++) turning += turn(points[i - 2], points[i - 1], points[i]);
+  const net = dist(points[start], points[end]);
   const directness = net / path;
   if (directness < cfg.directnessMax || turning > cfg.turningMin) return 'gesture';
   return 'travel';
+}
+
+/** Public wrapper, kept for the tests and any caller holding a standalone window. */
+export function classifyWindow(win: TimedPoint[], cfg: GestureConfig): 'rest' | 'gesture' | 'travel' {
+  return classifyRange(win, 0, win.length - 1, cfg);
 }
 
 function finalize(points: TimedPoint[], out: GestureStroke[], cfg: GestureConfig): void {
@@ -56,7 +74,7 @@ export function segmentGesturePath(points: TimedPoint[], cfg: GestureConfig): Ge
   const strokes: GestureStroke[] = [];
   let cur: TimedPoint[] | null = null;
   for (let i = 0; i < points.length; i++) {
-    const cls = classifyWindow(windowEndingAt(points, i, cfg.windowMs), cfg);
+    const cls = classifyRange(points, windowStartFor(points, i, cfg.windowMs), i, cfg);
     if (cls === 'gesture') {
       if (!cur) cur = [];
       cur.push(points[i]);

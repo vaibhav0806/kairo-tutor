@@ -6,6 +6,7 @@ use crate::capture::main_display_bounds;
 use crate::constants;
 use crate::types::{CursorVisible, MousePoint, NotchPayload, OverlayPayload};
 use crate::{CursorPanel, CursorState, NotchPanel, NotchState, OverlayPanel, OverlayState};
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, State};
@@ -302,6 +303,10 @@ fn system_cursor_visible() -> bool {
 // can place the pet. Only emits on actual movement, so an idle mouse costs almost
 // nothing. The same loop mirrors the system cursor's visibility onto the pet
 // (item 1: hide while typing) via `cursor:visible`; frontend layers idle-hide on top.
+/// Cursor-position poll intervals: the fast one is used only while a ⌥⌃ hold is live.
+const POINTING_POLL_MS: u64 = 8;
+const IDLE_POLL_MS: u64 = 16;
+
 pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
     let window = match app.state::<CursorState>().window.lock() {
         Ok(guard) => guard.clone(),
@@ -368,7 +373,19 @@ pub(crate) fn spawn_mouse_tracker(app: &tauri::AppHandle) {
                 );
             }
 
-            std::thread::sleep(Duration::from_millis(16));
+            // Adaptive sample rate. This stream feeds the pet cursor AND the hold-to-point trail,
+            // and for the trail the poll interval IS the sample rate: at 16ms the comet is built
+            // from ~62 positions a second, so on a 120Hz display it is drawn through half the
+            // points the hand actually visited and reads as lag. While a hold is live we sample at
+            // 8ms (~125Hz, matching what the trackpad reports); the rest of the time this thread
+            // stays at 16ms, because it runs for the entire life of the app and a permanently
+            // doubled wake-up rate is a battery cost for no benefit.
+            let interval = if crate::input::POINTING.load(Ordering::SeqCst) {
+                POINTING_POLL_MS
+            } else {
+                IDLE_POLL_MS
+            };
+            std::thread::sleep(Duration::from_millis(interval));
         }
     });
 }
