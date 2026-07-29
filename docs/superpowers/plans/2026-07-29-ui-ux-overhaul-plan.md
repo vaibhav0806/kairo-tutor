@@ -1,6 +1,15 @@
 # Kairo desktop — UI/UX overhaul plan
 
-**Status:** draft for approval · **Date:** 2026-07-29 · **Scope:** desktop app only (`src/`, `src-tauri/`), not the website landing page.
+**Status:** approved, in progress · **Date:** 2026-07-29 · **Scope:** desktop app only (`src/`, `src-tauri/`), not the website landing page.
+
+> **Founder decisions, 2026-07-29 (supersede anything below that conflicts):**
+> - **This is a UX + animation effort.** The visual identity — tokens, fonts, colours, the near-square/offset-shadow shape language — does **not** change. The app must stay visually consistent with the website.
+> - **Karaoke captions: DEFERRED.** Captions only appear during onboarding today, and word timings would be ElevenLabs-only. Phase 7b is cut; 7a (word-level blur-in) still ships as a perf + polish win.
+> - **Rive: DEFERRED.** Needs an authored `.riv` asset. Phase 13 is cut entirely for now (not even the boundary) — the current mic bars stay.
+> - **OKLCH / contrast rework: CUT.** The 8 presets stay exactly as they are. Phase 12 is cut.
+> - **Custom icon set: CUT.** `react-icons` stays. Phase 11 is cut.
+> - **Pen lag: fix now.** Phase 5 is a priority.
+> - **Phase 6 (capsule split + light command card) is HELD** pending an explicit answer to Q1 — it is the one phase that changes how a surface looks, and the "don't alter the theming" instruction makes it the wrong thing to do unasked.
 
 **Companion artifact:** [`docs/ui-explorations/ui-library-explorer.html`](../../ui-explorations/ui-library-explorer.html) — 163 live/mock option cards across 23 surfaces, in the landing page's own visual language. Open it in a browser; every decision below references a card in it.
 
