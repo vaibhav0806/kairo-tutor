@@ -1,0 +1,1986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kairo — UI/UX library explorer</title>
+
+<style>
+/* ---------------------------------------------------------------------------
+   Fonts — loaded straight out of the repo's node_modules so this file works
+   offline. (Same families the landing page + the app use.)
+   --------------------------------------------------------------------------- */
+@font-face{font-family:"Geist Variable";font-style:normal;font-display:swap;font-weight:100 900;
+  src:url("/Users/prasad/Prasad/projects/kairo-tutor/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2-variations");}
+@font-face{font-family:"Bricolage Grotesque Variable";font-style:normal;font-display:swap;font-weight:200 800;
+  src:url("/Users/prasad/Prasad/projects/kairo-tutor/node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2") format("woff2-variations");}
+@font-face{font-family:"Geist Mono Variable";font-style:normal;font-display:swap;font-weight:100 900;
+  src:url("/Users/prasad/Prasad/projects/kairo-tutor/node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2") format("woff2-variations");}
+
+/* ---------------------------------------------------------------------------
+   Tokens — copied verbatim from src/styles.css (which mirrors the website).
+   --------------------------------------------------------------------------- */
+:root{
+  --canvas:#f5f7fb; --canvas-raised:#fbfcfe; --canvas-soft:#f8f9fb;
+  --surface-soft:#e9edf5; --surface-deep:#141824;
+  --ink:#0b0d12; --ink-strong:#08090c; --ink-muted:#626a78; --ink-subtle:#505765;
+  --hairline:rgb(11 13 18 / 10%);
+  --kairo:#665cff; --kairo-rgb:102 92 255;
+  --verify:#b8f34a; --react:#ff6b66; --notice:#ffd84d;
+  --font-body:"Geist Variable",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --font-display:"Bricolage Grotesque Variable",var(--font-body);
+  --font-mono:"Geist Mono Variable",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --radius-button:3px; --radius-card:14px; --radius-inset:8px;
+  --shadow-offset:6px 6px 0 rgb(102 92 255 / 19%);
+  /* live-themeable accent for every demo (mirrors the app's user accent) */
+  --acc:#665cff; --acc-rgb:102 92 255;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--canvas);color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;font-synthesis:none}
+::selection{background:var(--kairo);color:#fff}
+h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-0.045em;color:var(--ink-strong);margin:0}
+a{color:var(--kairo)}
+.mono{font-family:var(--font-mono)}
+code{font-family:var(--font-mono);font-size:.9em;background:var(--surface-soft);padding:1px 4px;border-radius:3px}
+
+/* ---- chrome ---- */
+.hd{position:sticky;top:0;z-index:50;background:rgb(245 247 251 / 0.86);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--hairline)}
+.hd-in{max-width:1440px;margin:0 auto;padding:12px 22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.brand{font-family:var(--font-display);font-weight:740;font-size:19px;letter-spacing:-0.065em;text-transform:lowercase}
+.brand small{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-muted);margin-left:9px;letter-spacing:.14em}
+.hd-tools{margin-left:auto;display:flex;align-items:center;gap:10px}
+.acc-dots{display:flex;gap:6px}
+.acc-dot{width:19px;height:19px;border-radius:999px;border:0;cursor:pointer;box-shadow:0 0 0 1px var(--hairline)}
+.acc-dot[data-on="1"]{box-shadow:0 0 0 2px var(--canvas),0 0 0 4px var(--ink)}
+.srch{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--hairline);border-radius:var(--radius-inset);
+  background:var(--canvas-raised);outline:none;width:210px}
+.srch:focus{border-color:rgb(var(--acc-rgb) / .55)}
+
+.wrap{max-width:1440px;margin:0 auto;padding:26px 22px 120px;display:grid;grid-template-columns:214px 1fr;gap:34px}
+nav.toc{position:sticky;top:70px;align-self:start;max-height:calc(100vh - 96px);overflow:auto;
+  font-size:12.5px;display:flex;flex-direction:column;gap:1px;padding-right:6px}
+nav.toc a{display:block;padding:5px 9px;border-radius:6px;color:var(--ink-subtle);text-decoration:none}
+nav.toc a:hover{background:var(--surface-soft);color:var(--ink)}
+nav.toc a.on{background:rgb(var(--acc-rgb) / .1);color:var(--ink-strong);font-weight:600}
+nav.toc .toc-h{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-muted);padding:14px 9px 4px}
+
+.intro{border:1px solid var(--hairline);border-radius:var(--radius-card);background:var(--canvas-raised);
+  padding:26px 28px;box-shadow:var(--shadow-offset);margin-bottom:40px}
+.intro h1{font-size:40px;line-height:.94;font-weight:670;letter-spacing:-0.055em}
+.intro p{color:var(--ink-subtle);line-height:1.6;font-size:14.5px;max-width:78ch}
+.kick{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-muted)}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+
+/* ---- sections ---- */
+.sec{margin:0 0 62px;scroll-margin-top:78px}
+.sec-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.sec-h h2{font-size:27px;font-weight:670}
+.sec-blurb{color:var(--ink-muted);font-size:13.5px;line-height:1.6;max-width:86ch;margin:6px 0 18px}
+.today{border:1px solid var(--hairline);border-left:3px solid var(--ink-strong);border-radius:var(--radius-inset);
+  background:var(--canvas-raised);padding:14px 16px;margin-bottom:20px;display:grid;
+  grid-template-columns:minmax(220px,340px) 1fr;gap:18px;align-items:center}
+.today .t-meta h4{font-size:15px;margin-bottom:4px}
+.today .t-pain{font-size:12.5px;color:var(--ink-muted);line-height:1.55}
+.today .t-pain b{color:#9f2d24;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(298px,1fr));gap:16px}
+.opt{border:1px solid var(--hairline);border-radius:var(--radius-card);background:var(--canvas-raised);
+  padding:13px 14px 14px;display:flex;flex-direction:column;transition:box-shadow .18s,transform .18s}
+.opt:hover{box-shadow:5px 5px 0 rgb(var(--acc-rgb) / .13)}
+.opt-h{display:flex;align-items:flex-start;gap:8px;margin-bottom:2px}
+.opt-h h4{font-size:14.5px;font-weight:670;letter-spacing:-0.03em;line-height:1.2}
+.lib{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-muted);margin-bottom:9px;word-break:break-all}
+.why{font-size:12.5px;color:var(--ink-subtle);line-height:1.5;margin-top:auto}
+.why b{color:var(--ink)}
+.badge{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 6px;border-radius:3px;border:1px solid var(--hairline);white-space:nowrap;color:var(--ink-muted);
+  background:var(--surface-soft);flex:none;margin-left:auto}
+.badge.live{background:color-mix(in srgb,var(--verify) 30%,#fff);border-color:color-mix(in srgb,var(--verify) 55%,var(--hairline));color:#4a6f08}
+.badge.mock{background:color-mix(in srgb,var(--notice) 26%,#fff);border-color:color-mix(in srgb,var(--notice) 50%,var(--hairline));color:#6b4c00}
+.badge.cur{background:var(--ink-strong);border-color:var(--ink-strong);color:#fff}
+.badge.pick{background:rgb(var(--acc-rgb) / .14);border-color:rgb(var(--acc-rgb) / .4);color:color-mix(in srgb,var(--acc) 62%,var(--ink))}
+.badge.warn{background:color-mix(in srgb,var(--react) 22%,#fff);border-color:color-mix(in srgb,var(--react) 46%,var(--hairline));color:#8d2b26}
+.demo{border:1px dashed var(--hairline);border-radius:var(--radius-inset);background:var(--canvas-soft);
+  min-height:104px;display:flex;align-items:center;justify-content:center;padding:16px;margin:2px 0 11px;
+  position:relative;overflow:hidden}
+.demo.dark{background:linear-gradient(180deg,#1b1d23,#101216);border:1px solid rgb(255 255 255 / .08);color:#eef1f5}
+.demo.desk{background:
+  radial-gradient(120% 90% at 50% 0%,rgb(var(--acc-rgb) / .10),transparent 60%),
+  linear-gradient(180deg,#20232c,#0d0f14);border-color:rgb(255 255 255 / .07);color:#eef1f5}
+.demo.tall{min-height:168px}
+.demo.stack{flex-direction:column;gap:10px}
+.inst{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-subtle);background:var(--surface-soft);
+  border-radius:4px;padding:4px 7px;margin-top:9px;cursor:copy;border:1px solid transparent;word-break:break-all}
+.inst:hover{border-color:var(--hairline)}
+.inst.copied{background:color-mix(in srgb,var(--verify) 30%,#fff)}
+.note{font-size:12px;color:var(--ink-muted);line-height:1.55;background:var(--canvas-soft);border:1px solid var(--hairline);
+  border-radius:var(--radius-inset);padding:11px 13px;margin:14px 0 18px}
+.note b{color:var(--ink)}
+.hidden{display:none !important}
+
+/* ---- audit list ---- */
+.audit{display:grid;gap:10px}
+.aud{display:grid;grid-template-columns:26px 1fr auto;gap:12px;align-items:start;padding:12px 14px;
+  border:1px solid var(--hairline);border-radius:var(--radius-inset);background:var(--canvas-raised)}
+.aud .n{font-family:var(--font-mono);font-size:11px;color:var(--ink-muted);padding-top:2px}
+.aud h4{font-size:14px;margin-bottom:3px}
+.aud p{margin:0;font-size:12.5px;color:var(--ink-muted);line-height:1.55}
+.sev{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;padding:3px 6px;border-radius:3px}
+.sev.hi{background:color-mix(in srgb,var(--react) 22%,#fff);color:#8d2b26}
+.sev.md{background:color-mix(in srgb,var(--notice) 30%,#fff);color:#6b4c00}
+.sev.lo{background:var(--surface-soft);color:var(--ink-muted)}
+
+/* =====================================================================
+   DEMO COMPONENT STYLES
+   ===================================================================== */
+
+/* -- generic scaffolding used by many demos -- */
+.row{display:flex;align-items:center;gap:10px}
+.col{display:flex;flex-direction:column;gap:8px}
+.lbl{font-size:12.5px;color:var(--ink-subtle)}
+.dark .lbl{color:rgb(238 241 245 / .7)}
+
+/* ---------- buttons ---------- */
+.b{cursor:pointer;font:inherit;font-size:13.5px;font-weight:640;border:1px solid transparent;padding:9px 16px;
+  border-radius:6px;transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s,background .16s,filter .16s}
+.b-kairo{background:var(--ink-strong);border-color:var(--ink-strong);color:#fff;border-radius:var(--radius-button);
+  box-shadow:5px 5px 0 rgb(var(--acc-rgb) / .19)}
+.b-kairo:hover{transform:translate(2px,2px);box-shadow:3px 3px 0 rgb(var(--acc-rgb) / .26)}
+.b-kairo:active{transform:translate(4px,4px);box-shadow:1px 1px 0 rgb(var(--acc-rgb) / .3)}
+.b-shad{background:var(--ink-strong);color:#fff;border-radius:6px;font-weight:560;font-size:13px;padding:8px 15px;
+  box-shadow:0 1px 2px rgb(0 0 0 / .07)}
+.b-shad:hover{background:#22252d}
+.b-shad-out{background:transparent;color:var(--ink);border-color:var(--hairline);border-radius:6px;font-weight:560;font-size:13px;padding:8px 15px}
+.b-shad-out:hover{background:var(--surface-soft)}
+.b-radix{background:var(--acc);color:#fff;border-radius:4px;font-weight:560;letter-spacing:.005em}
+.b-radix:hover{filter:brightness(1.08)}
+.b-radix-soft{background:rgb(var(--acc-rgb) / .13);color:color-mix(in srgb,var(--acc) 62%,var(--ink));border-radius:4px;font-weight:560}
+.b-mantine{background:var(--acc);color:#fff;border-radius:4px;font-weight:600;font-size:13px;padding:8px 17px}
+.b-mantine:hover{filter:brightness(.93)}
+.b-mantine-grad{background:linear-gradient(45deg,var(--acc),#c05cff);color:#fff;border-radius:999px;font-weight:600}
+.b-hero{background:var(--acc);color:#fff;border-radius:12px;font-weight:600;padding:10px 18px;
+  box-shadow:0 8px 18px -8px rgb(var(--acc-rgb) / .8)}
+.b-hero:active{transform:scale(.97)}
+.b-geist{background:#000;color:#fff;border-radius:6px;font-weight:520;font-size:13px;padding:8px 15px;border-color:#000}
+.b-geist:hover{background:#fff;color:#000;border-color:var(--hairline)}
+.b-linear{color:#fff;border-radius:8px;font-weight:560;font-size:13px;padding:8px 15px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 88%,#fff),var(--acc));
+  border-color:color-mix(in srgb,var(--acc) 70%,#000);
+  box-shadow:inset 0 1px 0 rgb(255 255 255 / .28),0 1px 2px rgb(0 0 0 / .18)}
+.b-linear:hover{filter:brightness(1.06)}
+.b-mac{background:linear-gradient(180deg,#5aa2ff,#0a72f5);color:#fff;border-radius:7px;font-size:13px;font-weight:520;
+  padding:6px 15px;border-color:#0a66d8;box-shadow:0 1px 1px rgb(0 0 0 / .13),inset 0 1px 0 rgb(255 255 255 / .3)}
+.b-mac:active{filter:brightness(.9)}
+.b-mac:focus-visible{outline:3px solid rgb(10 114 245 / .35);outline-offset:1px}
+.b-spring{background:var(--ink-strong);color:#fff;border-radius:9px;font-weight:600;transition:transform .12s}
+.b-ghost{background:transparent;border-color:var(--hairline);color:var(--ink-subtle);font-size:12.5px;padding:7px 14px;border-radius:var(--radius-button)}
+.b-ghost:hover{background:var(--surface-soft)}
+/* shimmer border (Magic UI flavour) */
+.b-shimmer{position:relative;background:var(--ink-strong);color:#fff;border-radius:8px;border:0;padding:10px 18px;
+  isolation:isolate;overflow:hidden}
+.b-shimmer::before{content:"";position:absolute;inset:-140%;z-index:-2;
+  background:conic-gradient(from 0deg,transparent 0 300deg,var(--acc) 330deg,transparent 360deg);
+  animation:spin 2.6s linear infinite}
+.b-shimmer::after{content:"";position:absolute;inset:1.5px;z-index:-1;border-radius:6.5px;background:var(--ink-strong)}
+@keyframes spin{to{transform:rotate(1turn)}}
+/* moving border (Aceternity flavour) */
+.b-moving{position:relative;background:var(--canvas-raised);color:var(--ink);border:0;border-radius:10px;padding:10px 18px;font-weight:600}
+.b-moving::before{content:"";position:absolute;inset:0;border-radius:10px;padding:1.4px;
+  background:conic-gradient(from var(--ang,0deg),transparent 0 70%,var(--acc) 85%,transparent 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:ang 3s linear infinite}
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes ang{to{--ang:360deg}}
+.b-magnet{background:var(--ink-strong);color:#fff;border-radius:999px;font-weight:600;padding:11px 20px;will-change:transform}
+.b-gooey{background:var(--acc);color:#fff;border-radius:999px;font-weight:600;padding:10px 20px;position:relative;overflow:hidden}
+.b-gooey span{position:relative;z-index:1}
+.b-gooey::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at var(--mx,50%) var(--my,50%),
+  rgb(255 255 255 / .35) 0%,transparent 45%);opacity:0;transition:opacity .2s}
+.b-gooey:hover::after{opacity:1}
+
+/* ---------- switches ---------- */
+.sw{appearance:none;border:0;cursor:pointer;position:relative;flex:none}
+.sw-kairo{width:40px;height:24px;border-radius:999px;background:rgb(11 13 18 / .18);transition:background .16s}
+.sw-kairo[data-on="1"]{background:var(--acc)}
+.sw-kairo i{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgb(11 13 18 / .25);transition:transform .16s cubic-bezier(.2,.8,.2,1)}
+.sw-kairo[data-on="1"] i{transform:translateX(16px)}
+.sw-base{width:38px;height:22px;border-radius:999px;background:var(--surface-soft);box-shadow:inset 0 0 0 1px var(--hairline);
+  transition:background .2s,box-shadow .2s}
+.sw-base[data-on="1"]{background:var(--acc);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 70%,#000)}
+.sw-base i{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 2px rgb(0 0 0 / .2);transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.sw-base[data-on="1"] i{transform:translateX(16px)}
+.sw-base:focus-visible{outline:2px solid rgb(var(--acc-rgb) / .55);outline-offset:2px}
+.sw-mac{width:51px;height:31px;border-radius:999px;background:#e3e3e6;box-shadow:inset 0 0 0 .5px rgb(0 0 0 / .08);
+  transition:background .25s cubic-bezier(.2,.8,.2,1)}
+.sw-mac[data-on="1"]{background:#34c759}
+.sw-mac i{position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:999px;background:#fff;
+  box-shadow:0 3px 8px rgb(0 0 0 / .16),0 1px 1px rgb(0 0 0 / .16);
+  transition:transform .25s cubic-bezier(.2,.8,.2,1),width .18s}
+.sw-mac[data-on="1"] i{transform:translateX(20px)}
+.sw-mac:active i{width:32px}
+.sw-mac[data-on="1"]:active i{transform:translateX(15px)}
+.sw-ios-acc[data-on="1"]{background:var(--acc)}
+.sw-lin{width:32px;height:18px;border-radius:999px;background:rgb(11 13 18 / .14);transition:background .16s}
+.sw-lin[data-on="1"]{background:var(--acc)}
+.sw-lin i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;
+  transition:transform .16s cubic-bezier(.34,1.4,.6,1)}
+.sw-lin[data-on="1"] i{transform:translateX(14px)}
+.sw-icon{width:52px;height:26px;border-radius:6px;background:var(--surface-soft);box-shadow:inset 0 0 0 1px var(--hairline)}
+.sw-icon[data-on="1"]{background:color-mix(in srgb,var(--acc) 18%,transparent)}
+.sw-icon i{position:absolute;top:2px;left:2px;width:24px;height:22px;border-radius:4px;background:#fff;
+  box-shadow:0 1px 2px rgb(0 0 0 / .18);transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.sw-icon[data-on="1"] i{transform:translateX(24px)}
+.sw-icon b{position:absolute;top:0;height:26px;display:flex;align-items:center;font-size:10px;font-family:var(--font-mono);
+  color:var(--ink-muted)}
+.sw-icon b.on{left:7px}.sw-icon b.off{right:7px}
+.sw-txt{width:74px;height:28px;border-radius:999px;background:var(--surface-soft);box-shadow:inset 0 0 0 1px var(--hairline);
+  font-family:var(--font-mono);font-size:10.5px}
+.sw-txt i{position:absolute;top:3px;left:3px;width:36px;height:22px;border-radius:999px;background:var(--ink-strong);
+  transition:transform .22s cubic-bezier(.34,1.3,.5,1)}
+.sw-txt[data-on="1"] i{transform:translateX(32px);background:var(--acc)}
+.sw-txt u{position:absolute;top:0;height:28px;display:flex;align-items:center;text-decoration:none;z-index:1;
+  color:var(--ink-muted);transition:color .2s}
+.sw-txt u.a{left:12px}.sw-txt u.b{right:11px}
+.sw-txt[data-on="0"] u.a{color:#fff}.sw-txt[data-on="1"] u.b{color:#fff}
+.sw-spring i{transition:transform .42s cubic-bezier(.34,1.56,.5,1)}
+
+/* ---------- inputs / selects ---------- */
+.inp{font:inherit;font-size:13.5px;padding:8px 12px;border-radius:var(--radius-inset);border:1px solid var(--hairline);
+  background:var(--canvas-soft);outline:none;width:100%;color:var(--ink)}
+.inp:focus{border-color:rgb(var(--acc-rgb) / .55)}
+.pop{width:100%;max-width:250px;background:var(--canvas-raised);border:1px solid var(--hairline);border-radius:10px;
+  box-shadow:0 12px 30px -12px rgb(11 13 18 / .35);overflow:hidden;font-size:13px}
+.pop-i{padding:7px 11px;display:flex;align-items:center;gap:8px;cursor:pointer}
+.pop-i:hover,.pop-i[data-sel="1"]{background:var(--surface-soft)}
+.pop-i[aria-selected="true"]{background:rgb(var(--acc-rgb) / .1);color:color-mix(in srgb,var(--acc) 60%,var(--ink))}
+.pop-i .ck{margin-left:auto;color:var(--acc);font-size:12px}
+.pop-h{padding:6px 11px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-muted);background:var(--canvas-soft);border-bottom:1px solid var(--hairline)}
+.pop-s{padding:7px 11px;border-bottom:1px solid var(--hairline);display:flex;gap:7px;align-items:center}
+.pop-s input{border:0;background:transparent;outline:none;font:inherit;font-size:13px;width:100%}
+.pop-list{max-height:132px;overflow:auto}
+.play{width:22px;height:22px;border-radius:999px;border:1px solid var(--hairline);background:var(--canvas-raised);
+  display:grid;place-items:center;cursor:pointer;font-size:9px;color:var(--ink-subtle);flex:none}
+.play:hover{border-color:rgb(var(--acc-rgb) / .5);color:var(--acc)}
+.mini-wave{display:flex;align-items:center;gap:2px;height:14px}
+.mini-wave i{width:2px;border-radius:2px;background:rgb(var(--acc-rgb) / .55);height:5px;animation:mw 1s ease-in-out infinite}
+@keyframes mw{0%,100%{height:4px}50%{height:13px}}
+.chipset{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11.5px;padding:4px 9px;border-radius:999px;border:1px solid var(--hairline);background:var(--canvas-raised);
+  color:var(--ink-subtle);cursor:pointer}
+.chip:hover{border-color:rgb(var(--acc-rgb) / .5);color:var(--ink)}
+.chip[data-on="1"]{background:rgb(var(--acc-rgb) / .12);border-color:rgb(var(--acc-rgb) / .4);color:color-mix(in srgb,var(--acc) 60%,var(--ink))}
+
+/* ---------- segmented ---------- */
+.seg{display:flex;gap:4px;padding:3px;border-radius:var(--radius-inset);border:1px solid var(--hairline);background:var(--canvas-soft)}
+.seg button{flex:1;font:inherit;font-size:12.5px;color:var(--ink-muted);padding:6px 12px;border:0;border-radius:6px;
+  background:transparent;cursor:pointer}
+.seg button[data-on="1"]{color:var(--ink);background:var(--canvas);box-shadow:0 1px 2px rgb(0 0 0 / .06)}
+.seg2{position:relative;display:flex;padding:3px;border-radius:999px;background:var(--surface-soft);isolation:isolate}
+.seg2 button{position:relative;z-index:1;font:inherit;font-size:12.5px;padding:6px 15px;border:0;background:transparent;
+  cursor:pointer;color:var(--ink-muted);transition:color .2s}
+.seg2 button[data-on="1"]{color:#fff;font-weight:560}
+.seg2 .ind{position:absolute;z-index:0;top:3px;bottom:3px;border-radius:999px;background:var(--acc);
+  transition:transform .42s cubic-bezier(.34,1.28,.5,1),width .42s cubic-bezier(.34,1.28,.5,1)}
+.seg-mac{display:inline-flex;border:1px solid rgb(0 0 0 / .12);border-radius:7px;overflow:hidden;background:#f2f2f4}
+.seg-mac button{font:inherit;font-size:12.5px;padding:5px 14px;border:0;border-right:1px solid rgb(0 0 0 / .1);
+  background:transparent;cursor:pointer;color:#1d1d1f}
+.seg-mac button:last-child{border-right:0}
+.seg-mac button[data-on="1"]{background:#fff;box-shadow:0 1px 2px rgb(0 0 0 / .14)}
+.seg-tab{display:flex;gap:16px;border-bottom:1px solid var(--hairline);position:relative}
+.seg-tab button{font:inherit;font-size:13px;padding:7px 2px;border:0;background:transparent;cursor:pointer;color:var(--ink-muted)}
+.seg-tab button[data-on="1"]{color:var(--ink);font-weight:560}
+.seg-tab .ind{position:absolute;bottom:-1px;height:2px;background:var(--acc);border-radius:2px;
+  transition:transform .34s cubic-bezier(.22,1,.36,1),width .34s cubic-bezier(.22,1,.36,1)}
+
+/* ---------- notch / capsule ---------- */
+.cap{background:linear-gradient(180deg,#1b1d23,#101216);border:1px solid rgb(255 255 255 / .08);border-radius:16px;
+  color:#eef1f5;padding:9px 15px;display:flex;align-items:center;gap:10px;font-family:var(--font-display);
+  box-shadow:0 10px 30px rgb(0 0 0 / .46),inset 0 1px 0 rgb(255 255 255 / .06);font-size:13px;
+  transition:width .42s cubic-bezier(.34,1.28,.5,1),border-radius .24s,transform .24s}
+.cap-viz{display:flex;align-items:center;gap:3px;height:20px}
+.cap-viz i{width:3px;border-radius:999px;height:6px;background:linear-gradient(180deg,
+  color-mix(in srgb,rgb(var(--acc-rgb)) 65%,#fff),rgb(var(--acc-rgb)));animation:vz .9s ease-in-out infinite}
+.cap-viz i:nth-child(2){animation-delay:.12s}.cap-viz i:nth-child(3){animation-delay:.24s}
+.cap-viz i:nth-child(4){animation-delay:.36s}.cap-viz i:nth-child(5){animation-delay:.48s}
+@keyframes vz{0%,100%{height:5px}50%{height:17px}}
+.cap-glass{background:rgb(28 30 38 / .55);backdrop-filter:blur(22px) saturate(160%);border:1px solid rgb(255 255 255 / .14)}
+.cap-pill{border-radius:999px}
+.cap-lbl{font-size:12.5px;font-weight:600;color:#eef1f5}
+
+/* ---------- misc demo bits ---------- */
+.kbd{font-family:var(--font-mono);font-size:10.5px;padding:2px 5px;border-radius:4px;background:rgb(255 255 255 / .08);
+  border:1px solid rgb(255 255 255 / .14);color:rgb(238 241 245 / .8)}
+.kbd.lt{background:var(--surface-soft);border-color:var(--hairline);color:var(--ink-muted)}
+.dots{display:flex;gap:5px;align-items:center}
+.dots i{width:13px;height:4px;border-radius:999px;background:rgb(var(--acc-rgb) / .4);transition:width .3s,background .26s}
+.dots i[data-s="cur"]{width:20px;background:rgb(var(--acc-rgb));box-shadow:0 0 8px rgb(var(--acc-rgb) / .7)}
+.dots i[data-s="fut"]{background:rgb(255 255 255 / .18)}
+.dots.lt i[data-s="fut"]{background:rgb(11 13 18 / .12)}
+.cube-stage{display:grid;place-items:center;perspective:90px;width:26px;height:26px}
+.cube{position:relative;width:16px;height:16px;transform-style:preserve-3d;animation:cspin 2.6s linear infinite}
+.cube i{position:absolute;inset:0;border:1px solid rgb(var(--acc-rgb) / .9);background:rgb(var(--acc-rgb) / .14)}
+.cube i:nth-child(1){transform:rotateY(0) translateZ(8px)}.cube i:nth-child(2){transform:rotateY(90deg) translateZ(8px)}
+.cube i:nth-child(3){transform:rotateY(180deg) translateZ(8px)}.cube i:nth-child(4){transform:rotateY(270deg) translateZ(8px)}
+.cube i:nth-child(5){transform:rotateX(90deg) translateZ(8px)}.cube i:nth-child(6){transform:rotateX(-90deg) translateZ(8px)}
+@keyframes cspin{to{transform:rotateX(-360deg) rotateY(360deg)}}
+.eyes{display:flex;gap:4px;animation:bob 2.6s ease-in-out infinite}
+.eyes i{width:5px;height:8px;border-radius:60%;background:rgb(var(--acc-rgb));box-shadow:0 0 6px rgb(var(--acc-rgb) / .7);
+  animation:blink 3.4s infinite}
+@keyframes blink{0%,90%,100%{transform:scaleY(1)}95%{transform:scaleY(.12)}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.card-mini{background:var(--canvas-raised);border:1px solid var(--hairline);border-radius:10px;padding:12px 14px;
+  box-shadow:5px 5px 0 rgb(var(--acc-rgb) / .14);width:100%;max-width:260px}
+.card-mini h5{font-family:var(--font-display);font-size:14px;font-weight:670;margin:0 0 3px;letter-spacing:-.03em}
+.card-mini p{margin:0;font-size:12px;color:var(--ink-muted);line-height:1.45}
+</style>
+</head>
+<body>
+
+<header class="hd">
+  <div class="hd-in">
+    <div class="brand">kairo <small>ui / ux library explorer</small></div>
+    <div class="hd-tools">
+      <span class="kick">accent</span>
+      <div class="acc-dots" id="accDots"></div>
+      <input class="srch" id="srch" placeholder="filter options / libraries…" />
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" id="toc"></nav>
+  <main id="app"></main>
+</div>
+
+<script type="module">
+/* =========================================================================
+   Kairo UI/UX library explorer.
+   Everything below is a self-contained demo page — it does NOT touch the app.
+   Badges: CURRENT = what Kairo ships today (recreated pixel-close);
+           MOCK    = faithful recreation of that library's look/behaviour;
+           LIVE    = the real library, loaded from a CDN at page load.
+   ========================================================================= */
+
+const ACCENTS = ['#665cff','#0ea5e9','#10b981','#f59e0b','#ff6b66','#c05cff'];
+
+/* --- tiny helpers ------------------------------------------------------- */
+const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+const on = (el, sel, ev, fn) => el.querySelectorAll(sel).forEach(n => n.addEventListener(ev, fn));
+const toggleAttr = (el) => el.dataset.on = el.dataset.on === '1' ? '0' : '1';
+async function tryImport(url){ try { return await import(/* @vite-ignore */ url); } catch (e) { console.warn('cdn miss', url, e); return null; } }
+function cssLink(href){ const l = document.createElement('link'); l.rel='stylesheet'; l.href=href; document.head.appendChild(l); }
+
+/* Generic "click anything with data-toggle to flip it" wiring. */
+function wireToggles(root){ on(root, '[data-toggle]', 'click', (e) => toggleAttr(e.currentTarget)); }
+/* Generic segmented-control wiring: [data-seg] parent, buttons inside. */
+function wireSeg(root){
+  root.querySelectorAll('[data-seg]').forEach(seg => {
+    const ind = seg.querySelector('.ind');
+    const move = (btn) => {
+      seg.querySelectorAll('button').forEach(b => b.dataset.on = b === btn ? '1' : '0');
+      if (ind){ ind.style.width = btn.offsetWidth + 'px'; ind.style.transform = 'translateX(' + (btn.offsetLeft - (seg.querySelector('.ind').parentElement === seg ? 0 : 0)) + 'px)'; }
+    };
+    seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => move(b)));
+    const cur = seg.querySelector('button[data-on="1"]') || seg.querySelector('button');
+    requestAnimationFrame(() => move(cur));
+  });
+}
+
+/* A shared fake "mic level" ticker so every voice demo breathes in sync. */
+const micSubs = new Set();
+let micT = 0;
+(function micLoop(){
+  micT += 0.06;
+  const lvl = Math.max(0, Math.min(1, (Math.sin(micT) * 0.5 + 0.5) * 0.7 + Math.sin(micT * 3.3) * 0.28 + Math.random() * 0.08));
+  micSubs.forEach(fn => fn(lvl));
+  requestAnimationFrame(micLoop);
+})();
+const onMic = (fn) => micSubs.add(fn);
+
+const SECTIONS = [];
+
+/* =========================================================================
+   0 — UX AUDIT
+   ========================================================================= */
+SECTIONS.push({
+  id:'audit', kicker:'read this first', title:'What the audit found',
+  blurb:'Every UI surface in the desktop app is hand-built: 1,568 lines of styles.css, 758 of onboarding.css, 457 of settings.css, plus per-component CSS-in-markup. That is not automatically wrong — the notch, the pet and the overlay genuinely have no off-the-shelf equivalent. But eleven generic controls are being maintained by hand, and three whole UX affordances are simply missing.',
+  audit:[
+    {s:'hi', t:'No toast / notification system anywhere', p:'Billing errors, voice-save failures, update results and permission changes all render as inline text that appears in place and never announces itself. A user who is not looking at that section never learns the action failed. This is the single biggest missing primitive — Sonner is a 2-hour install.'},
+    {s:'hi', t:'The voice picker is a native &lt;select&gt;', p:'ElevenLabs returns a live catalogue that can run to hundreds of voices. A native select with no search, no grouping, no per-row preview and no gender/language filter is the worst control for that data. Preview also requires selecting first, so auditioning a voice mutates the saved preference.'},
+    {s:'hi', t:'Zero tooltips, zero keyboard-shortcut surfacing', p:'The whole product is driven by ⌥⌃ and ⌥⇧P, yet nothing in Settings or the notch teaches or reminds you. No hover hints on the icon buttons, no shortcut legend, no command palette.'},
+    {s:'md', t:'Settings is one 404px column that scrolls', p:'Nine sections stacked vertically with no grouping, no search, no icons and no sticky context. macOS System Settings, Linear and Raycast all solved this with a sidebar or grouped inset lists. It will not survive the next five settings.'},
+    {s:'md', t:'Focus states are near-absent', p:'Only .annotation-overlay-canvas has a :focus-visible rule. Buttons, swatches, toggles and the modal all lack visible focus rings and the Skills modal has no focus trap, no Escape handler and no scroll lock — it is a div with a click-outside handler.'},
+    {s:'md', t:'Loading is always the word "Loading…"', p:'Settings, VoiceSettings and the update row each render bare text. No skeletons, no shimmer, no optimistic state — so every open of Settings flashes an empty card.'},
+    {s:'md', t:'Two different animation stacks fight each other', p:'framer-motion drives FrontDoor and the caption stream; hand-written @keyframes drive the capsule, the box draw, the pet, the swatches. The comment in styles.css literally says "disable the CSS entrance so the two do not fight". Pick one owner per surface.'},
+    {s:'lo', t:'react-icons pulls whole icon families', p:'Act5Source imports from five different react-icons namespaces (si, fa6, ri, lu). Tree-shaking helps, but a single 1.5kb-per-icon set (lucide) would be smaller, visually consistent and stroke-tunable to match Geist.'},
+    {s:'lo', t:'No reduced-transparency / high-contrast handling', p:'prefers-reduced-motion is handled well (genuinely — better than most apps). prefers-contrast and forced-colors are not handled at all, and the notch is pure dark regardless of system appearance.'},
+    {s:'lo', t:'Colour maths is done by hand in CSS', p:'color-mix() everywhere is fine, but accent derivation (hover/active/soft/on-dark variants) has no single source. A 2kb colour lib (colord / culori) plus generated scales would make every accent safe against the light card AND the dark notch.'}
+  ]
+});
+
+/* =========================================================================
+   1 — FOUNDATION
+   ========================================================================= */
+SECTIONS.push({
+  id:'foundation', kicker:'pick one', title:'Foundation: which component layer',
+  blurb:'This is the decision everything else hangs off. Kairo needs unstyled behaviour (focus traps, dismissable layers, listbox semantics, portals) — NOT a visual design system, because the visual system already exists and is good. So the shortlist is headless-first. Each card below shows a button + switch + input rendered in that library\'s house style.',
+  today:{ label:'Kairo today — hand-rolled everything',
+    html:`<div class="col" style="width:100%;max-width:250px">
+      <button class="b b-kairo">Upgrade to Pro</button>
+      <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+        <button class="sw sw-kairo" data-toggle data-on="1"><i></i></button></div>
+      <input class="inp" placeholder="Your name" /></div>`,
+    pain:'Beautiful and on-brand — the shape language (near-square, hard offset shadow, Bricolage) is genuinely distinctive. What is missing is behaviour: no focus trap in the modal, no roving tabindex on the swatch radiogroup, no listbox keyboard nav, no dismissable-layer stack. Those are the parts nobody should write by hand.'},
+  options:[
+    {n:'Base UI', lib:'@base-ui-components/react · MIT', tag:'mock', badge:'pick',
+     inst:'npm i @base-ui-components/react',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-shad">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-base" data-toggle data-on="1"><i></i></button></div>
+       <input class="inp" placeholder="Your name" /></div>`,
+     why:'<b>The recommendation.</b> Same team that built Radix, MUI and Floating UI; hit stable 1.0 in 2026 and is now the actively-maintained primitive layer. Unstyled, so your existing CSS files survive almost untouched — you keep the offset shadow and just inherit dialogs, selects, tooltips, popovers, menus and toasts with correct semantics.'},
+    {n:'Radix Primitives', lib:'radix-ui · MIT', tag:'mock',
+     inst:'npm i radix-ui',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-radix">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-base" data-toggle data-on="1"><i></i></button></div>
+       <input class="inp" placeholder="Your name" /></div>`,
+     why:'The incumbent and still excellent, but Radix was acquired by WorkOS and several primitives have gone quiet. If you start today, Base UI is the same ergonomics with a more active maintainer. If you already knew Radix, the migration cost is near zero either way.'},
+    {n:'React Aria Components', lib:'react-aria-components · Apache-2.0', tag:'mock',
+     inst:'npm i react-aria-components',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-shad-out">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-base" data-toggle data-on="1" style="outline:2px solid rgb(var(--acc-rgb)/.5);outline-offset:2px"><i></i></button></div>
+       <input class="inp" placeholder="Your name" /></div>`,
+     why:'Adobe. The deepest accessibility + interaction model on offer (drag, touch, RTL, screen-reader announcements, virtual focus). More code per component than Base UI, and heavier. Worth it if you ever ship to enterprise/education buyers who audit a11y — a real possibility for a teaching tool.'},
+    {n:'Ark UI', lib:'@ark-ui/react · MIT', tag:'mock',
+     inst:'npm i @ark-ui/react',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-mantine">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-base" data-toggle data-on="1"><i></i></button></div>
+       <input class="inp" placeholder="Your name" /></div>`,
+     why:'Zag.js state machines under a React/Vue/Solid surface. Very predictable, great for the state-heavy bits (the notch is basically a state machine already). Only pick it if cross-framework matters — for Kairo it does not.'},
+    {n:'shadcn/ui', lib:'copy-in components (Base UI or Radix)', tag:'mock',
+     inst:'npx shadcn@latest add dialog select switch',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-shad">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-base" data-toggle data-on="1"><i></i></button></div>
+       <input class="inp" placeholder="Your name" style="border-radius:6px" /></div>`,
+     why:'Not a dependency — it pastes source into your repo. The catch for Kairo: it assumes Tailwind, and the app is plain CSS. You would either add Tailwind (big change) or hand-port each component\'s classes. <b>Better play: take shadcn as a reference implementation, keep your CSS.</b>'},
+    {n:'Mantine', lib:'@mantine/core · MIT', tag:'mock',
+     inst:'npm i @mantine/core @mantine/hooks',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-mantine">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-base" data-toggle data-on="1"><i></i></button></div>
+       <input class="inp" placeholder="Your name" style="border-radius:4px" /></div>`,
+     why:'Batteries-included: 120+ components, notifications, spotlight (⌘K), forms, hooks. Fastest way to stop writing UI — but it brings its own theme engine and CSS layers, and you would spend the saved time fighting it to look like the landing page.'},
+    {n:'HeroUI', lib:'@heroui/react · MIT', tag:'mock',
+     inst:'npm i @heroui/react',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-hero">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-mac sw-ios-acc" data-toggle data-on="1" style="transform:scale(.8)"><i></i></button></div>
+       <input class="inp" placeholder="Your name" style="border-radius:12px;background:var(--surface-soft);border-color:transparent" /></div>`,
+     why:'Formerly NextUI. Rounded, glossy, motion-forward, Tailwind + React Aria under the hood. Gorgeous out of the box but its look is the opposite of your near-square editorial shape language. Wrong aesthetic for this brand.'},
+    {n:'Radix Themes', lib:'@radix-ui/themes · MIT', tag:'mock',
+     inst:'npm i @radix-ui/themes',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-radix">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-base" data-toggle data-on="1"><i></i></button></div>
+       <input class="inp" placeholder="Your name" style="border-radius:4px;box-shadow:inset 0 0 0 1px var(--hairline);border-color:transparent" /></div>`,
+     why:'Styled Radix with a strong colour-scale system (radix-colors) that would solve your accent-derivation problem for free. Whole-theme adoption is too invasive, but <b>stealing radix-colors alone is a great idea</b> — see the Accent section.'},
+    {n:'Stay hand-rolled + add primitives only', lib:'no framework', tag:'mock', badge:'pick',
+     inst:'npm i @base-ui-components/react sonner',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <button class="b b-kairo">Upgrade to Pro</button>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Launch at login</span>
+         <button class="sw sw-kairo" data-toggle data-on="1"><i></i></button></div>
+       <input class="inp" placeholder="Your name" /></div>`,
+     why:'<b>The realistic answer.</b> Do not re-skin the product. Keep every visual token and hand-built surface; import behaviour only where a bug class exists today: Dialog (focus trap), Select/Combobox (listbox nav), Tooltip, Popover, Toast. That is ~5 imports and roughly 300 lines deleted.'}
+  ]
+});
+
+/* =========================================================================
+   2 — BUTTONS
+   ========================================================================= */
+SECTIONS.push({
+  id:'buttons', kicker:'atoms', title:'Buttons',
+  blurb:'You have four button classes across three files (.primary-button, .secondary-button, .s-btn*, .ob-hero-cta, .ob-color-confirm) that all implement the same hard-offset-shadow press. They drift: 5px vs 6px vs 7px offsets, 640 vs 660 vs 680 weight. One component, three variants, one token set.',
+  today:{ label:'Kairo today — ink fill, hard violet offset, slides into its shadow',
+    html:`<div class="row"><button class="b b-kairo">Enable permissions</button><button class="b b-ghost">Restart</button></div>`,
+    pain:'The press interaction is genuinely great and nobody should replace it. What should change: consolidate to ONE .kbtn with data-variant, add :focus-visible, add a disabled + busy (spinner) state, and stop hard-coding the offset per file.'},
+  options:[
+    {n:'Consolidated Kairo button', lib:'your own CSS + cva (optional)', tag:'mock', badge:'pick',
+     inst:'npm i class-variance-authority',
+     html:`<div class="col" style="align-items:center;gap:9px">
+       <div class="row"><button class="b b-kairo">Primary</button><button class="b b-ghost">Ghost</button></div>
+       <div class="row"><button class="b b-kairo" disabled style="opacity:.45">Disabled</button>
+       <button class="b b-kairo" data-busy><span class="spin" style="display:inline-block;width:11px;height:11px;border:2px solid rgb(255 255 255/.35);border-top-color:#fff;border-radius:999px;animation:spin .7s linear infinite;vertical-align:-1px;margin-right:7px"></span>Working…</button></div></div>`,
+     why:'Keep the exact look, add the three states you are missing everywhere: focus ring, disabled, and busy. <b>cva</b> gives you typed variants without a UI framework — 1.2kb.'},
+    {n:'shadcn / Base UI default', lib:'shadcn button', tag:'mock', inst:'npx shadcn add button',
+     html:`<div class="row"><button class="b b-shad">Continue</button><button class="b b-shad-out">Cancel</button></div>`,
+     why:'The 2026 default look: 6px radius, subtle shadow, medium weight. Safe, universal, and completely anonymous — it would erase the one thing that makes Kairo\'s surfaces recognisable.'},
+    {n:'Radix Themes solid', lib:'@radix-ui/themes', tag:'mock', inst:'npm i @radix-ui/themes',
+     html:`<div class="row"><button class="b b-radix">Continue</button><button class="b b-radix-soft">Soft</button></div>`,
+     why:'Accent-filled with an automatic contrast-safe text colour from radix-colors. The "soft" variant is a pattern you are missing — you currently only have ink-fill or hairline-ghost, nothing in between.'},
+    {n:'Vercel / Geist', lib:'@vercel/geist (design ref)', tag:'mock', inst:'reference only',
+     html:`<div class="row"><button class="b b-geist">Deploy</button></div>`,
+     why:'Black fill that inverts to white-on-hover. Extremely close in spirit to your ink button and the source of the Geist font you already ship. Free idea: invert-on-hover instead of slide-into-shadow for dense rows where the 6px travel is too loud.'},
+    {n:'Linear-style gradient', lib:'design pattern', tag:'mock', inst:'CSS only',
+     html:`<div class="row"><button class="b b-linear">Upgrade to Pro</button></div>`,
+     why:'1px inner highlight + vertical gradient + tight shadow. Reads "native app" rather than "web page" — worth testing for the paid CTA specifically, because the flat ink button undersells a $10/mo action.'},
+    {n:'macOS system button', lib:'native look', tag:'mock', inst:'CSS only',
+     html:`<div class="row"><button class="b b-mac">Grant access</button></div>`,
+     why:'For permission-recovery flows specifically, looking like the OS increases trust — the user is being asked to do a system-level thing. Worth A/B testing on the Act 3 surface only, never product-wide.'},
+    {n:'Spring press (Motion)', lib:'motion', tag:'live', inst:'npm i motion',
+     html:`<div class="row"><button class="b b-spring" data-spring>Press me</button></div>`,
+     init:(el)=>{ const b = el.querySelector('[data-spring]');
+       b.addEventListener('pointerdown', ()=>{ b.style.transform='scale(.94)'; });
+       ['pointerup','pointerleave'].forEach(e=>b.addEventListener(e, ()=>{ b.style.transform='scale(1)'; }));
+     },
+     why:'whileTap={{scale:0.94}} with a spring. One line in Motion, and it is the single cheapest "this feels native" upgrade for the notch icon buttons which currently have NO press feedback at all.'},
+    {n:'Magnetic hover (GSAP)', lib:'gsap', tag:'live', inst:'npm i gsap',
+     html:`<div class="row"><button class="b b-magnet" data-magnet>Get started</button></div>`,
+     init:(el)=>{ const b=el.querySelector('[data-magnet]'); const p=el;
+       p.addEventListener('pointermove',(e)=>{ const r=b.getBoundingClientRect();
+         const dx=(e.clientX-(r.left+r.width/2))*.28, dy=(e.clientY-(r.top+r.height/2))*.32;
+         b.style.transform='translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)+'px)'; });
+       p.addEventListener('pointerleave',()=>{ b.style.transition='transform .4s cubic-bezier(.34,1.4,.6,1)';
+         b.style.transform='translate(0,0)'; setTimeout(()=>b.style.transition='',400); });
+     },
+     why:'The button leans toward the cursor. Delightful exactly once — right for the onboarding "Get started" CTA (the one moment you want to feel special), wrong for Settings.'},
+    {n:'Shimmer border', lib:'Magic UI pattern', tag:'mock', inst:'copy-in component',
+     html:`<div class="row"><button class="b b-shimmer">Upgrade to Pro</button></div>`,
+     why:'Conic-gradient ring rotating behind the fill. Marketing-grade attention. Use for the paywall CTA when the free quota hits 0 and nowhere else.'},
+    {n:'Moving border', lib:'Aceternity pattern', tag:'mock', inst:'copy-in component',
+     html:`<div class="row"><button class="b b-moving">Watch the demo</button></div>`,
+     why:'A comet travels the border. Same use-case as shimmer but lighter-touch and works on a light card, which the shimmer does not.'},
+    {n:'Ripple / spotlight fill', lib:'design pattern', tag:'mock', inst:'CSS only',
+     html:`<div class="row"><button class="b b-gooey" data-spot><span>Ask Kairo</span></button></div>`,
+     init:(el)=>{ const b=el.querySelector('[data-spot]');
+       b.addEventListener('pointermove',(e)=>{ const r=b.getBoundingClientRect();
+         b.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%');
+         b.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%'); }); },
+     why:'Cursor-tracked highlight inside the fill. Cheap, GPU-only, and it reads well on the accent-coloured Ask button in the notch where a shadow press would be invisible on dark.'},
+    {n:'Icon button + tooltip', lib:'base-ui Tooltip / tippy.js', tag:'live', inst:'npm i tippy.js',
+     html:`<div class="row" data-tips>
+       <button class="b b-ghost" style="padding:8px 10px" data-tip="Draw on screen · ⌥⇧P">✎</button>
+       <button class="b b-ghost" style="padding:8px 10px" data-tip="Hold ⌥⌃ to talk">🎙</button>
+       <button class="b b-ghost" style="padding:8px 10px" data-tip="Hide Kairo · Esc">✕</button></div>`,
+     init:async(el)=>{ const m = await tryImport('https://esm.sh/tippy.js@6');
+       if(!m) return; cssLink('https://esm.sh/tippy.js@6/dist/tippy.css');
+       el.querySelectorAll('[data-tip]').forEach(n => m.default(n,{content:n.dataset.tip, theme:'light', delay:[120,0]}));
+     },
+     why:'<b>You ship zero tooltips today.</b> Every icon button in the notch (pen, close) and every shortcut in the app is undiscoverable. This is the highest value-per-hour fix on the whole page.'}
+  ]
+});
+
+/* =========================================================================
+   3 — SWITCHES
+   ========================================================================= */
+SECTIONS.push({
+  id:'switch', kicker:'atoms', title:'Toggles & switches',
+  blurb:'One switch exists (Launch at login) plus checkboxes in the Skills modal. It is a <code>&lt;button role="switch"&gt;</code> — semantically correct, which is more than most hand-rolled toggles manage. What it lacks is a focus ring, a press state, and any motion personality.',
+  today:{ label:'Kairo today — .s-toggle',
+    html:`<div class="row"><span class="lbl">Launch at login</span><button class="sw sw-kairo" data-toggle data-on="1"><i></i></button></div>`,
+    pain:'Knob slides linearly in 160ms. No focus-visible, no active/press feedback, no disabled style. The Skills modal uses raw checkboxes with accent-color, which cannot be styled consistently across the two surfaces.'},
+  options:[
+    {n:'Base UI Switch', lib:'@base-ui-components/react', tag:'mock', badge:'pick', inst:'npm i @base-ui-components/react',
+     html:`<div class="row"><button class="sw sw-base" data-toggle data-on="1"><i></i></button>
+       <button class="sw sw-base" data-toggle data-on="0"><i></i></button></div>`,
+     why:'Correct semantics, focus ring, keyboard, form integration — and it renders your CSS. Tab to it in this demo to see the ring you are missing.'},
+    {n:'macOS Sequoia switch', lib:'native look', tag:'mock',
+     inst:'CSS only', html:`<div class="row"><button class="sw sw-mac" data-toggle data-on="1"><i></i></button>
+       <button class="sw sw-mac" data-toggle data-on="0"><i></i></button></div>`,
+     why:'Bigger (51×31), green when on, and the knob <b>stretches while pressed</b> — press and hold one. For a Mac-first app, matching this is free familiarity. The green fights your accent though; see the next card.'},
+    {n:'macOS shape, accent fill', lib:'native look + your accent', tag:'mock', badge:'pick',
+     inst:'CSS only', html:`<div class="row"><button class="sw sw-mac sw-ios-acc" data-toggle data-on="1"><i></i></button>
+       <span class="lbl">follows the user\'s chosen colour</span></div>`,
+     why:'Best of both: native geometry and press physics, filled with the accent the user picked in onboarding so Settings visibly belongs to them. This is the one to steal.'},
+    {n:'Compact / Linear', lib:'design pattern', tag:'mock', inst:'CSS only',
+     html:`<div class="row"><button class="sw sw-lin" data-toggle data-on="1"><i></i></button>
+       <button class="sw sw-lin" data-toggle data-on="0"><i></i></button></div>`,
+     why:'32×18. When Settings grows to 15 rows, the smaller control keeps the list scannable. Slight overshoot on the knob adds life without cost.'},
+    {n:'Spring knob (Motion)', lib:'motion', tag:'mock', inst:'npm i motion',
+     html:`<div class="row"><button class="sw sw-base sw-spring" data-toggle data-on="1"><i></i></button></div>`,
+     why:'Same switch, cubic-bezier(.34,1.56,.5,1) instead of ease. Costs nothing, and matches the --spring-morph feel the notch already uses, so the two surfaces feel related.'},
+    {n:'Labelled toggle', lib:'design pattern', tag:'mock', inst:'CSS only',
+     html:`<button class="sw sw-txt" data-toggle data-on="0"><i></i><u class="a">off</u><u class="b">on</u></button>`,
+     why:'Removes ambiguity for state that is not obviously binary. Overkill for "Launch at login", right for a future "Follow-along mode: guide / silent".'},
+    {n:'Icon toggle', lib:'design pattern', tag:'mock', inst:'CSS only',
+     html:`<button class="sw sw-icon" data-toggle data-on="1"><i></i><b class="on">🔊</b><b class="off">🔇</b></button>`,
+     why:'For voice on/off in the notch specifically — a labelled switch does not fit a 34px pill but an icon toggle does.'},
+    {n:'Checkbox → switch (Skills)', lib:'base-ui Checkbox', tag:'mock', inst:'npm i @base-ui-components/react',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <div class="row" style="justify-content:space-between"><span class="lbl">Blender</span><button class="sw sw-lin" data-toggle data-on="1"><i></i></button></div>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Figma</span><button class="sw sw-lin" data-toggle data-on="1"><i></i></button></div>
+       <div class="row" style="justify-content:space-between"><span class="lbl">Excel</span><button class="sw sw-lin" data-toggle data-on="0"><i></i></button></div></div>`,
+     why:'Your Skills modal mixes paradigms: switches in Settings, checkboxes in the modal. Pick one. Switches read as "live setting" (correct here — it applies instantly), checkboxes read as "pending selection you will confirm".'}
+  ]
+});
+
+/* =========================================================================
+   4 — SELECT / VOICE PICKER
+   ========================================================================= */
+const VOICES = [
+  {n:'Anushka',g:'female',l:'Hindi',e:'Sarvam'},{n:'Manisha',g:'female',l:'Hindi',e:'Sarvam'},
+  {n:'Vidya',g:'female',l:'Tamil',e:'Sarvam'},{n:'Arya',g:'female',l:'Marathi',e:'Sarvam'},
+  {n:'Abhilash',g:'male',l:'Hindi',e:'Sarvam'},{n:'Karun',g:'male',l:'Hindi',e:'Sarvam'},
+  {n:'Hitesh',g:'male',l:'Gujarati',e:'Sarvam'},{n:'Rachel',g:'female',l:'English',e:'ElevenLabs'},
+  {n:'Adam',g:'male',l:'English',e:'ElevenLabs'},{n:'Charlotte',g:'female',l:'English',e:'ElevenLabs'},
+  {n:'George',g:'male',l:'English',e:'ElevenLabs'},{n:'Alice',g:'female',l:'English',e:'ElevenLabs'},
+  {n:'Brian',g:'male',l:'English',e:'ElevenLabs'},{n:'Lily',g:'female',l:'English',e:'ElevenLabs'}
+];
+const voiceRows = (list, withPlay) => list.map(v =>
+  '<div class="pop-i" role="option">' + (withPlay ? '<span class="play">▶</span>' : '') +
+  '<span>' + v.n + '</span><span class="lbl" style="font-size:11px;margin-left:6px">' + v.l + ' · ' + v.g + '</span></div>').join('');
+
+SECTIONS.push({
+  id:'select', kicker:'the worst control in the app', title:'Select → the voice picker',
+  blurb:'server/src/speech/catalog.ts curates Sarvam; ElevenLabs is fetched live from GET /v2/voices and can return hundreds. Both are normalised so the desktop cannot tell them apart — which means the picker must handle "6 items" and "300 items" with the same UI. A native select handles neither well.',
+  today:{ label:'Kairo today — native &lt;select&gt; + Preview button',
+    html:`<div class="row" style="width:100%;max-width:270px"><select class="inp"><option>Anushka · female</option><option>Manisha · female</option><option>Abhilash · male</option></select><button class="b b-ghost">Preview</button></div>`,
+    pain:'No search. No grouping. No per-voice preview — you must <b>save</b> a voice to hear it, so auditioning mutates state and fires a server write per click. Native select popups also cannot be styled on macOS, so this is the one control that visibly breaks the brand.'},
+  options:[
+    {n:'Searchable voice list w/ inline preview', lib:'cmdk or base-ui Combobox', tag:'mock', badge:'pick',
+     inst:'npm i cmdk',
+     html:`<div class="pop" data-vsearch><div class="pop-s">🔎<input placeholder="Search 214 voices…" /></div>
+       <div class="pop-list">${voiceRows(VOICES,true)}</div></div>`,
+     init:(el)=>{ const i=el.querySelector('input'), rows=[...el.querySelectorAll('.pop-i')];
+       i.addEventListener('input',()=>{ const q=i.value.toLowerCase();
+         rows.forEach(r=>r.classList.toggle('hidden', !r.textContent.toLowerCase().includes(q))); });
+       el.querySelectorAll('.play').forEach(p=>p.addEventListener('click',(e)=>{ e.stopPropagation();
+         p.textContent='❚❚'; setTimeout(()=>p.textContent='▶',1200); })); },
+     why:'<b>The fix.</b> Type to filter, ▶ to audition without saving, click the row to select. Solves the three real problems at once. cmdk is 5kb and is what Raycast/Linear use.'},
+    {n:'Base UI Select', lib:'@base-ui-components/react', tag:'mock', inst:'npm i @base-ui-components/react',
+     html:`<div class="pop"><div class="pop-h">Sarvam</div>
+       <div class="pop-i" aria-selected="true">Anushka<span class="ck">✓</span></div>
+       <div class="pop-i">Manisha</div><div class="pop-i">Abhilash</div>
+       <div class="pop-h">ElevenLabs</div><div class="pop-i">Rachel</div><div class="pop-i">Adam</div></div>`,
+     why:'Styled popup, groups, checkmarks, full keyboard + typeahead, renders in a portal so it cannot be clipped. The minimum credible replacement if you do not want search.'},
+    {n:'Grouped by language', lib:'any listbox', tag:'mock', inst:'—',
+     html:`<div class="pop"><div class="pop-h">Hindi</div><div class="pop-i">Anushka<span class="lbl" style="margin-left:auto;font-size:11px">female</span></div>
+       <div class="pop-i">Abhilash<span class="lbl" style="margin-left:auto;font-size:11px">male</span></div>
+       <div class="pop-h">Tamil</div><div class="pop-i">Vidya</div>
+       <div class="pop-h">English</div><div class="pop-i">Rachel</div></div>`,
+     why:'Kairo\'s wedge is multilingual (the Hindi demo is the hero pitch). Language is the axis users actually choose on — not engine. Group by language, show the engine as metadata.'},
+    {n:'Filter chips + list', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="col" style="width:100%;max-width:250px">
+       <div class="chipset" data-chips><span class="chip" data-on="1">All</span><span class="chip">Hindi</span><span class="chip">English</span><span class="chip">female</span></div>
+       <div class="pop"><div class="pop-list">${voiceRows(VOICES.slice(0,5),true)}</div></div></div>`,
+     init:(el)=>{ on(el,'.chip','click',(e)=>{ el.querySelectorAll('.chip').forEach(c=>c.dataset.on='0'); e.currentTarget.dataset.on='1'; }); },
+     why:'Zero-typing filtering — better than search on a trackpad-only surface. Combine with search for the 300-voice case.'},
+    {n:'Voice cards w/ waveform', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="col" style="width:100%;max-width:262px">
+       <div class="card-mini" style="box-shadow:none;border-color:rgb(var(--acc-rgb)/.45)"><div class="row"><h5>Anushka</h5><span class="lbl" style="margin-left:auto;font-size:11px">Hindi · warm</span></div>
+       <div class="row" style="margin-top:7px"><span class="play">▶</span><span class="mini-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div></div>
+       <div class="card-mini" style="box-shadow:none"><div class="row"><h5>Rachel</h5><span class="lbl" style="margin-left:auto;font-size:11px">English · calm</span></div>
+       <div class="row" style="margin-top:7px"><span class="play">▶</span><span class="mini-wave" style="opacity:.4"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div></div></div>`,
+     why:'Richest option — voice is a personality choice, so showing character (warm / calm / crisp) beats showing an id. Costs a description field per voice; Sarvam\'s curated list already has room for it.'},
+    {n:'Virtualised list', lib:'@tanstack/react-virtual', tag:'mock', inst:'npm i @tanstack/react-virtual',
+     html:`<div class="pop"><div class="pop-h">300 voices · rendering 8</div><div class="pop-list" style="max-height:120px">${voiceRows(VOICES,false)}</div></div>`,
+     why:'Only matters if ElevenLabs returns hundreds and you render them all. 3kb insurance; add it the day the list gets slow, not before.'},
+    {n:'React Aria ComboBox', lib:'react-aria-components', tag:'mock', inst:'npm i react-aria-components',
+     html:`<div class="pop"><div class="pop-s">⌨<input placeholder="Type a voice name…" value="ra" /></div>
+       <div class="pop-list"><div class="pop-i" data-sel="1">Rachel</div><div class="pop-i">Brian</div></div></div>`,
+     why:'The most accessible combobox available — announces result counts to VoiceOver. If a11y is a buying criterion later, this is the one that passes audit.'},
+    {n:'Native select (keep)', lib:'—', tag:'mock', inst:'—',
+     html:`<select class="inp" style="max-width:200px"><option>Anushka · female</option></select>`,
+     why:'Honest option: it is accessible, zero-maintenance and correct on 6 items. If ElevenLabs stays behind a flag for the alpha, this is a legitimate "do nothing" — just move Preview so it does not require saving first.'}
+  ]
+});
+
+/* =========================================================================
+   5 — SEGMENTED CONTROL
+   ========================================================================= */
+SECTIONS.push({
+  id:'segmented', kicker:'atoms', title:'Segmented control',
+  blurb:'Used once, for the TTS engine (Sarvam / ElevenLabs). It works, but the active state hard-swaps — there is no travel between segments, which is the whole reason segmented controls feel good.',
+  today:{ label:'Kairo today — .s-segmented',
+    html:`<div class="seg" data-seg style="width:220px"><button data-on="1">Sarvam</button><button>ElevenLabs</button></div>`,
+    pain:'Background pops instantly from one segment to the other. No keyboard arrow-key navigation, no radiogroup semantics.'},
+  options:[
+    {n:'Sliding indicator', lib:'motion layoutId / CSS', tag:'mock', badge:'pick', inst:'npm i motion',
+     html:`<div class="seg2" data-seg><span class="ind"></span><button data-on="1">Sarvam</button><button>ElevenLabs</button></div>`,
+     why:'The pill travels. In Motion this is one <code>layoutId</code>; in raw CSS it is a positioned indicator you measure once. Either way it is the difference between "a control" and "a nice control".'},
+    {n:'macOS NSSegmentedControl', lib:'native look', tag:'mock', inst:'CSS only',
+     html:`<div class="seg-mac" data-seg><button data-on="1">Sarvam</button><button>ElevenLabs</button></div>`,
+     why:'Hairline dividers, white raised active cell. Matches System Settings exactly — the strongest "this is a Mac app" signal on the page.'},
+    {n:'Underline tabs', lib:'base-ui Tabs', tag:'mock', inst:'npm i @base-ui-components/react',
+     html:`<div class="seg-tab" data-seg style="width:220px"><span class="ind"></span><button data-on="1">Voice</button><button>Skills</button><button>Updates</button></div>`,
+     why:'If Settings grows a sidebar or tabs (it will), this is the pattern. The animated underline is the same measure-and-translate trick.'},
+    {n:'Radix ToggleGroup', lib:'radix-ui', tag:'mock', inst:'npm i radix-ui',
+     html:`<div class="seg" data-seg style="width:220px;background:transparent;border:0;gap:6px">
+       <button data-on="1" style="border:1px solid rgb(var(--acc-rgb)/.4);background:rgb(var(--acc-rgb)/.12)">Sarvam</button>
+       <button style="border:1px solid var(--hairline)">ElevenLabs</button></div>`,
+     why:'Separated outlined cells rather than an inset track. Better when segments have very different label lengths, which "Sarvam" vs "ElevenLabs" do.'},
+    {n:'Icon segments + tooltip', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="seg" data-seg style="width:150px"><button data-on="1">🇮🇳</button><button>🌐</button></div>`,
+     why:'For the notch, where horizontal space is the scarcest resource in the product. Needs tooltips to be legible — which you would now have.'},
+    {n:'Radio cards', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="row" style="gap:8px"><div class="card-mini" style="box-shadow:none;border-color:rgb(var(--acc-rgb)/.5);max-width:120px;padding:9px 11px"><h5 style="font-size:12.5px">Sarvam</h5><p style="font-size:11px">Indic voices</p></div>
+       <div class="card-mini" style="box-shadow:none;max-width:120px;padding:9px 11px"><h5 style="font-size:12.5px">ElevenLabs</h5><p style="font-size:11px">Expressive EN</p></div></div>`,
+     why:'Carries the blurb inside the choice instead of below it — you currently render PROVIDER_BLURB as a separate paragraph that changes after you pick, which is backwards.'}
+  ]
+});
+
+/* =========================================================================
+   6 — PROMPT BAR
+   ========================================================================= */
+SECTIONS.push({
+  id:'prompt', kicker:'the notch', title:'The typing prompt',
+  blurb:'A tap of ⌥⌃ expands the capsule into an input + Ask + close. It is the only text entry in the product and it is doing a lot: it is the fallback when voice fails, the way to ask about a screen, and the only visible affordance that Kairo takes text at all.',
+  today:{ label:'Kairo today — .kairo-capsule-prompt',
+    html:`<div class="cap" style="width:100%;max-width:330px"><input class="inp" style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.12);color:#f4f6f8;border-radius:999px" placeholder="Ask about this screen — or hold ⌥⌃ to talk" />
+      <button class="b" style="background:var(--acc);color:#fff;border-radius:999px;padding:8px 14px;font-size:12.5px">Ask</button></div>`,
+    pain:'No history (↑ to recall the last question), no suggestions, no context chip showing WHAT screen it is about to look at, no Esc hint, no submit-on-⌘Enter. The placeholder carries all the teaching load and is 46 characters long.'},
+  options:[
+    {n:'Raycast-style command bar', lib:'cmdk', tag:'mock', badge:'pick', inst:'npm i cmdk',
+     html:`<div class="cap" style="flex-direction:column;align-items:stretch;gap:0;padding:0;width:100%;max-width:340px;border-radius:12px">
+       <div class="row" style="padding:10px 13px;border-bottom:1px solid rgb(255 255 255/.07)">
+         <span style="opacity:.5">⌘</span><input class="inp" style="background:transparent;border:0;color:#f4f6f8;padding:0" placeholder="Ask about this screen…" /></div>
+       <div style="padding:6px">
+         <div class="pop-i" style="color:#eef1f5;border-radius:6px;font-size:12.5px" data-sel="1">💡 What is this panel for?</div>
+         <div class="pop-i" style="color:#cfd4de;border-radius:6px;font-size:12.5px">✎ Point at the export button</div>
+         <div class="pop-i" style="color:#cfd4de;border-radius:6px;font-size:12.5px">↺ Repeat the last step</div></div>
+       <div class="row" style="padding:7px 11px;border-top:1px solid rgb(255 255 255/.07);font-size:11px;color:rgb(238 241 245/.55)">
+         <span class="kbd">↵</span> ask <span class="kbd">esc</span> close <span style="margin-left:auto" class="kbd">⌥⌃</span> talk</div></div>`,
+     why:'Turns a blank box into a menu of what Kairo can do. Solves discovery (the #1 problem for an assistant with no visible feature list) and gives you a home for the shortcut legend.'},
+    {n:'Context chip', lib:'design pattern', tag:'mock', badge:'pick', inst:'—',
+     html:`<div class="cap" style="flex-direction:column;align-items:stretch;gap:8px;width:100%;max-width:330px">
+       <div class="row"><span class="chip" style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.12);color:#dfe3ea;font-size:11px">🖥 Blender — Layout</span>
+       <span class="lbl" style="font-size:11px;color:rgb(238 241 245/.5)">captured just now</span></div>
+       <div class="row"><input class="inp" style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.12);color:#f4f6f8;border-radius:8px" placeholder="Ask about this screen…" />
+       <button class="b" style="background:var(--acc);color:#fff;border-radius:8px;padding:8px 13px;font-size:12.5px">Ask</button></div></div>`,
+     why:'Shows what Kairo is about to look at, before it looks. Removes the biggest trust question in a screen-reading product ("what did it just see?") for the price of one chip.'},
+    {n:'Rotating placeholder', lib:'motion / CSS', tag:'live', inst:'CSS only',
+     html:`<div class="cap" style="width:100%;max-width:330px"><div style="flex:1;position:relative">
+       <input class="inp" data-rot style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.12);color:#f4f6f8;border-radius:999px" placeholder="" /></div></div>`,
+     init:(el)=>{ const i=el.querySelector('[data-rot]');
+       const ex=['Ask about this screen…','“why is my render black?”','“where do I apply the scale?”','“what does this panel do?”'];
+       let k=0; setInterval(()=>{ i.placeholder=ex[k++%ex.length]; },2200); i.placeholder=ex[0]; },
+     why:'Teaches by example instead of instruction. Your current 46-char placeholder is a sentence nobody reads twice; three rotating real questions teach the shape of a good ask.'},
+    {n:'History recall (↑)', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="cap" style="flex-direction:column;align-items:stretch;gap:6px;width:100%;max-width:330px">
+       <div class="row" style="font-size:11.5px;color:rgb(238 241 245/.55)"><span class="kbd">↑</span> last: “how do I bevel this edge?”</div>
+       <input class="inp" style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.12);color:#f4f6f8;border-radius:999px" placeholder="Ask about this screen…" /></div>`,
+     why:'useTurnHistory.ts already keeps the turns. Wiring ↑/↓ to it is maybe 15 lines and it is the single most-missed shortcut in any prompt box.'},
+    {n:'Autosize multiline', lib:'react-textarea-autosize', tag:'mock', inst:'npm i react-textarea-autosize',
+     html:`<div class="cap" style="align-items:flex-end;width:100%;max-width:330px">
+       <textarea class="inp" style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.12);color:#f4f6f8;border-radius:10px;resize:none;height:56px;font-family:inherit">My render comes out black even though
+the lamp is on — what should I check?</textarea>
+       <button class="b" style="background:var(--acc);color:#fff;border-radius:8px;padding:8px 13px;font-size:12.5px">Ask</button></div>`,
+     why:'Long questions are currently invisible past ~40 chars. The capsule already measures and morphs its own size, so a growing textarea is architecturally free.'},
+    {n:'Voice-first, type second', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="cap cap-pill" style="gap:12px"><span class="cap-viz" data-mic><i></i><i></i><i></i><i></i><i></i></span>
+       <span class="cap-lbl">Listening…</span><span class="kbd">type instead</span></div>`,
+     init:(el)=>{ const bars=[...el.querySelectorAll('[data-mic] i')];
+       onMic(l=>bars.forEach((b,i)=>b.style.height=(4+l*16*(0.6+((i%3)*0.24)))+'px')); },
+     why:'Inverts the hierarchy to match the product thesis (voice is primary). The typing affordance becomes a hint, not a box — less pixel weight for the rarer path.'},
+    {n:'Slash commands', lib:'cmdk / tiptap suggestion', tag:'mock', inst:'npm i cmdk',
+     html:`<div class="cap" style="flex-direction:column;align-items:stretch;gap:0;padding:0;width:100%;max-width:330px;border-radius:12px">
+       <div style="padding:10px 13px"><span style="color:#f4f6f8;font-size:13px">/point</span></div>
+       <div style="padding:6px;border-top:1px solid rgb(255 255 255/.07)">
+         <div class="pop-i" data-sel="1" style="color:#eef1f5;border-radius:6px;font-size:12.5px">/point — highlight something on screen</div>
+         <div class="pop-i" style="color:#cfd4de;border-radius:6px;font-size:12.5px">/guide — walk me through it step by step</div>
+         <div class="pop-i" style="color:#cfd4de;border-radius:6px;font-size:12.5px">/quiet — stop talking</div></div></div>`,
+     why:'You already have modes (point / follow-along / gate) chosen implicitly by the planner. Slash commands let a power user force one — cheap, and it makes the invisible planner legible.'}
+  ]
+});
+
+/* ---- extra styles for the demos below ---------------------------------- */
+document.head.appendChild(Object.assign(document.createElement('style'),{textContent:`
+.sheet{width:100%;max-width:250px;background:var(--canvas-raised);border:1px solid var(--hairline);border-radius:12px;
+  box-shadow:0 20px 40px -18px rgb(11 13 18/.4);overflow:hidden;font-size:12.5px}
+.sheet-h{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid var(--hairline)}
+.sheet-h b{font-family:var(--font-display);font-size:13.5px;letter-spacing:-.03em}
+.sheet-b{padding:11px 13px;color:var(--ink-muted);line-height:1.5}
+.sheet-f{display:flex;gap:8px;justify-content:flex-end;padding:10px 13px;border-top:1px solid var(--hairline);background:var(--canvas-soft)}
+.scrim{position:absolute;inset:0;background:rgb(11 13 18/.28);backdrop-filter:blur(2px);display:grid;place-items:center}
+.toast{display:flex;align-items:center;gap:9px;padding:10px 13px;border-radius:10px;font-size:12.5px;width:100%;max-width:262px}
+.toast-sonner{background:#fff;border:1px solid var(--hairline);box-shadow:0 4px 12px rgb(11 13 18/.1);color:var(--ink)}
+.toast-dark{background:#1b1d23;border:1px solid rgb(255 255 255/.1);color:#eef1f5}
+.toast-stack{position:relative;height:76px;width:100%;max-width:262px}
+.toast-stack .toast{position:absolute;left:0;right:0;transition:transform .45s cubic-bezier(.22,1,.36,1),opacity .3s}
+.toast-stack .toast:nth-child(1){transform:translateY(0) scale(1);z-index:3}
+.toast-stack .toast:nth-child(2){transform:translateY(11px) scale(.95);z-index:2;opacity:.75}
+.toast-stack .toast:nth-child(3){transform:translateY(21px) scale(.9);z-index:1;opacity:.45}
+.ok{color:#4a7a08}.bad{color:#9f2d24}
+.mac-list{width:100%;max-width:262px;background:#fff;border:1px solid rgb(0 0 0/.08);border-radius:10px;overflow:hidden;font-size:12.5px}
+.mac-list .r{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid rgb(0 0 0/.06)}
+.mac-list .r:last-child{border-bottom:0}
+.mac-list .ico{width:19px;height:19px;border-radius:5px;display:grid;place-items:center;font-size:10px;color:#fff;flex:none}
+.side{display:grid;grid-template-columns:86px 1fr;width:100%;max-width:270px;border:1px solid var(--hairline);
+  border-radius:10px;overflow:hidden;background:var(--canvas-raised);font-size:12px;min-height:118px}
+.side nav{background:var(--canvas-soft);border-right:1px solid var(--hairline);padding:7px 6px;display:flex;flex-direction:column;gap:2px}
+.side nav b{padding:5px 7px;border-radius:6px;font-weight:500;color:var(--ink-muted);cursor:pointer}
+.side nav b.on{background:rgb(var(--acc-rgb)/.13);color:var(--ink);font-weight:600}
+.side .body{padding:11px 12px;color:var(--ink-muted);line-height:1.5}
+.ring{width:44px;height:44px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:4}
+.steps{display:flex;align-items:center;gap:0;width:100%;max-width:250px}
+.steps .st{display:flex;align-items:center;gap:7px;flex:1}
+.steps .bub{width:20px;height:20px;border-radius:999px;display:grid;place-items:center;font-size:10px;
+  font-family:var(--font-mono);border:1px solid var(--hairline);background:var(--canvas-raised);color:var(--ink-muted);flex:none}
+.steps .bub.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.steps .bub.done{background:color-mix(in srgb,var(--acc) 18%,transparent);border-color:rgb(var(--acc-rgb)/.4);color:color-mix(in srgb,var(--acc) 65%,var(--ink))}
+.steps .ln{height:1.5px;flex:1;background:var(--hairline)}
+.steps .ln.done{background:rgb(var(--acc-rgb)/.45)}
+.bar{height:4px;border-radius:999px;background:rgb(255 255 255/.14);overflow:hidden;width:120px}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:999px;transition:width .4s cubic-bezier(.22,1,.36,1)}
+.bar-seg{display:flex;gap:4px;width:130px}
+.bar-seg i{flex:1;height:4px;border-radius:999px;background:rgb(255 255 255/.16)}
+.bar-seg i.on{background:var(--acc);box-shadow:0 0 8px rgb(var(--acc-rgb)/.6)}
+.shim{background:linear-gradient(90deg,rgb(238 241 245/.35) 20%,#fff 50%,rgb(238 241 245/.35) 80%);
+  background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:shimmove 1.8s linear infinite;font-size:12.5px;font-weight:560}
+@keyframes shimmove{to{background-position:-200% 0}}
+.skel{background:linear-gradient(90deg,var(--surface-soft) 25%,#f3f5f9 50%,var(--surface-soft) 75%);
+  background-size:200% 100%;animation:shimmove 1.4s linear infinite;border-radius:5px}
+.orb{width:34px;height:34px;border-radius:999px;background:radial-gradient(circle at 35% 32%,
+  color-mix(in srgb,rgb(var(--acc-rgb)) 90%,#fff),rgb(var(--acc-rgb)) 55%,color-mix(in srgb,rgb(var(--acc-rgb)) 60%,#000) 100%);
+  filter:blur(.2px);animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(.86);opacity:.8}50%{transform:scale(1.08);opacity:1}}
+.orbit{position:relative;width:26px;height:26px}
+.orbit i{position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px;border-radius:999px;background:rgb(var(--acc-rgb));
+  animation:orb 1.1s linear infinite}
+.orbit i:nth-child(2){animation-delay:-.37s;opacity:.6}.orbit i:nth-child(3){animation-delay:-.74s;opacity:.35}
+@keyframes orb{to{transform:rotate(360deg) translateX(10px) rotate(-360deg)}}
+.blob{width:30px;height:30px;background:rgb(var(--acc-rgb));animation:blobm 4s ease-in-out infinite;
+  border-radius:60% 40% 55% 45%/50% 55% 45% 50%}
+@keyframes blobm{0%,100%{border-radius:60% 40% 55% 45%/50% 55% 45% 50%;transform:rotate(0) scale(1)}
+  50%{border-radius:40% 60% 45% 55%/60% 40% 60% 40%;transform:rotate(180deg) scale(1.08)}}
+.eq{display:flex;align-items:flex-end;gap:2px;height:26px}
+.eq i{width:3px;background:rgb(var(--acc-rgb));border-radius:2px;height:4px}
+.eqm{display:flex;align-items:center;gap:2px;height:30px}
+.eqm i{width:3px;background:linear-gradient(180deg,transparent,rgb(var(--acc-rgb)),transparent);border-radius:2px;height:6px}
+.radial{position:relative;width:34px;height:34px}
+.radial i{position:absolute;top:0;left:50%;width:2px;margin-left:-1px;border-radius:2px;background:rgb(var(--acc-rgb));
+  box-shadow:0 0 5px rgb(var(--acc-rgb)/.55);transform-origin:1px 17px;height:5px}
+.siri{width:100%;height:38px;display:block}
+.dotmx{display:grid;grid-template-columns:repeat(9,4px);gap:3px}
+.dotmx i{width:4px;height:4px;border-radius:999px;background:rgb(var(--acc-rgb)/.25)}
+.cap-txt{font-size:12.5px;color:#eef1f5;line-height:1.4}
+.wfade span{display:inline-block;animation:wfade .5s both}
+@keyframes wfade{from{opacity:0;filter:blur(5px);transform:translateY(4px)}to{opacity:1;filter:blur(0);transform:none}}
+.caret{display:inline-block;width:2px;height:1em;background:rgb(var(--acc-rgb));vertical-align:-2px;animation:bl .9s steps(1) infinite}
+@keyframes bl{50%{opacity:0}}
+.kar b{color:rgb(var(--acc-rgb));font-weight:inherit}
+`}));
+
+/* =========================================================================
+   7 — DIALOG / MODAL
+   ========================================================================= */
+SECTIONS.push({
+  id:'dialog', kicker:'the skills modal', title:'Dialogs, sheets & panels',
+  blurb:'One modal exists: Skills. It is a div with a scrim, a click-outside handler and a Done button. No focus trap, no Escape, no scroll lock, no return-focus, no aria-modal. Every one of those is a bug waiting for a keyboard user, and every one is free from a primitive library.',
+  today:{ label:'Kairo today — .s-modal-scrim + .s-modal',
+    html:`<div style="position:relative;width:100%;height:130px"><div class="scrim"><div class="sheet" style="max-width:210px;box-shadow:8px 8px 0 rgb(var(--acc-rgb)/.2)">
+      <div class="sheet-h"><b>Skills</b><button class="b b-ghost" style="padding:4px 10px;font-size:11.5px">Done</button></div>
+      <div class="sheet-b" style="padding:8px 13px"><label class="row" style="gap:8px"><input type="checkbox" checked style="accent-color:var(--acc)"/> Blender</label>
+      <label class="row" style="gap:8px;margin-top:5px"><input type="checkbox" checked style="accent-color:var(--acc)"/> Figma</label></div></div></div></div>`,
+    pain:'<b>Escape does nothing. Tab escapes the modal. The page behind it still scrolls.</b> Also: the offset shadow on a floating overlay reads oddly — offset shadows describe a card resting ON a surface, and this one floats above a scrim.'},
+  options:[
+    {n:'Base UI Dialog', lib:'@base-ui-components/react', tag:'mock', badge:'pick', inst:'npm i @base-ui-components/react',
+     html:`<div style="position:relative;width:100%;height:130px"><div class="scrim"><div class="sheet" style="max-width:212px">
+      <div class="sheet-h"><b>Skills</b><span class="kbd lt">esc</span></div>
+      <div class="sheet-b">Focus is trapped, Escape closes, the body locks, focus returns to the trigger.</div>
+      <div class="sheet-f"><button class="b b-shad-out" style="font-size:12px;padding:6px 12px">Cancel</button><button class="b b-shad" style="font-size:12px;padding:6px 12px">Done</button></div></div></div></div>`,
+     why:'Drop-in replacement for your scrim + div. Keep the exact CSS you have — you are buying behaviour, not looks. About 25 lines deleted from SettingsView.'},
+    {n:'macOS sheet', lib:'native look', tag:'mock', inst:'CSS only',
+     html:`<div style="position:relative;width:100%;height:130px;background:var(--surface-soft);border-radius:8px;overflow:hidden">
+      <div style="position:absolute;inset:0;background:rgb(11 13 18/.12)"></div>
+      <div class="sheet" style="position:absolute;top:0;left:50%;transform:translateX(-50%);max-width:200px;border-radius:0 0 12px 12px;border-top:0">
+      <div class="sheet-h"><b>Skills</b></div><div class="sheet-b">Slides down from the window titlebar, attached — not floating.</div></div></div>`,
+     why:'The native Mac pattern: sheets are attached to their window, not centred in space. Since Settings is a real window, this would read as more native than a centred card.'},
+    {n:'Drawer (Vaul-style)', lib:'vaul / base-ui', tag:'mock', inst:'npm i vaul',
+     html:`<div style="position:relative;width:100%;height:130px;background:var(--surface-soft);border-radius:8px;overflow:hidden">
+      <div class="sheet" style="position:absolute;bottom:0;left:0;right:0;max-width:none;border-radius:12px 12px 0 0;border-bottom:0">
+      <div style="width:32px;height:4px;border-radius:999px;background:var(--hairline);margin:8px auto 0"></div>
+      <div class="sheet-b">Drag-dismissable bottom sheet with momentum.</div></div></div>`,
+     why:'Vaul is now folded into Base UI\'s drawer. Great on touch, unusual on macOS desktop — I would skip it here, but it is the right shape if a companion iPad/iPhone app ever happens.'},
+    {n:'Inline expand (no modal)', lib:'design pattern', tag:'mock', badge:'pick', inst:'—',
+     html:`<div class="col" style="width:100%;max-width:250px">
+      <div class="row" style="justify-content:space-between"><span class="lbl">Skills</span><span class="lbl" style="font-size:11px">6 of 8 · ⌄</span></div>
+      <div class="col" style="gap:6px;padding:9px 11px;border:1px solid var(--hairline);border-radius:8px;background:var(--canvas-soft)">
+      <div class="row" style="justify-content:space-between"><span class="lbl">Blender</span><button class="sw sw-lin" data-toggle data-on="1"><i></i></button></div>
+      <div class="row" style="justify-content:space-between"><span class="lbl">Figma</span><button class="sw sw-lin" data-toggle data-on="1"><i></i></button></div></div></div>`,
+     why:'<b>Question the modal entirely.</b> Skills is a list of on/off switches — that is a disclosure, not a decision requiring a dialog. Expanding in place removes a whole layer of overlay machinery.'},
+    {n:'Side panel', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div style="position:relative;width:100%;height:130px;background:var(--surface-soft);border-radius:8px;overflow:hidden">
+      <div class="sheet" style="position:absolute;top:0;right:0;bottom:0;width:64%;max-width:none;border-radius:0;border-right:0">
+      <div class="sheet-h"><b>Skills</b></div><div class="sheet-b">Content stays visible on the left.</div></div></div>`,
+     why:'If Settings ever gets a sidebar, panels beat modals — you keep context. Overkill for a 460px window today.'},
+    {n:'Popover-anchored', lib:'base-ui Popover / floating-ui', tag:'mock', inst:'npm i @floating-ui/react',
+     html:`<div class="col" style="align-items:center;gap:0"><button class="b b-ghost" style="font-size:12px">Manage ▾</button>
+      <div class="sheet" style="max-width:190px;margin-top:6px"><div class="sheet-b" style="padding:8px 11px">Anchored to the trigger, flips when it would clip the window edge.</div></div></div>`,
+     why:'Right for small lists attached to a row. Floating UI is the collision/flip engine every other library uses underneath — worth knowing it exists standalone.'},
+    {n:'Command palette as modal', lib:'cmdk', tag:'mock', inst:'npm i cmdk',
+     html:`<div style="position:relative;width:100%;height:130px"><div class="scrim"><div class="sheet" style="max-width:216px">
+      <div class="pop-s" style="border-bottom:1px solid var(--hairline)">🔎<input placeholder="Search settings…" /></div>
+      <div class="pop-i">Toggle Blender skill</div><div class="pop-i">Change voice…</div><div class="pop-i">Sign out</div></div></div></div>`,
+     why:'One ⌘K that searches settings, skills, voices and actions. For a keyboard-driven product with a growing settings surface this eventually replaces several screens.'},
+    {n:'Native Tauri window', lib:'@tauri-apps/api/window', tag:'mock', inst:'already installed',
+     html:`<div class="sheet" style="max-width:212px"><div class="sheet-h" style="background:var(--canvas-soft)"><span class="row" style="gap:5px"><i style="width:9px;height:9px;border-radius:999px;background:#ff5f57;display:block"></i><i style="width:9px;height:9px;border-radius:999px;background:#febc2e;display:block"></i><i style="width:9px;height:9px;border-radius:999px;background:#28c840;display:block"></i></span><b style="font-size:12px">Skills</b><span></span></div>
+      <div class="sheet-b">A real second window — real traffic lights, real ⌘W.</div></div>`,
+     why:'You already create NSPanels natively. For anything the user might leave open while working (skills, logs), a real window beats a modal that blocks the settings window.'}
+  ]
+});
+
+/* =========================================================================
+   8 — TOASTS / FEEDBACK
+   ========================================================================= */
+SECTIONS.push({
+  id:'toast', kicker:'the biggest gap', title:'Toasts & feedback',
+  blurb:'There is no notification system. Failures render as inline text: s-action-error in Settings, s-voice-error in the voice picker, an error string in the update row, and a self-dismissing error mode in the notch. Four different mechanisms, none of which can announce anything that happens while the user is looking elsewhere.',
+  today:{ label:'Kairo today — inline strings, four separate mechanisms',
+    html:`<div class="col" style="width:100%;max-width:250px">
+      <div style="padding:9px 11px;border:1px solid color-mix(in srgb,#c83c32 34%,var(--hairline));border-radius:8px;background:color-mix(in srgb,#c83c32 6%,#fff);font-size:12px">
+      <b style="display:block">Checkout didn't complete</b><span style="color:var(--ink-muted)">You can try again — you were not charged.</span></div>
+      <span style="font-size:12px;color:#9f2d24">Could not load voices. Check your connection.</span></div>`,
+    pain:'The billing notice is actually well-designed — keep it. The problem is everything else: <b>a voice save that fails while the modal is closed is silent</b>, an update failure only shows if you look at that row, and nothing at all reports success.'},
+  options:[
+    {n:'Sonner', lib:'sonner · MIT', tag:'mock', badge:'pick', inst:'npm i sonner',
+     html:`<div class="toast-stack"><div class="toast toast-sonner"><span class="ok">✓</span><span>Voice saved · Anushka</span></div>
+      <div class="toast toast-sonner"><span>⟳</span><span>Checking for updates…</span></div>
+      <div class="toast toast-sonner"><span class="bad">✕</span><span>Could not reach the server</span></div></div>`,
+     why:'<b>Install this today.</b> The de-facto standard: stacked, swipe-dismiss, promise-aware (<code>toast.promise(save())</code> handles loading→success→error in one call). ~4kb, headless enough to restyle to your hairline + offset language.'},
+    {n:'Sonner, dark (notch-matched)', lib:'sonner', tag:'mock', inst:'npm i sonner',
+     html:`<div class="toast-stack"><div class="toast toast-dark"><span class="ok">✓</span><span>Pro unlocked — unlimited turns</span></div>
+      <div class="toast toast-dark"><span>🎙</span><span>Microphone granted</span></div></div>`,
+     why:'Same library, restyled to the capsule\'s palette so toasts read as coming from Kairo rather than from a web page. This is the version I would ship.'},
+    {n:'The notch IS the toast', lib:'your own capsule', tag:'mock', badge:'pick', inst:'—',
+     demoClass:'desk',
+     html:`<div class="col" style="align-items:center;gap:10px"><div class="cap cap-pill"><span class="ok">✓</span><span class="cap-lbl">Voice saved · Anushka</span></div>
+      <span class="lbl" style="font-size:11px;color:rgb(238 241 245/.5)">same pill, same place, every time</span></div>`,
+     why:'<b>The Kairo-native answer.</b> You already have a persistent, mode-morphing status surface at the top of the screen. Routing app-wide notices through it means one status location in the entire product instead of five. Settings toasts appear where the user already looks for Kairo.'},
+    {n:'react-hot-toast', lib:'react-hot-toast · MIT', tag:'mock', inst:'npm i react-hot-toast',
+     html:`<div class="toast toast-sonner"><span class="ok">✓</span><span>Saved</span></div>`,
+     why:'The older standard: smaller, simpler, fewer features (no stacking physics, no swipe). Fine, but Sonner is better and the same size class.'},
+    {n:'Base UI Toast', lib:'@base-ui-components/react', tag:'mock', inst:'npm i @base-ui-components/react',
+     html:`<div class="toast toast-sonner" style="border-radius:var(--radius-inset)"><span>ℹ</span><span>Update ready — restart to install</span>
+      <button class="b b-ghost" style="margin-left:auto;padding:3px 8px;font-size:11px">Restart</button></div>`,
+     why:'If you adopt Base UI for dialogs anyway, its toast keeps you on one overlay/portal system. Action buttons inside toasts matter here — "Update ready → Restart" is exactly your use case.'},
+    {n:'macOS notification (Tauri)', lib:'@tauri-apps/plugin-notification', tag:'mock', inst:'npm i @tauri-apps/plugin-notification',
+     html:`<div class="sheet" style="max-width:245px;border-radius:14px"><div class="row" style="padding:11px 13px;gap:10px">
+      <div style="width:30px;height:30px;border-radius:7px;background:var(--acc);flex:none"></div>
+      <div><b style="font-size:12.5px;font-family:var(--font-display)">Kairo</b><div style="font-size:11.5px;color:var(--ink-muted)">Your Pro subscription is active.</div></div></div></div>`,
+     why:'For things that matter when the app is not focused: subscription state, update installed, invite approved. Native notifications survive app-switching; in-app toasts do not.'},
+    {n:'Inline alert (keep for billing)', lib:'your own CSS', tag:'mock', badge:'pick', inst:'—',
+     html:`<div style="padding:9px 11px;border:1px solid rgb(var(--acc-rgb)/.32);border-radius:8px;background:rgb(var(--acc-rgb)/.07);font-size:12px;max-width:250px">
+      <b style="display:block">Finishing your upgrade…</b><span style="color:var(--ink-muted)">This can take a few seconds.</span></div>`,
+     why:'Not everything should be a toast. State that persists (pending payment, on-hold subscription) belongs inline and permanent. Your billingNotice() already gets this right — the rule is: <b>transient events toast, persistent states stay inline.</b>'},
+    {n:'Undo pattern', lib:'sonner action', tag:'mock', inst:'npm i sonner',
+     html:`<div class="toast toast-dark"><span>Skill disabled · Blender</span><button class="b" style="margin-left:auto;background:transparent;color:rgb(var(--acc-rgb));border:0;padding:2px 6px;font-size:12px">Undo</button></div>`,
+     why:'Every destructive settings action (disable a skill, sign out, cancel subscription) should offer undo rather than a confirm dialog. Fewer interruptions, same safety.'}
+  ]
+});
+
+/* =========================================================================
+   9 — SETTINGS SHELL
+   ========================================================================= */
+SECTIONS.push({
+  id:'settings', kicker:'structure', title:'The settings shell',
+  blurb:'Nine sections in one 404px-wide scrolling column: account, plan, name, voice, accent, skills, permissions, updates, launch-at-login, footer. It is clean today and will not be at fifteen. This is a structure problem, not a styling problem.',
+  today:{ label:'Kairo today — one column, hairline dividers',
+    html:`<div class="col" style="width:100%;max-width:250px;font-size:12.5px">
+      <div class="row" style="justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--hairline)"><b class="mono" style="font-size:10px;letter-spacing:.12em;color:var(--ink-muted)">PLAN</b></div>
+      <div class="row" style="justify-content:space-between"><span>Free · 3 of 10 used</span><button class="b b-ghost" style="padding:4px 10px;font-size:11.5px">Upgrade</button></div>
+      <div class="row" style="justify-content:space-between;padding-top:8px;border-top:1px solid var(--hairline)"><span>Launch at login</span><button class="sw sw-kairo" data-toggle data-on="1" style="transform:scale(.85)"><i></i></button></div></div>`,
+    pain:'The mono uppercase labels are good — they tie to the landing page. What is missing: no icons to scan by, no grouping into "Account / Voice / System", no search, and the visual weight of every section is identical, so nothing guides the eye.'},
+  options:[
+    {n:'macOS grouped inset list', lib:'native look', tag:'mock', badge:'pick', inst:'CSS only',
+     html:`<div class="mac-list"><div class="r"><span class="ico" style="background:#0a72f5">👤</span><span>Account</span><span class="lbl" style="margin-left:auto;font-size:11px">prasad@…</span></div>
+      <div class="r"><span class="ico" style="background:var(--acc)">🎙</span><span>Voice</span><span class="lbl" style="margin-left:auto;font-size:11px">Anushka ›</span></div>
+      <div class="r"><span class="ico" style="background:#34c759">🔒</span><span>Permissions</span><span class="lbl" style="margin-left:auto;font-size:11px">All granted</span></div></div>`,
+     why:'The pattern every Mac user already knows: coloured icon tiles, right-aligned current value, chevron into detail. Scannable at a glance and it scales to 30 rows without redesign.'},
+    {n:'Sidebar (Linear / Raycast)', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="side"><nav><b class="on">General</b><b>Voice</b><b>Skills</b><b>Account</b><b>About</b></nav>
+      <div class="body"><b style="font-family:var(--font-display);color:var(--ink);font-size:13px">General</b><div style="margin-top:6px">Launch at login, accent, updates.</div></div></div>`,
+     why:'The right answer past ~12 settings. Needs the window to widen to ~700px, which is a real change — but Settings is a normal window, so nothing structural blocks it.'},
+    {n:'Search-first settings', lib:'cmdk + your rows', tag:'mock', inst:'npm i cmdk',
+     html:`<div class="col" style="width:100%;max-width:250px"><div class="pop" style="max-width:none"><div class="pop-s">🔎<input placeholder="Search settings…" value="voi" /></div>
+      <div class="pop-i">Voice · engine</div><div class="pop-i">Voice · speaker</div><div class="pop-i">Voice · preview</div></div></div>`,
+     why:'macOS Settings, VS Code and Slack all do this because deep settings trees are unnavigable. Cheap to add on top of any layout — index the labels you already render.'},
+    {n:'Accordion sections', lib:'base-ui Accordion', tag:'mock', inst:'npm i @base-ui-components/react',
+     html:`<div class="col" style="width:100%;max-width:250px;font-size:12.5px">
+      <div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--hairline)"><b>Voice</b><span>⌄</span></div>
+      <div class="row" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--hairline)"><b>Skills</b><span>›</span></div>
+      <div class="row" style="justify-content:space-between;padding:8px 0"><b>Permissions</b><span>›</span></div></div>`,
+     why:'Keeps the narrow window and hides everything not in use. Costs a click per section — annoying for settings people change often (accent, voice), fine for the rest.'},
+    {n:'Status-first header', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="card-mini"><div class="row"><div class="orb" style="width:26px;height:26px"></div>
+      <div><h5>Kairo is ready</h5><p>All permissions granted · Pro</p></div></div>
+      <div class="row" style="margin-top:9px;gap:6px"><span class="chip" style="font-size:10.5px">Voice: Anushka</span><span class="chip" style="font-size:10.5px">⌥⌃ to talk</span></div></div>`,
+     why:'Settings opens from the tray, so the first question is usually "is it working?" not "what can I change?". A health header answers that before the list starts.'},
+    {n:'Icons per row', lib:'lucide-react', tag:'mock', inst:'npm i lucide-react',
+     html:`<div class="col" style="width:100%;max-width:250px;font-size:12.5px">
+      <div class="row" style="gap:9px"><span style="opacity:.5">👤</span><span>Account</span></div>
+      <div class="row" style="gap:9px"><span style="opacity:.5">🎙</span><span>Voice</span></div>
+      <div class="row" style="gap:9px"><span style="opacity:.5">🎨</span><span>Accent</span></div>
+      <div class="row" style="gap:9px"><span style="opacity:.5">⚡</span><span>Skills</span></div></div>`,
+     why:'Lowest-effort scannability win. 1.5kb/icon, stroke width tunable to sit with Geist. (These are emoji placeholders — real lucide icons are line art and would look far more considered.)'},
+    {n:'Keyboard-shortcut legend', lib:'design pattern', tag:'mock', badge:'pick', inst:'—',
+     html:`<div class="col" style="width:100%;max-width:250px;font-size:12px;gap:6px">
+      <div class="row" style="justify-content:space-between"><span>Talk to Kairo</span><span class="kbd lt">hold ⌥⌃</span></div>
+      <div class="row" style="justify-content:space-between"><span>Type instead</span><span class="kbd lt">tap ⌥⌃</span></div>
+      <div class="row" style="justify-content:space-between"><span>Draw on screen</span><span class="kbd lt">⌥⇧P</span></div></div>`,
+     why:'<b>Missing entirely today.</b> The whole product is two shortcuts and neither is written down anywhere after onboarding. A user who forgets ⌥⌃ has no path back to it.'}
+  ]
+});
+
+/* =========================================================================
+   10 — PROGRESS / STEPPER
+   ========================================================================= */
+SECTIONS.push({
+  id:'progress', kicker:'onboarding', title:'Progress & steppers',
+  blurb:'Four segmented pills live inside the notch, one per onboarding chapter — current is wider with an accent glow. It is genuinely nice. The gap is everywhere else: the update download has no progress bar, the permission walk has no checklist, and billing reconciliation polls six times with no indication.',
+  today:{ label:'Kairo today — .kairo-notch-progress', dark:true,
+    html:`<div class="col" style="align-items:center;gap:9px"><div class="dots"><i data-s="past"></i><i data-s="cur"></i><i data-s="fut"></i><i data-s="fut"></i></div>
+      <span class="cap-lbl" style="opacity:.7;font-size:11.5px">chapter 2 of 4</span></div>`,
+    pain:'Good shape, but it lives only inside the notch pill and only during onboarding. Nothing else in the product shows progress — including the update download, which reports a percentage in text.'},
+  options:[
+    {n:'Determinate bar', lib:'base-ui Progress', tag:'live', inst:'npm i @base-ui-components/react',
+     html:`<div class="col" style="align-items:center;gap:8px"><div class="bar" data-bar><i style="width:20%"></i></div>
+      <span class="lbl" style="font-size:11.5px">Downloading update · <span data-pct>20</span>%</span></div>`,
+     init:(el)=>{ const f=el.querySelector('.bar i'), p=el.querySelector('[data-pct]'); let v=20;
+       setInterval(()=>{ v=(v+7)%100; f.style.width=v+'%'; p.textContent=v; },700); },
+     why:'UpdateSettings already receives {downloaded,total} from the updater:progress event and renders it as text. This is a 10-line change to a real bar with the correct aria role.'},
+    {n:'Segment bar', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="bar-seg"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>`,
+     why:'Discrete steps read better than a smooth bar when the count is small and known — e.g. the free-tier quota (3 of 10 turns used), which is currently just text.'},
+    {n:'Quota ring', lib:'svg + your accent', tag:'mock', badge:'pick', inst:'—',
+     html:`<div class="row" style="gap:11px"><svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" stroke="rgb(11 13 18/.1)"/>
+      <circle cx="22" cy="22" r="18" stroke="var(--acc)" stroke-linecap="round" stroke-dasharray="113" stroke-dashoffset="79"/></svg>
+      <div><b style="font-size:13px">3 of 10</b><div class="lbl" style="font-size:11.5px">free turns used</div></div></div>`,
+     why:'The free-quota counter is the most commercially important number in the app and it currently renders as a grey pill of text. A ring makes "running out" visible before it happens.'},
+    {n:'Numbered stepper', lib:'mantine Stepper', tag:'mock', inst:'npm i @mantine/core',
+     html:`<div class="steps"><span class="st"><span class="bub done">✓</span><span class="ln done"></span></span>
+      <span class="st"><span class="bub on">2</span><span class="ln"></span></span><span class="st"><span class="bub">3</span></span></div>`,
+     why:'For the permission recovery screen, where the user must complete an ordered sequence with a relaunch in the middle. Dots do not communicate "and then restart".'},
+    {n:'Checklist', lib:'design pattern', tag:'mock', badge:'pick', inst:'—',
+     html:`<div class="col" style="font-size:12.5px;gap:6px">
+      <div class="row" style="gap:8px"><span class="ok">✓</span><span>Microphone</span></div>
+      <div class="row" style="gap:8px"><span class="ok">✓</span><span>Screen Recording</span></div>
+      <div class="row" style="gap:8px"><span style="color:var(--acc)">◉</span><span>Accessibility <span class="lbl" style="font-size:11px">— waiting for the toggle</span></span></div></div>`,
+     why:'Better than App.tsx\'s current three status pills, because it shows sequence and what is happening right now. Permissions are the highest-drop-off moment in the whole funnel.'},
+    {n:'Animated count', lib:'@number-flow/react', tag:'live', inst:'npm i @number-flow/react',
+     html:`<div class="row" style="gap:8px;font-family:var(--font-display);font-size:22px;font-weight:670"><span data-count>3</span>
+      <span class="lbl" style="font-size:12px;align-self:flex-end;margin-bottom:4px">of 10 turns</span></div>`,
+     init:(el)=>{ const n=el.querySelector('[data-count]'); let v=3;
+       setInterval(()=>{ v=v%10+1; n.style.transform='translateY(-6px)'; n.style.opacity='0';
+         setTimeout(()=>{ n.textContent=v; n.style.transition='transform .3s,opacity .3s'; n.style.transform='translateY(0)'; n.style.opacity='1'; },160); },1800); },
+     why:'Digit-rolling counter. Small delight, and it makes the quota decrement legible the moment it happens rather than on next open.'},
+    {n:'Progress inside the pill', lib:'your capsule', tag:'mock', inst:'—',
+     demoClass:'desk',
+     html:`<div class="cap cap-pill" style="gap:9px"><span class="cube-stage"><span class="cube"><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
+      <span class="cap-lbl">Installing update</span><span class="bar" style="width:60px"><i style="width:62%"></i></span></div>`,
+     why:'Consistent with the "notch is the status surface" idea — long-running work reports where the user already looks, instead of only inside a settings window they probably closed.'}
+  ]
+});
+
+/* =========================================================================
+   11 — THE CAPSULE MORPH
+   ========================================================================= */
+SECTIONS.push({
+  id:'capsule', kicker:'the crown jewel', title:'The notch capsule & its morph',
+  blurb:'One persistent pill that springs between sizes while content cross-fades: useCapsuleMorph measures an inner max-content box and writes --capsule-w/--capsule-h; useModePresence keeps the leaving layer absolutely positioned so it does not stretch the measurement. This is the most sophisticated thing in the codebase and it is hand-written. The question is not whether to replace it — it is whether a library would make it shorter and less fragile.',
+  today:{ label:'Kairo today — measure + CSS custom props + cross-fade layers', dark:true,
+    html:`<div class="col" style="align-items:center;gap:10px"><div class="cap cap-pill" data-morph><span class="cap-viz"><i></i><i></i><i></i><i></i><i></i></span><span class="cap-lbl" data-mlbl>Listening…</span></div>
+      <span class="lbl" style="font-size:11px;color:rgb(238 241 245/.5)">watch it morph between modes</span></div>`,
+    pain:'Works, but: the measurement runs on every mode change, blur+opacity cross-fade costs a filter repaint on every transition, and the comment in NotchCapsule warns that framer-motion and the CSS keyframes must not fight. Two animation systems own one element.',
+     init:(el)=>{ const lbl=el.querySelector('[data-mlbl]'); const modes=['Listening…','Thinking…','Speaking…','Ready'];
+       let i=0; setInterval(()=>{ lbl.textContent=modes[i++%modes.length]; },1800); } },
+  options:[
+    {n:'Motion layout animation', lib:'motion', tag:'mock', badge:'pick', inst:'npm i motion',
+     demoClass:'desk',
+     html:`<div class="col" style="align-items:center;gap:9px">
+      <div class="cap cap-pill" data-auto><span class="cap-lbl">Thinking…</span></div>
+      <button class="b b-ghost" style="font-size:11.5px;color:#cfd4de;border-color:rgb(255 255 255/.16)" data-swap>swap mode</button></div>`,
+     init:(el)=>{ const c=el.querySelector('[data-auto]'), b=el.querySelector('[data-swap]');
+       const modes=[ '<span class="cap-lbl">Thinking…</span>',
+         '<span class="cap-viz"><i></i><i></i><i></i><i></i><i></i></span><span class="cap-lbl">Listening…</span>',
+         '<span class="cap-lbl">Ask about this screen — hold ⌥⌃</span>'];
+       let i=0; c.style.transition='width .42s cubic-bezier(.34,1.28,.5,1)';
+       b.addEventListener('click',()=>{ const w0=c.offsetWidth; c.innerHTML=modes[++i%modes.length];
+         c.style.width='auto'; const w1=c.offsetWidth; c.style.width=w0+'px';
+         requestAnimationFrame(()=>{ c.style.width=w1+'px'; }); }); },
+     why:'<code>&lt;motion.div layout&gt;</code> does the measure-and-tween for you via FLIP, including children. You would delete useCapsuleMorph entirely (~60 lines) and get interruption-safe transitions — today an interrupted morph snaps.'},
+    {n:'View Transitions API', lib:'native browser', tag:'mock', inst:'no dependency',
+     demoClass:'desk',
+     html:`<div class="cap cap-pill"><span class="cap-lbl">document.startViewTransition()</span></div>`,
+     why:'WKWebView supports it. Zero bytes, browser-native crossfade + morph of any DOM change. The catch: less control over the curve, and it serialises with the compositor — for a 420ms spring you probably still want Motion. Worth a spike though.'},
+    {n:'GSAP Flip', lib:'gsap/Flip', tag:'mock', inst:'npm i gsap',
+     demoClass:'desk',
+     html:`<div class="cap cap-pill"><span class="cap-lbl">Flip.from(state)</span></div>`,
+     why:'The most powerful FLIP implementation, and GSAP + all plugins went fully free in 2025. Overkill unless you also want it for the overlay drawing; two animation engines is one too many.'},
+    {n:'auto-animate', lib:'@formkit/auto-animate', tag:'live', inst:'npm i @formkit/auto-animate',
+     html:`<div class="col" style="gap:7px;width:100%;max-width:230px" data-aa>
+      <div class="row" style="justify-content:space-between;font-size:12.5px"><span>Blender</span><span class="lbl">on</span></div>
+      <div class="row" style="justify-content:space-between;font-size:12.5px"><span>Figma</span><span class="lbl">on</span></div>
+      <button class="b b-ghost" style="font-size:11.5px" data-add>add a row</button></div>`,
+     init:async(el)=>{ const m=await tryImport('https://esm.sh/@formkit/auto-animate@0.8');
+       const p=el.querySelector('[data-aa]'); if(m) m.default(p);
+       let n=0; el.querySelector('[data-add]').addEventListener('click',()=>{
+         p.insertBefore(h('<div class="row" style="justify-content:space-between;font-size:12.5px"><span>Skill '+(++n)+'</span><span class="lbl">on</span></div>'), el.querySelector('[data-add]')); }); },
+     why:'One line (<code>autoAnimate(ref)</code>) and every list add/remove/reorder animates. Not for the capsule — for the Skills list, the voice list, the permission list. Click "add a row" here; that is the whole API.'},
+    {n:'Glass capsule', lib:'CSS backdrop-filter', tag:'mock', inst:'CSS only',
+     demoClass:'desk',
+     html:`<div class="cap cap-glass cap-pill"><span class="cap-viz"><i></i><i></i><i></i><i></i><i></i></span><span class="cap-lbl">Listening…</span></div>`,
+     why:'Your spec explicitly rejected liquid glass, and that was the right call for legibility over arbitrary desktops. Included so you can see the rejected option next to the shipped one — the solid pill wins on any busy background.'},
+    {n:'Dynamic Island physics', lib:'motion spring params', tag:'mock', inst:'npm i motion',
+     demoClass:'desk',
+     html:`<div class="cap" data-di style="border-radius:22px"><span class="cap-lbl">tap to expand</span></div>`,
+     init:(el)=>{ const c=el.querySelector('[data-di]'); let big=false;
+       c.style.transition='all .5s cubic-bezier(.32,1.6,.5,1)';
+       c.addEventListener('click',()=>{ big=!big;
+         c.innerHTML = big ? '<span class="cap-viz"><i></i><i></i><i></i><i></i><i></i></span><span class="cap-lbl">Listening — say what you need</span>'
+                           : '<span class="cap-lbl">tap to expand</span>';
+         c.style.borderRadius = big ? '18px' : '22px'; }); },
+     why:'Apple\'s island uses a much bouncier curve than your 0.34/1.28 spring, with the radius shrinking as it widens. Click it — the extra overshoot reads as "alive". Worth trying stiffness 320 / damping 24.'},
+    {n:'No pill (floating text)', lib:'design pattern', tag:'mock',
+     demoClass:'desk',
+     html:`<div class="col" style="align-items:center;gap:6px"><span class="eyes"><i></i><i></i></span>
+      <span class="cap-txt" style="text-shadow:0 1px 8px rgb(0 0 0/.6)">Click the Object menu, top-left.</span></div>`,
+     why:'The most invisible option: no container at all, just the eyes and the caption floating over the desktop. Maximum "quiet until needed" — but it fails on light backgrounds without a scrim, which is exactly why you built the pill.'},
+    {n:'Left-anchored compact', lib:'design pattern', tag:'mock',
+     demoClass:'desk',
+     html:`<div style="width:100%;display:flex;justify-content:flex-start;padding-left:6px"><div class="cap cap-pill" style="padding:6px 11px"><span class="orb" style="width:14px;height:14px"></span><span class="cap-lbl" style="font-size:11.5px">Kairo</span></div></div>`,
+     why:'Idle-state idea: instead of unmounting completely, shrink to a tiny left-anchored dot so users can always see Kairo is alive and click it. Currently idle = gone, and new users lose track of whether it is running.'}
+  ]
+});
+
+/* =========================================================================
+   12 — VOICE VISUALISATION
+   ========================================================================= */
+SECTIONS.push({
+  id:'voice', kicker:'the signature', title:'Voice & mic visualisation',
+  blurb:'Three visualisers exist today: five bars in the capsule (height driven by --mic-level), an eight-bar radial meter in MicMeter.tsx, and a halo around the pet. All are fed by the native cursor:level stream, which is the right architecture — no second getUserMedia. The question is purely what shape best represents "I am hearing you".',
+  today:{ label:'Kairo today — 5 bars + 8-bar radial', dark:true,
+    html:`<div class="row" style="gap:22px"><span class="cap-viz" data-bars><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="radial" data-radial>${Array.from({length:8},(_,i)=>'<i style="transform:rotate('+(i*45)+'deg)"></i>').join('')}</span></div>`,
+    pain:'Both are good. The weakness is that they look like every other voice UI — bars are the default. For a product whose whole identity is a companion that watches with you, the visualiser is a branding opportunity being spent on a generic equaliser.',
+    init:(el)=>{ const bars=[...el.querySelectorAll('[data-bars] i')], rad=[...el.querySelectorAll('[data-radial] i')];
+      onMic(l=>{ bars.forEach((b,i)=>b.style.height=(4+l*16*(0.55+((i%3)*0.26)))+'px');
+        rad.forEach((r,i)=>r.style.height=(3+l*11*(0.6+((i%4)*0.2)))+'px'); }); } },
+  options:[
+    {n:'Mirrored waveform', lib:'canvas / CSS', tag:'live', inst:'CSS only', demoClass:'dark',
+     html:`<span class="eqm" data-eqm>${Array.from({length:22},()=>'<i></i>').join('')}</span>`,
+     init:(el)=>{ const bars=[...el.querySelectorAll('[data-eqm] i')];
+       onMic(l=>bars.forEach((b,i)=>{ const w=Math.sin(i*0.6+micT*2)*0.5+0.5;
+         b.style.height=(4+l*26*w)+'px'; })); },
+     why:'Symmetric around the centre line — reads as a waveform rather than a level meter, which is subtly more "your voice" and less "audio input device". Same data source, ~15 lines.'},
+    {n:'Breathing orb', lib:'CSS gradient', tag:'live', inst:'CSS only', demoClass:'dark', badge:'pick',
+     html:`<div class="orb" data-orb></div>`,
+     init:(el)=>{ const o=el.querySelector('[data-orb]');
+       onMic(l=>{ o.style.transform='scale('+(0.85+l*0.4).toFixed(3)+')'; o.style.filter='blur('+(0.2+l*1.2).toFixed(2)+'px)'; }); },
+     why:'<b>Most on-brand option.</b> An orb that breathes with your voice reads as a presence, not an instrument — which is exactly the "companion, not tool" positioning. Also the cheapest thing on this page to render.'},
+    {n:'Siri-style ribbon', lib:'canvas', tag:'live', inst:'~40 lines of canvas', demoClass:'dark',
+     html:`<canvas class="siri" data-siri width="480" height="76"></canvas>`,
+     init:(el)=>{ const c=el.querySelector('[data-siri]'), x=c.getContext('2d'); let lvl=0;
+       onMic(l=>lvl=l);
+       (function draw(){ x.clearRect(0,0,c.width,c.height);
+         const acc=getComputedStyle(document.documentElement).getPropertyValue('--acc').trim();
+         for(let k=0;k<3;k++){ x.beginPath();
+           for(let i=0;i<=c.width;i+=6){ const t=i/c.width;
+             const env=Math.sin(t*Math.PI);
+             const y=38+Math.sin(t*7+micT*2.2+k*1.7)*env*lvl*30*(1-k*0.22);
+             i?x.lineTo(i,y):x.moveTo(i,y); }
+           x.strokeStyle=acc; x.globalAlpha=0.75-k*0.22; x.lineWidth=2.4-k*0.5; x.stroke(); }
+         x.globalAlpha=1; requestAnimationFrame(draw); })(); },
+     why:'Three phase-shifted sine ribbons enveloped by amplitude. The most "assistant" visual language there is — and unlike bars it survives being stretched to any width, which matters in a morphing pill.'},
+    {n:'Ring meter', lib:'CSS conic', tag:'live', inst:'CSS only', demoClass:'dark',
+     html:`<div style="position:relative;width:40px;height:40px" data-ring><div style="position:absolute;inset:0;border-radius:999px;border:2px solid rgb(var(--acc-rgb)/.25)"></div>
+      <div data-fill style="position:absolute;inset:0;border-radius:999px;border:2px solid rgb(var(--acc-rgb));clip-path:inset(50% 0 0 0)"></div>
+      <div style="position:absolute;inset:9px;border-radius:999px;background:rgb(var(--acc-rgb)/.18)"></div></div>`,
+     init:(el)=>{ const f=el.querySelector('[data-fill]');
+       onMic(l=>{ f.style.clipPath='inset('+((1-l)*100).toFixed(0)+'% 0 0 0)'; }); },
+     why:'Fills like a battery. Clearer as a *feedback* mechanism ("am I loud enough?") than bars are — useful in Act 2 where a quiet user gets an empty transcript and no idea why.'},
+    {n:'Dot matrix', lib:'CSS grid', tag:'live', inst:'CSS only', demoClass:'dark',
+     html:`<div class="dotmx" data-mx>${Array.from({length:27},()=>'<i></i>').join('')}</div>`,
+     init:(el)=>{ const d=[...el.querySelectorAll('[data-mx] i')];
+       onMic(l=>{ d.forEach((n,i)=>{ const col=i%9, need=Math.abs(col-4)/4;
+         const on = l > need*0.9; n.style.background = on ? 'rgb(var(--acc-rgb))' : 'rgb(var(--acc-rgb)/.2)';
+         n.style.boxShadow = on ? '0 0 6px rgb(var(--acc-rgb)/.7)' : 'none'; }); }); },
+     why:'Retro-terminal flavour that would pair with the Geist Mono kickers. Distinctive, cheap, and legible at 3px. A left-field option worth seeing.'},
+    {n:'Particle burst', lib:'canvas-confetti / custom', tag:'live', inst:'npm i canvas-confetti', demoClass:'dark',
+     html:`<div class="col" style="align-items:center;gap:8px"><div class="orb" style="width:26px;height:26px"></div>
+       <button class="b b-ghost" style="font-size:11.5px;color:#cfd4de;border-color:rgb(255 255 255/.16)" data-burst>trigger celebrate</button></div>`,
+     init:async(el)=>{ const m=await tryImport('https://esm.sh/canvas-confetti@1');
+       const b=el.querySelector('[data-burst]'); if(!m){ b.textContent='confetti offline'; return; }
+       b.addEventListener('click',()=>{ const r=el.getBoundingClientRect();
+         m.default({particleCount:34,spread:52,startVelocity:22,scalar:.65,ticks:70,
+           colors:[getComputedStyle(document.documentElement).getPropertyValue('--acc').trim(),'#ffffff'],
+           origin:{x:(r.left+r.width/2)/window.innerWidth,y:(r.top+r.height/2)/window.innerHeight}}); }); },
+     why:'You already have a "celebrate" beat on the pet (first successful point). A restrained accent-coloured burst is the peak-end moment the onboarding spec is chasing. Keep it to ~30 particles — this is a tutor, not a game.'},
+    {n:'Rive reactive character', lib:'@rive-app/canvas', tag:'mock', inst:'npm i @rive-app/canvas', badge:'pick',
+     demoClass:'dark',
+     html:`<div class="col" style="align-items:center;gap:7px"><span class="eyes" style="transform:scale(1.7)"><i></i><i></i></span>
+       <span class="lbl" style="font-size:11px;color:rgb(238 241 245/.55)">state machine: idle → listening → thinking</span></div>`,
+     why:'<b>The strategic option.</b> Rive state machines take live inputs (a 0–1 mic level, a boolean "thinking") and blend between states in the runtime — exactly your data. A designer authors the pet once and every expression, blink and reaction comes from the file instead of from CSS keyframes. This is how you get a genuinely characterful mascot without writing more animation code.'},
+    {n:'Lottie loop', lib:'lottie-web / dotlottie', tag:'mock', inst:'npm i @lottiefiles/dotlottie-web',
+     demoClass:'dark',
+     html:`<div class="col" style="align-items:center;gap:7px"><div class="blob"></div>
+       <span class="lbl" style="font-size:11px;color:rgb(238 241 245/.55)">designer-authored, but not interactive</span></div>`,
+     why:'Easier to source than Rive (huge free library) but it only plays timelines — it cannot blend on a live mic value. Fine for a fixed thinking loop, wrong for anything reactive.'},
+    {n:'audiomotion-analyzer', lib:'audiomotion-analyzer', tag:'mock', inst:'npm i audiomotion-analyzer',
+     demoClass:'dark',
+     html:`<span class="eq" data-fft>${Array.from({length:16},()=>'<i></i>').join('')}</span>`,
+     init:(el)=>{ const b=[...el.querySelectorAll('[data-fft] i')];
+       onMic(l=>b.forEach((n,i)=>n.style.height=(3+l*24*Math.abs(Math.sin(i*0.9+micT*1.4)))+'px')); },
+     why:'A real FFT spectrum, not an amplitude fake. Needs an AudioContext on the *renderer* side though — and your architecture deliberately keeps capture native (cpal) so a second mic tap is not possible. Only viable if you stream spectrum data from Rust.'}
+  ]
+});
+
+/* =========================================================================
+   13 — THINKING / LOADING
+   ========================================================================= */
+SECTIONS.push({
+  id:'thinking', kicker:'latency', title:'Thinking & loading states',
+  blurb:'A rotating 3D CSS cube plus a random verb from thinkingVerbs.ts covers the notch. Everywhere else, loading is the literal string "Loading…". For a product where a vision round-trip can take several seconds, the waiting state is a first-class screen, not an afterthought.',
+  today:{ label:'Kairo today — accent cube + a rotating verb', dark:true,
+    html:`<div class="cap cap-pill"><span class="cube-stage"><span class="cube"><i></i><i></i><i></i><i></i><i></i><i></i></span></span><span class="cap-lbl">Looking…</span></div>`,
+    pain:'The cube is charming and distinctly yours. Two issues: it spins at a constant rate regardless of how long the wait actually is, so a 6-second turn feels identical to a 1-second one; and Settings/voices/billing have no equivalent — they show bare text.'},
+  options:[
+    {n:'Shimmer text', lib:'CSS background-clip', tag:'live', inst:'CSS only', demoClass:'dark',
+     html:`<span class="shim">Reading your screen…</span>`,
+     why:'The Vercel/ChatGPT pattern. A gradient sweeps through the text itself — no separate spinner needed and it scales to any label. Ideal for the notch when the label is already the message.'},
+    {n:'Orbiting dots', lib:'CSS', tag:'live', inst:'CSS only', demoClass:'dark',
+     html:`<div class="row" style="gap:10px"><span class="orbit"><i></i><i></i><i></i></span><span class="cap-lbl">Thinking…</span></div>`,
+     why:'Matches the pet\'s existing thinking swirl (three dots orbiting the cursor tip) — using the same motif in both places would make the two surfaces feel like one system. Right now the pet swirls and the notch cubes.'},
+    {n:'Morphing blob', lib:'CSS border-radius', tag:'live', inst:'CSS only', demoClass:'dark',
+     html:`<div class="row" style="gap:11px"><span class="blob"></span><span class="cap-lbl">Working on it…</span></div>`,
+     why:'Organic, never repeats visibly, and it reads as "alive" rather than "processing". Pairs with the breathing-orb voice visual for one coherent character.'},
+    {n:'Elapsed-aware copy', lib:'design pattern', tag:'live', inst:'—', demoClass:'dark', badge:'pick',
+     html:`<div class="cap cap-pill"><span class="cube-stage"><span class="cube"><i></i><i></i><i></i><i></i><i></i><i></i></span></span><span class="cap-lbl" data-elapsed>Looking…</span></div>`,
+     init:(el)=>{ const l=el.querySelector('[data-elapsed]');
+       const steps=['Looking…','Reading the screen…','Still going — this one is dense…','Almost there…'];
+       let i=0; setInterval(()=>{ l.textContent=steps[Math.min(i++,steps.length-1)]; if(i>steps.length)i=0; },1600); },
+     why:'<b>The highest-impact change in this section.</b> The same spinner for 8 seconds reads as "hung". Copy that acknowledges the wait ("still going — this one is dense") converts frustration into patience. You already have thinkingVerbs.ts; make it time-aware.'},
+    {n:'Skeletons', lib:'react-loading-skeleton or CSS', tag:'live', inst:'npm i react-loading-skeleton',
+     html:`<div class="col" style="width:100%;max-width:230px;gap:7px">
+       <div class="skel" style="height:12px;width:52%"></div><div class="skel" style="height:12px;width:82%"></div>
+       <div class="skel" style="height:30px;width:100%;border-radius:8px"></div></div>`,
+     why:'Settings currently flashes "Loading…" then pops in nine sections at once. Skeletons of the actual rows would remove the layout jump and make the open feel instant.'},
+    {n:'Optimistic + revalidate', lib:'design pattern', tag:'mock', inst:'—', badge:'pick',
+     html:`<div class="row" style="justify-content:space-between;width:100%;max-width:230px;font-size:12.5px">
+       <span>Voice · Anushka</span><span class="lbl" style="font-size:11px">saving…</span></div>`,
+     why:'The voice picker disables the whole control while saving. Instead: apply immediately, show a quiet "saving…", roll back with a toast if the server rejects. Removes the perceived latency entirely.'},
+    {n:'Indeterminate bar', lib:'base-ui Progress', tag:'live', inst:'npm i @base-ui-components/react',
+     html:`<div class="bar" style="background:var(--surface-soft)"><i data-indet style="width:34%;position:relative"></i></div>`,
+     init:(el)=>{ const i=el.querySelector('[data-indet]'); let x=-34;
+       setInterval(()=>{ x=x>=100?-34:x+4; i.style.marginLeft=x+'%'; },40); },
+     why:'For the update download before Content-Length is known. Cheap, and much better than the word "Downloading…".'},
+    {n:'Spinner set', lib:'any', tag:'live', inst:'CSS only',
+     html:`<div class="row" style="gap:16px"><span style="display:inline-block;width:16px;height:16px;border:2px solid var(--hairline);border-top-color:var(--acc);border-radius:999px;animation:spin .7s linear infinite"></span>
+       <span class="orbit" style="transform:scale(.8)"><i></i><i></i><i></i></span>
+       <span class="cube-stage"><span class="cube" style="width:12px;height:12px"><i></i><i></i><i></i><i></i><i></i><i></i></span></span></div>`,
+     why:'For comparison at real size. The plain ring is the most legible at 16px; the cube needs ~20px+ to read. Use the ring inline in buttons, keep the cube for the notch.'}
+  ]
+});
+
+/* =========================================================================
+   14 — CAPTION TEXT
+   ========================================================================= */
+SECTIONS.push({
+  id:'caption', kicker:'the coach voice', title:'Caption & streaming text',
+  blurb:'FadingStreamText animates the coach caption character-by-character with a per-character Motion span (delay = index × 9ms, capped at 400ms). It is lovely — and it mounts one motion component per character, which for a 90-character line is 90 React elements with individual transitions.',
+  today:{ label:'Kairo today — per-character motion spans', dark:true,
+    html:`<div style="max-width:260px"><span class="cap-txt wfade" data-chars></span></div>`,
+    pain:'Perf: 90 animated nodes per caption on a WebView that also runs the pet spring loop. Also the caption is aria-labelled on the parent and aria-hidden on the stream, which is correct — but a screen reader gets the whole line at once while the visual arrives progressively.',
+    init:(el)=>{ const t=el.querySelector('[data-chars]');
+      const lines=['Click the Object menu, top-left.','Now pick Apply, then Scale.','That should clear the shading artifact.'];
+      let n=0; const play=()=>{ const s=lines[n++%lines.length]; t.innerHTML='';
+        [...s].forEach((c,i)=>{ const sp=document.createElement('span'); sp.textContent=c;
+          sp.style.animationDelay=Math.min(i*9,400)+'ms'; t.appendChild(sp); }); };
+      play(); setInterval(play,3200); } },
+  options:[
+    {n:'Word-level blur-in', lib:'motion / Magic UI TextAnimate', tag:'live', inst:'npm i motion', badge:'pick',
+     demoClass:'dark',
+     html:`<div style="max-width:260px"><span class="cap-txt wfade" data-words></span></div>`,
+     init:(el)=>{ const t=el.querySelector('[data-words]');
+       const lines=['Click the Object menu, top-left.','Now pick Apply, then Scale.','That should clear the shading artifact.'];
+       let n=0; const play=()=>{ const s=lines[n++%lines.length]; t.innerHTML='';
+         s.split(' ').forEach((w,i)=>{ const sp=document.createElement('span'); sp.textContent=w+' ';
+           sp.style.animationDelay=(i*55)+'ms'; t.appendChild(sp); }); };
+       play(); setInterval(play,3200); },
+     why:'Same effect, ~8 nodes instead of ~90. Words are the natural reading unit anyway, so it is arguably <b>more</b> readable — and it survives long captions without the 400ms delay cap flattening the animation.'},
+    {n:'Line fade-up', lib:'motion', tag:'live', inst:'npm i motion', demoClass:'dark',
+     html:`<div style="max-width:260px" data-lines><span class="cap-txt wfade"><span>Click the Object menu, top-left.</span></span></div>`,
+     init:(el)=>{ const box=el.querySelector('[data-lines]');
+       const lines=['Click the Object menu, top-left.','Now pick Apply, then Scale.','That should clear the artifact.'];
+       let n=0; setInterval(()=>{ box.innerHTML='<span class="cap-txt wfade"><span>'+lines[n++%lines.length]+'</span></span>'; },2600); },
+     why:'The whole line arrives as one unit. Calmest option and the least distracting when the user is trying to *do* the thing you just said. Worth testing against per-word for actual comprehension.'},
+    {n:'Karaoke sync with TTS', lib:'design pattern', tag:'live', inst:'—', demoClass:'dark', badge:'pick',
+     html:`<div style="max-width:260px"><span class="cap-txt kar" data-kar></span></div>`,
+     init:(el)=>{ const t=el.querySelector('[data-kar]');
+       const words='Click the Object menu, top-left, then choose Apply.'.split(' ');
+       let i=0; const draw=()=>{ t.innerHTML=words.map((w,k)=>k<=i?'<b>'+w+'</b>':w).join(' '); };
+       draw(); setInterval(()=>{ i=(i+1)%(words.length+3); draw(); },340); },
+     why:'<b>The one that fits the product thesis.</b> Kairo speaks and captions simultaneously — highlighting the word currently being spoken ties them together, helps non-native speakers (your India wedge), and makes the caption feel synced instead of parallel. Needs word timings from the TTS engine, which ElevenLabs provides.'},
+    {n:'Typewriter', lib:'typed.js / custom', tag:'live', inst:'npm i typed.js', demoClass:'dark',
+     html:`<div style="max-width:260px"><span class="cap-txt" data-type></span><span class="caret"></span></div>`,
+     init:(el)=>{ const t=el.querySelector('[data-type]'); const s='Click the Object menu, top-left.';
+       let i=0; setInterval(()=>{ i=i>s.length?0:i+1; t.textContent=s.slice(0,i); },55); },
+     why:'You already use this on the landing hero and in FrontDoor\'s demo note, so it is on-brand. But for live guidance it is worse than word-fade: the user waits for the sentence to finish before they can act.'},
+    {n:'Mask reveal', lib:'GSAP SplitText (now free)', tag:'mock', inst:'npm i gsap', demoClass:'dark',
+     html:`<div style="max-width:260px;overflow:hidden"><span class="cap-txt" style="display:inline-block;animation:wfade .6s both">Click the Object menu, top-left.</span></div>`,
+     why:'SplitText became free with GSAP in 2025 and handles lines/words/chars with proper masking and resize re-splitting. Only worth the dependency if GSAP is already in for something else.'},
+    {n:'Balanced wrapping', lib:'text-wrap: pretty / balance', tag:'live', inst:'CSS only', demoClass:'dark',
+     html:`<div style="max-width:200px"><span class="cap-txt" style="text-wrap:balance;display:block">Now choose Apply, then Scale, from that menu</span></div>`,
+     why:'You already set text-wrap: pretty on the caption — good. <b>balance</b> is better for short 2–3 line captions: it evens the lines instead of leaving one orphan word, which matters because the pill width is measured from the text.'},
+    {n:'Streaming from the TTS chunk', lib:'your streamingTts.ts', tag:'mock', inst:'—',
+     demoClass:'dark',
+     html:`<div class="col" style="max-width:260px;gap:6px"><span class="cap-txt">Click the Object menu, top-left.<span class="caret"></span></span>
+       <span class="lbl" style="font-size:10.5px;color:rgb(238 241 245/.45)">text appears as the audio chunk plays, not before</span></div>`,
+     why:'Architectural note rather than a library: your spec already says words must never appear before the audio. If the caption is driven by TTS chunk boundaries rather than a fixed 9ms/char, the sync is exact and free.'}
+  ]
+});
+
+/* ---- styles for the overlay / pet / tour demos -------------------------- */
+document.head.appendChild(Object.assign(document.createElement('style'),{textContent:`
+.screen{position:relative;width:100%;height:150px;border-radius:8px;overflow:hidden;
+  background:linear-gradient(160deg,#20232c,#0e1015);border:1px solid rgb(255 255 255/.07)}
+.screen .win{position:absolute;left:14px;top:22px;right:14px;bottom:16px;border-radius:6px;
+  background:rgb(255 255 255/.04);border:1px solid rgb(255 255 255/.07)}
+.screen .btnrow{position:absolute;left:26px;top:38px;display:flex;gap:7px}
+.screen .fake{padding:5px 9px;border-radius:4px;background:rgb(255 255 255/.07);font-size:10px;color:#cfd4de}
+.screen .fake.tgt{background:rgb(255 255 255/.12)}
+.hl{position:absolute;border:3px dashed rgb(var(--acc-rgb));border-radius:10px;background:rgb(var(--acc-rgb)/.07);
+  box-shadow:0 0 0 6px rgb(var(--acc-rgb)/.13),0 0 22px rgb(var(--acc-rgb)/.4)}
+.hl.solid{border-style:solid}
+.hl.ants{border:2px dashed rgb(var(--acc-rgb));animation:ants .6s linear infinite;background:transparent;box-shadow:none}
+@keyframes ants{to{background-position:14px 0}}
+.spot{position:absolute;inset:0;background:rgb(6 8 12/.62)}
+.arrow{position:absolute;filter:drop-shadow(0 2px 5px rgb(0 0 0/.5))}
+.ping{position:absolute;border:2px solid rgb(var(--acc-rgb)/.7);border-radius:999px;width:16px;height:16px;
+  animation:png 1.5s ease-out infinite}
+@keyframes png{0%{opacity:.75;transform:scale(1)}100%{opacity:0;transform:scale(2.9)}}
+.pet{position:absolute;width:22px;height:22px;pointer-events:none;
+  filter:drop-shadow(0 2px 4px rgb(0 0 0/.45)) drop-shadow(0 0 8px rgb(var(--acc-rgb)/.6))}
+.trail{position:absolute;height:6px;border-radius:999px;transform-origin:100% 50%;
+  background:linear-gradient(to left,rgb(var(--acc-rgb)),rgb(var(--acc-rgb)/0))}
+.slider{width:100%;accent-color:var(--acc)}
+.sl-row{display:grid;grid-template-columns:66px 1fr 34px;gap:8px;align-items:center;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono)}
+.dark .sl-row{color:rgb(238 241 245/.6)}
+.ico-set{display:flex;gap:14px;align-items:center;color:var(--ink)}
+.ico-set svg{width:21px;height:21px;display:block}
+.swatchgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;width:100%;max-width:190px}
+.swatchgrid button{aspect-ratio:1;border:0;border-radius:8px;cursor:pointer;box-shadow:0 0 0 1px var(--hairline);
+  transition:transform .14s cubic-bezier(.2,.8,.2,1),box-shadow .16s}
+.swatchgrid button:hover{transform:translateY(-2px) scale(1.05)}
+.swatchgrid button[data-on="1"]{transform:scale(1.08);box-shadow:0 0 0 2px var(--canvas-raised),0 0 0 4px var(--ink)}
+.scale{display:flex;width:100%;max-width:230px;border-radius:6px;overflow:hidden;height:26px}
+.scale i{flex:1}
+.contrast{font-family:var(--font-mono);font-size:10.5px;padding:2px 6px;border-radius:3px}
+.empty{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;color:var(--ink-muted);font-size:12px}
+.plan{display:grid;gap:9px}
+.plan .p{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:center;padding:11px 13px;
+  border:1px solid var(--hairline);border-radius:var(--radius-inset);background:var(--canvas-raised)}
+.plan .p b{font-family:var(--font-display);font-size:13.5px}
+.plan .p p{margin:2px 0 0;font-size:12.5px;color:var(--ink-muted);line-height:1.5}
+.plan .num{width:24px;height:24px;border-radius:999px;background:var(--ink-strong);color:#fff;display:grid;place-items:center;
+  font-family:var(--font-mono);font-size:11px}
+.plan .eff{font-family:var(--font-mono);font-size:10px;color:var(--ink-muted);white-space:nowrap}
+`}));
+
+/* =========================================================================
+   15 — OVERLAY ANNOTATION
+   ========================================================================= */
+SECTIONS.push({
+  id:'overlay', kicker:'the point', title:'Screen annotation — box, pointer, pen',
+  blurb:'The highlight box inks itself top-left → bottom-right over 650ms, then the glow and the screen dim ignite; a hot accent spot rides the diagonal; multi-step glides slide the same box to the next target. This is the product\'s core moment and the CSS is excellent. The alternatives below are about vocabulary — what shape best says "here" — not about replacing the engineering.',
+  today:{ label:'Kairo today — clip-path draw + dim + ink trace',
+    html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+      <div class="hl" data-box style="left:64px;top:32px;width:58px;height:24px"></div></div>`,
+    pain:'One real weakness: the box is the only vocabulary. Everything gets a rectangle — a menu item, a whole panel, a 3-pixel checkbox. Small targets get a box bigger than themselves, and there is no way to say "this row, third from the top" or "drag from here to here".',
+    init:(el)=>{ const b=el.querySelector('[data-box]');
+      const anim=()=>{ b.animate([{clipPath:'inset(0 100% 100% 0 round 10px)',opacity:.6},{clipPath:'inset(0 0 0 0 round 10px)',opacity:1}],
+        {duration:650,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'}); };
+      anim(); setInterval(anim,2600); } },
+  options:[
+    {n:'Spotlight mask', lib:'CSS mask / driver.js', tag:'live', inst:'CSS only', badge:'pick',
+     html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+       <div class="spot" data-spotm></div></div>`,
+     init:(el)=>{ const s=el.querySelector('[data-spotm]');
+       s.style.mask='radial-gradient(circle 42px at 92px 44px, transparent 55%, #000 100%)';
+       s.style.webkitMask=s.style.mask; },
+     why:'Instead of drawing a box, cut a hole in the dim. Works at any target size (a 3px checkbox gets a readable circle of light), and the dimming you already apply becomes the pointing device rather than a side effect.'},
+    {n:'Hand-drawn (rough.js)', lib:'roughjs', tag:'live', inst:'npm i roughjs',
+     html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+       <svg data-rough style="position:absolute;inset:0;width:100%;height:100%"></svg></div>`,
+     init:async(el)=>{ const m=await tryImport('https://esm.sh/roughjs@4');
+       const svg=el.querySelector('[data-rough]'); if(!m) return;
+       const rc=m.default.svg(svg); const acc=getComputedStyle(document.documentElement).getPropertyValue('--acc').trim();
+       svg.appendChild(rc.rectangle(62,30,62,28,{stroke:acc,strokeWidth:2.2,roughness:2.1,bowing:1.6}));
+       svg.appendChild(rc.linearPath([[160,92],[132,68],[128,60]],{stroke:acc,strokeWidth:2,roughness:2.4})); },
+     why:'<b>Real library, live.</b> Sketchy circling reads as a teacher marking up your screen, not software drawing a rectangle. Strong brand fit for a tutor — and it makes the annotation feel human rather than surveillance-y.'},
+    {n:'perfect-freehand pen', lib:'perfect-freehand', tag:'live', inst:'npm i perfect-freehand',
+     html:`<div class="screen"><canvas data-pf style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair"></canvas>
+       <span style="position:absolute;left:10px;bottom:8px;font-size:10px;color:rgb(238 241 245/.5)">draw here →</span></div>`,
+     init:async(el)=>{ const m=await tryImport('https://esm.sh/perfect-freehand@1');
+       const c=el.querySelector('[data-pf]'); const x=c.getContext('2d');
+       const fit=()=>{ c.width=c.offsetWidth*2; c.height=c.offsetHeight*2; x.scale(2,2); }; fit();
+       let pts=[], drawing=false;
+       const render=()=>{ x.clearRect(0,0,c.width,c.height);
+         const acc=getComputedStyle(document.documentElement).getPropertyValue('--acc').trim();
+         if(!pts.length) return;
+         if(!m){ x.strokeStyle=acc; x.lineWidth=4; x.lineCap='round'; x.beginPath();
+           pts.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1])); x.stroke(); return; }
+         const st=m.getStroke(pts,{size:11,thinning:.62,smoothing:.55,streamline:.42});
+         x.fillStyle=acc; x.beginPath(); st.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1])); x.closePath(); x.fill(); };
+       const pos=(e)=>{ const r=c.getBoundingClientRect(); return [e.clientX-r.left,e.clientY-r.top,e.pressure||.5]; };
+       c.addEventListener('pointerdown',(e)=>{ drawing=true; pts=[pos(e)]; render(); });
+       c.addEventListener('pointermove',(e)=>{ if(!drawing) return; pts.push(pos(e)); render(); });
+       ['pointerup','pointerleave'].forEach(ev=>c.addEventListener(ev,()=>{ drawing=false;
+         setTimeout(()=>{ pts=[]; render(); },1400); })); },
+     why:'<b>Real library, draw on it.</b> Your pen tool (⌥⇧P) currently strokes a constant-width polyline. perfect-freehand gives pressure/velocity-tapered strokes — the same engine tldraw uses. Three lines to swap in penDraw.ts and the pen instantly feels like a real marker.'},
+    {n:'Marching ants', lib:'CSS', tag:'live', inst:'CSS only',
+     html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+       <div class="hl ants" style="left:62px;top:30px;width:62px;height:28px"></div></div>`,
+     why:'Continuous motion holds attention through a long spoken step without pulsing brightness. Cheaper on the eye than a glow that breathes.'},
+    {n:'Arrow + label', lib:'design pattern', tag:'mock', inst:'—', badge:'pick',
+     html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+       <svg class="arrow" style="left:118px;top:56px;width:70px;height:56px" viewBox="0 0 70 56">
+        <path d="M62 48 C48 44 36 30 26 14" stroke="rgb(var(--acc-rgb))" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <path d="M22 6 L32 18 L20 18 Z" fill="rgb(var(--acc-rgb))"/></svg>
+       <span style="position:absolute;left:126px;top:104px;font-size:10px;color:#eef1f5;background:rgb(11 13 18/.7);padding:3px 7px;border-radius:5px">this menu</span></div>`,
+     why:'A second vocabulary alongside the box: an arrow with two words. Solves the small-target problem AND gives the caption a visual anchor. Your grounding call already returns a point — this only needs a curve from a safe origin.'},
+    {n:'Numbered step markers', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+       <span style="position:absolute;left:88px;top:34px;width:20px;height:20px;border-radius:999px;background:rgb(var(--acc-rgb));color:#fff;font-size:11px;display:grid;place-items:center;font-family:var(--font-mono)">1</span>
+       <span style="position:absolute;left:186px;top:88px;width:20px;height:20px;border-radius:999px;background:rgb(var(--acc-rgb)/.35);color:#fff;font-size:11px;display:grid;place-items:center;font-family:var(--font-mono)">2</span></div>`,
+     why:'For follow-along mode, where a step has a sequence. Showing 1→2 at once lets the user see where this is going — the single-box model can only ever say "now".'},
+    {n:'Magnifier', lib:'CSS transform', tag:'mock', inst:'—',
+     html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+       <div style="position:absolute;left:74px;top:22px;width:66px;height:46px;border-radius:999px;border:2px solid rgb(var(--acc-rgb));
+        background:rgb(255 255 255/.09);box-shadow:0 8px 22px rgb(0 0 0/.5);display:grid;place-items:center;font-size:12px;color:#fff">Object</div></div>`,
+     why:'For tiny targets on a Retina display — enlarge the region instead of ringing it. Needs the captured screenshot, which you already have in memory at that moment.'},
+    {n:'Konva / Fabric canvas', lib:'konva or fabric', tag:'mock', inst:'npm i konva',
+     html:`<div class="screen"><div class="win"></div><div class="btnrow"><span class="fake">File</span><span class="fake tgt">Object</span><span class="fake">Add</span></div>
+       <div class="hl solid" style="left:60px;top:28px;width:66px;height:32px"></div>
+       <span style="position:absolute;right:12px;bottom:10px;font-size:10px;color:rgb(238 241 245/.5)">object model · hit testing · undo</span></div>`,
+     why:'If annotations ever become editable (drag a box, erase one stroke, undo), a scene-graph canvas beats DOM nodes. Not needed while annotations are ephemeral, which they are today.'},
+    {n:'tldraw SDK', lib:'tldraw', tag:'mock', inst:'npm i tldraw',
+     html:`<div class="screen"><div class="win"></div><span style="position:absolute;left:14px;bottom:12px;font-size:10.5px;color:rgb(238 241 245/.6)">full canvas: shapes, arrows, text, undo, multiplayer</span>
+       <div class="hl" style="left:60px;top:28px;width:66px;height:32px;border-style:solid"></div></div>`,
+     why:'Way past what you need for ephemeral pointing — but the licence is worth knowing (free with watermark, paid to remove). Mentioned because perfect-freehand comes from the same author and is the piece actually worth taking.'},
+    {n:'Pointer variants', lib:'your CSS', tag:'live', inst:'—',
+     html:`<div class="screen"><div class="win"></div>
+       <span class="ping" style="left:56px;top:44px"></span><span style="position:absolute;left:56px;top:44px;width:16px;height:16px;border:2.5px solid rgb(var(--acc-rgb));border-radius:999px"></span>
+       <span style="position:absolute;left:130px;top:44px;width:9px;height:9px;border-radius:999px;background:rgb(var(--acc-rgb));box-shadow:0 0 0 8px rgb(var(--acc-rgb)/.18),0 0 16px rgb(var(--acc-rgb)/.7)"></span>
+       <span style="position:absolute;left:196px;top:38px;font-size:19px;color:rgb(var(--acc-rgb));filter:drop-shadow(0 0 6px rgb(var(--acc-rgb)/.8))">✛</span></div>`,
+     why:'Three pointer treatments at real scale: ping ring (yours), solid dot with bloom, crosshair. The bloom dot survives busy backgrounds best; the crosshair is the most precise but reads as a tool, not a companion.'}
+  ]
+});
+
+/* =========================================================================
+   16 — COMPANION CURSOR
+   ========================================================================= */
+SECTIONS.push({
+  id:'pet', kicker:'the character', title:'The companion cursor',
+  blurb:'A spring-driven arrow in its own click-through panel, with a velocity-scaled comet trail, a mic-reactive halo, an orbiting thinking swirl, entrance/celebrate beats and an idle breathe. The physics live in cursor/spring.ts. This is the most distinctive thing in the product and the biggest missed opportunity — it is a shape, not yet a character.',
+  today:{ label:'Kairo today — SVG arrow + spring + trail + FX layers',
+    html:`<div class="screen" data-petdemo><div class="win"></div>
+      <div class="trail" data-trail style="opacity:0"></div>
+      <svg class="pet" data-pet viewBox="0 0 32 32"><path d="M6 3 L28 14 L17 17 L13 28 Z" fill="rgb(var(--acc-rgb))" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      <span style="position:absolute;left:12px;bottom:9px;font-size:10px;color:rgb(238 241 245/.5)">move your pointer over this box</span></div>`,
+    pain:'It never expresses anything. It moves, glows and spins — but it cannot look surprised, nod, shrug when it is unsure, or look AT the thing it is pointing at. Every state is a filter on the same arrow.',
+    init:(el)=>{ const box=el.querySelector('[data-petdemo]'), pet=el.querySelector('[data-pet]'), tr=el.querySelector('[data-trail]');
+      let x=60,y=60,vx=0,vy=0,tx=60,ty=60;
+      box.addEventListener('pointermove',(e)=>{ const r=box.getBoundingClientRect(); tx=e.clientX-r.left; ty=e.clientY-r.top; });
+      (function loop(){ const k=0.14,d=0.78; vx=(vx+(tx-x)*k)*d; vy=(vy+(ty-y)*k)*d; x+=vx; y+=vy;
+        pet.style.transform='translate('+(x-19)+'px,'+(y-3)+'px)';
+        const sp=Math.hypot(vx,vy); tr.style.opacity=Math.min(sp/14,.85);
+        tr.style.width=Math.min(sp*3.4,52)+'px'; tr.style.transform='translate('+x+'px,'+(y-3)+'px) rotate('+(Math.atan2(vy,vx)*180/Math.PI+180)+'deg)';
+        requestAnimationFrame(loop); })(); } },
+  options:[
+    {n:'Spring tuning playground', lib:'your spring.ts', tag:'live', inst:'—', badge:'pick',
+     html:`<div class="col" style="width:100%;gap:8px"><div class="screen" style="height:96px" data-sp2><div class="win"></div>
+       <svg class="pet" data-pet2 viewBox="0 0 32 32"><path d="M6 3 L28 14 L17 17 L13 28 Z" fill="rgb(var(--acc-rgb))" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+       <div class="sl-row"><span>stiffness</span><input class="slider" type="range" min="2" max="30" value="14" data-k /><span data-kv>0.14</span></div>
+       <div class="sl-row"><span>damping</span><input class="slider" type="range" min="50" max="95" value="78" data-d /><span data-dv>0.78</span></div></div>`,
+     init:(el)=>{ const box=el.querySelector('[data-sp2]'), pet=el.querySelector('[data-pet2]');
+       const ks=el.querySelector('[data-k]'), ds=el.querySelector('[data-d]'), kv=el.querySelector('[data-kv]'), dv=el.querySelector('[data-dv]');
+       let x=40,y=40,vx=0,vy=0,tx=40,ty=40;
+       box.addEventListener('pointermove',(e)=>{ const r=box.getBoundingClientRect(); tx=e.clientX-r.left; ty=e.clientY-r.top; });
+       setInterval(()=>{ if(!box.matches(':hover')){ tx=20+Math.random()*220; ty=18+Math.random()*60; } },1500);
+       (function loop(){ const k=+ks.value/100, d=+ds.value/100; kv.textContent=k.toFixed(2); dv.textContent=d.toFixed(2);
+         vx=(vx+(tx-x)*k)*d; vy=(vy+(ty-y)*k)*d; x+=vx; y+=vy;
+         pet.style.transform='translate('+(x-19)+'px,'+(y-3)+'px)'; requestAnimationFrame(loop); })(); },
+     why:'Not a library — a tuning tool. Drag the sliders: low damping = playful overshoot (feels alive, can look drunk), high stiffness = snappy (feels precise, less charming). Worth spending an hour finding the values that read as "confident but friendly", because this single curve <b>is</b> the personality.'},
+    {n:'Rive state machine', lib:'@rive-app/canvas', tag:'mock', inst:'npm i @rive-app/canvas', badge:'pick',
+     html:`<div class="col" style="align-items:center;gap:8px"><span class="eyes" style="transform:scale(2.1)"><i></i><i></i></span>
+       <div class="chipset"><span class="chip" data-on="1">idle</span><span class="chip">listening</span><span class="chip">thinking</span><span class="chip">found it!</span></div></div>`,
+     init:(el)=>{ on(el,'.chip','click',(e)=>{ el.querySelectorAll('.chip').forEach(c=>c.dataset.on='0'); e.currentTarget.dataset.on='1'; }); },
+     why:'<b>The single biggest character upgrade available.</b> Inputs (mic level 0–1, isThinking bool, foundTarget trigger) drive blended states inside the runtime — no new animation code per expression. ~60kb runtime, one .riv file, and a designer can iterate on personality without touching TypeScript.'},
+    {n:'Eyes that look at the target', lib:'design pattern', tag:'live', inst:'—', badge:'pick',
+     html:`<div class="screen" style="height:110px" data-look><div class="win"></div>
+       <div style="position:absolute;left:26px;top:38px;display:flex;gap:7px">
+         <span style="width:16px;height:16px;border-radius:999px;background:#fff;display:grid;place-items:center"><i data-eye style="width:7px;height:7px;border-radius:999px;background:#111;display:block"></i></span>
+         <span style="width:16px;height:16px;border-radius:999px;background:#fff;display:grid;place-items:center"><i data-eye style="width:7px;height:7px;border-radius:999px;background:#111;display:block"></i></span></div>
+       <span style="position:absolute;right:12px;bottom:9px;font-size:10px;color:rgb(238 241 245/.5)">move the pointer</span></div>`,
+     init:(el)=>{ const box=el.querySelector('[data-look]'), eyes=[...el.querySelectorAll('[data-eye]')];
+       box.addEventListener('pointermove',(e)=>{ const r=box.getBoundingClientRect();
+         eyes.forEach(ey=>{ const er=ey.parentElement.getBoundingClientRect();
+           const a=Math.atan2(e.clientY-(er.top+er.height/2), e.clientX-(er.left+er.width/2));
+           ey.style.transform='translate('+(Math.cos(a)*3.5).toFixed(1)+'px,'+(Math.sin(a)*3.5).toFixed(1)+'px)'; }); }); },
+     why:'The cheapest characterful trick there is — you already render <b>.kairo-eyes</b> in the notch, so the asset exists. Eyes that track the target before the box appears telegraph intent: the user looks where Kairo looks.'},
+    {n:'Squash & stretch', lib:'motion / CSS', tag:'live', inst:'npm i motion',
+     html:`<div class="screen" style="height:96px" data-sq><div class="win"></div>
+       <svg class="pet" data-petsq viewBox="0 0 32 32"><path d="M6 3 L28 14 L17 17 L13 28 Z" fill="rgb(var(--acc-rgb))" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg></div>`,
+     init:(el)=>{ const box=el.querySelector('[data-sq]'), pet=el.querySelector('[data-petsq]');
+       let x=40,y=40,vx=0,vy=0,tx=40,ty=40;
+       box.addEventListener('pointermove',(e)=>{ const r=box.getBoundingClientRect(); tx=e.clientX-r.left; ty=e.clientY-r.top; });
+       setInterval(()=>{ if(!box.matches(':hover')){ tx=20+Math.random()*220; ty=18+Math.random()*56; } },1400);
+       (function loop(){ vx=(vx+(tx-x)*.16)*.76; vy=(vy+(ty-y)*.16)*.76; x+=vx; y+=vy;
+         const sp=Math.min(Math.hypot(vx,vy)/16,.5); const ang=Math.atan2(vy,vx)*180/Math.PI;
+         pet.style.transform='translate('+(x-19)+'px,'+(y-3)+'px) rotate('+ang+'deg) scale('+(1+sp)+','+(1-sp*.55)+') rotate('+(-ang)+'deg)';
+         requestAnimationFrame(loop); })(); },
+     why:'Classic animation principle: stretch along the direction of travel, squash on arrival. Two lines on top of your existing spring loop and it turns a moving graphic into something with mass.'},
+    {n:'Trail variants', lib:'CSS / canvas', tag:'live', inst:'—',
+     html:`<div class="screen" style="height:96px" data-tv><div class="win"></div>
+       <span style="position:absolute;left:12px;bottom:8px;font-size:10px;color:rgb(238 241 245/.5)">ghost trail (vs. your comet)</span></div>`,
+     init:(el)=>{ const box=el.querySelector('[data-tv]'); let x=40,y=40,tx=40,ty=40,vx=0,vy=0;
+       const ghosts=Array.from({length:6},()=>{ const s=h('<svg class="pet" viewBox="0 0 32 32" style="opacity:.18"><path d="M6 3 L28 14 L17 17 L13 28 Z" fill="rgb(var(--acc-rgb))"/></svg>');
+         box.appendChild(s); return {el:s,x:40,y:40}; });
+       box.addEventListener('pointermove',(e)=>{ const r=box.getBoundingClientRect(); tx=e.clientX-r.left; ty=e.clientY-r.top; });
+       setInterval(()=>{ if(!box.matches(':hover')){ tx=20+Math.random()*220; ty=18+Math.random()*56; } },1500);
+       (function loop(){ vx=(vx+(tx-x)*.15)*.78; vy=(vy+(ty-y)*.15)*.78; x+=vx; y+=vy;
+         ghosts.forEach((g,i)=>{ const f=.34-(i*0.03); g.x+=(x-g.x)*f; g.y+=(y-g.y)*f;
+           g.el.style.transform='translate('+(g.x-19)+'px,'+(g.y-3)+'px)'; g.el.style.opacity=(0.2-i*0.028).toFixed(2); });
+         requestAnimationFrame(loop); })(); },
+     why:'Six lagging ghosts instead of one gradient bar. Reads softer and shows the path, not just the speed. Costs 6 more DOM nodes in a panel that has almost nothing in it.'},
+    {n:'Three.js / R3F blob', lib:'@react-three/fiber', tag:'mock', inst:'npm i three @react-three/fiber',
+     html:`<div class="col" style="align-items:center;gap:7px"><div class="blob" style="width:38px;height:38px"></div>
+       <span class="lbl" style="font-size:11px">shader-driven, reacts to audio</span></div>`,
+     why:'Gorgeous ceiling (a real 3D companion with lighting and audio-reactive geometry) but it means a WebGL context alive in a permanently-running click-through panel. GPU + battery cost on a laptop app — hard no for the always-on layer.'},
+    {n:'Sprite sheet', lib:'CSS steps()', tag:'mock', inst:'—',
+     html:`<div class="col" style="align-items:center;gap:7px"><span style="font-size:24px">🐈</span>
+       <span class="lbl" style="font-size:11px">hand-drawn frames, zero runtime</span></div>`,
+     why:'How Clippy and every 90s assistant did it. Cheapest possible way to get real character art on screen, and it cannot be beaten on performance. Fixed animations only — no reaction to live mic level.'},
+    {n:'Idle presence rules', lib:'design pattern', tag:'mock', inst:'—', badge:'pick',
+     html:`<div class="col" style="width:100%;max-width:250px;font-size:12px;gap:6px">
+       <div class="row" style="gap:8px"><span class="lbl mono" style="font-size:10.5px">0–8s</span><span>stays, breathing</span></div>
+       <div class="row" style="gap:8px"><span class="lbl mono" style="font-size:10.5px">8–20s</span><span>drifts to the screen edge</span></div>
+       <div class="row" style="gap:8px"><span class="lbl mono" style="font-size:10.5px">20s+</span><span>fades to a 6px dot</span></div>
+       <div class="row" style="gap:8px"><span class="lbl mono" style="font-size:10.5px">on ⌥⌃</span><span>wakes at the cursor</span></div></div>`,
+     why:'Not a library — the missing behaviour spec. "The AI points, the user acts" means the pet must get out of the way convincingly. A graded retreat beats a binary hide, and it keeps Kairo discoverable without keeping it in the way.'}
+  ]
+});
+
+/* =========================================================================
+   17 — ONBOARDING / TOURS
+   ========================================================================= */
+SECTIONS.push({
+  id:'tour', kicker:'first run', title:'Onboarding & coach marks',
+  blurb:'Your six-act onboarding is out-of-the-card by design: Acts 1–4 render nothing at all, because the notch caption and the pet ARE the UI. That is a genuinely unusual and good decision — do not replace it. But the same coach-mark machinery would pay for itself later: feature announcements, "what is new" after an update, and re-teaching ⌥⌃ to a lapsed user.',
+  today:{ label:'Kairo today — the notch speaks, the pet points, no card', dark:true,
+    html:`<div class="col" style="align-items:center;gap:10px"><div class="cap" style="max-width:270px"><span class="eyes"><i></i><i></i></span>
+      <span class="cap-txt">See that notch? That is where I live.</span></div>
+      <div class="dots"><i data-s="cur"></i><i data-s="fut"></i><i data-s="fut"></i><i data-s="fut"></i></div></div>`,
+    pain:'Nothing to fix in the concept. The gap is what happens after: there is no mechanism to teach a NEW feature to an existing user, and no way to re-surface a shortcut somebody forgot. Today the only teaching moment is first run.'},
+  options:[
+    {n:'driver.js', lib:'driver.js · MIT', tag:'live', inst:'npm i driver.js', badge:'pick',
+     html:`<div class="col" style="gap:9px;width:100%"><div class="card-mini" style="box-shadow:none">
+        <h5 id="tourA">Voice</h5><p>Anushka · Hindi</p></div>
+       <div class="row"><button class="b b-ghost" style="font-size:12px" id="tourB">Manage skills</button>
+       <button class="b b-shad" style="font-size:12px" data-tour>start tour</button></div></div>`,
+     init:async(el)=>{ const m=await tryImport('https://esm.sh/driver.js@1');
+       const btn=el.querySelector('[data-tour]'); if(!m){ btn.textContent='driver.js offline'; btn.disabled=true; return; }
+       cssLink('https://esm.sh/driver.js@1/dist/driver.css');
+       btn.addEventListener('click',()=>{ m.driver({ showProgress:true, steps:[
+         {element:el.querySelector('#tourA'), popover:{title:'Your voice', description:'Kairo speaks in whichever voice you pick here.'}},
+         {element:el.querySelector('#tourB'), popover:{title:'Skills', description:'Turn off anything you never use.'}}
+       ]}).drive(); }); },
+     why:'<b>Real library — press "start tour".</b> 5kb, MIT, no dependencies, works on plain DOM (no React coupling). Spotlight + popover + progress out of the box. The right pick for post-onboarding feature education.'},
+    {n:'React Joyride', lib:'react-joyride · MIT', tag:'mock', inst:'npm i react-joyride',
+     html:`<div class="sheet" style="max-width:210px"><div class="sheet-b"><b style="color:var(--ink)">Step 2 of 4</b><div style="margin-top:4px">Hold ⌥⌃ anywhere to talk to Kairo.</div></div>
+       <div class="sheet-f"><button class="b b-shad-out" style="font-size:11.5px;padding:5px 11px">Skip</button><button class="b b-shad" style="font-size:11.5px;padding:5px 11px">Next</button></div></div>`,
+     why:'The most-downloaded React tour library (~340k/week) with a mature step/callback model. Heavier (~34kb) and React-coupled — fine, since every surface here is React.'},
+    {n:'Shepherd.js', lib:'shepherd.js · AGPL', tag:'mock', badge:'warn', inst:'npm i shepherd.js',
+     html:`<div class="sheet" style="max-width:210px"><div class="sheet-b">Flexible, well-maintained, Floating-UI positioned.</div></div>`,
+     why:'<b>Licence warning.</b> Shepherd is AGPL unless you buy a commercial licence. Your repo is public and MIT — mixing AGPL into a shipped desktop binary is exactly the kind of thing you do not want to discover later. Same applies to Intro.js.'},
+    {n:'Notch-driven coach marks', lib:'your own', tag:'mock', inst:'—', badge:'pick',
+     demoClass:'desk',
+     html:`<div class="col" style="align-items:center;gap:9px"><div class="cap"><span class="eyes"><i></i><i></i></span><span class="cap-txt">New: say “guide me” and I will walk you through step by step.</span></div>
+       <div class="row" style="gap:7px"><span class="chip" style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.14);color:#dfe3ea">try it</span>
+       <span class="chip" style="background:rgb(255 255 255/.06);border-color:rgb(255 255 255/.14);color:#dfe3ea">later</span></div></div>`,
+     why:'<b>Consistent with everything you built.</b> You already have a spoken, accent-threaded, positioned status surface. A "what is new" beat delivered through the notch (with the pet pointing at the relevant thing) is on-brand where a web-style popover would not be.'},
+    {n:'Checklist / getting-started', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="card-mini"><h5>Get the most out of Kairo</h5>
+       <div class="col" style="gap:5px;margin-top:8px;font-size:12px">
+       <div class="row" style="gap:7px"><span class="ok">✓</span><span>Ask your first question</span></div>
+       <div class="row" style="gap:7px"><span class="ok">✓</span><span>Pick a voice</span></div>
+       <div class="row" style="gap:7px"><span style="color:var(--ink-muted)">○</span><span>Try the pen (⌥⇧P)</span></div></div></div>`,
+     why:'Persistent progressive onboarding. Three-quarters of the product (pen, follow-along, skills) is never discovered by a user who only ever holds ⌥⌃. A checklist in Settings surfaces it without nagging.'},
+    {n:'Empty-state teaching', lib:'design pattern', tag:'mock', inst:'—',
+     demoClass:'desk',
+     html:`<div class="col" style="align-items:center;gap:8px"><div class="cap cap-pill" style="opacity:.55"><span class="cap-lbl">Hold ⌥⌃ to talk</span></div>
+       <span class="lbl" style="font-size:11px;color:rgb(238 241 245/.45)">shown for the first 3 days, then never again</span></div>`,
+     why:'The gentlest teaching mechanism: an idle hint that decays. No tour, no modal, no interruption — and it directly addresses "the user forgot the shortcut", which is the most likely reason an alpha user churns.'}
+  ]
+});
+
+/* =========================================================================
+   18 — ACCENT / COLOUR
+   ========================================================================= */
+SECTIONS.push({
+  id:'accent', kicker:'theming', title:'Accent & colour system',
+  blurb:'The accent is a first-class product idea: chosen in Act 1, emitted as accent:changed, applied to every WebView, and it tints the pet, the notch, the highlight box and the settings shadow. Eight curated presets replaced the free colour wheel — correct call, since arbitrary hues break contrast on both the light card and the dark pill. What is missing is the derivation layer.',
+  today:{ label:'Kairo today — 8 presets + color-mix() by hand',
+    html:`<div class="swatchgrid" data-sw>
+      ${['#665cff','#0ea5e9','#10b981','#f59e0b','#ff6b66','#c05cff','#14b8a6','#f43f5e'].map((c,i)=>'<button style="background:'+c+'" data-on="'+(i===0?1:0)+'"></button>').join('')}</div>`,
+    pain:'Every derived colour is a hand-written color-mix() at the point of use: 62% here, 14% there, 26% somewhere else. There is no single function that answers "what is the hover/active/soft/on-dark version of this accent, and does it pass contrast on both surfaces?"',
+    init:(el)=>{ on(el,'button','click',(e)=>{ el.querySelectorAll('button').forEach(b=>b.dataset.on='0');
+      e.currentTarget.dataset.on='1'; }); } },
+  options:[
+    {n:'Generated scales', lib:'@radix-ui/colors + generator', tag:'live', inst:'npm i @radix-ui/colors', badge:'pick',
+     html:`<div class="col" style="width:100%;gap:7px"><div class="scale" data-scale></div>
+       <span class="lbl" style="font-size:11px">12 steps: backgrounds → borders → solid → text</span></div>`,
+     init:(el)=>{ const s=el.querySelector('[data-scale]');
+       const paint=()=>{ const acc=getComputedStyle(document.documentElement).getPropertyValue('--acc-rgb').trim();
+         s.innerHTML=Array.from({length:9},(_,i)=>'<i style="background:rgb('+acc+' / '+(0.06+i*0.117).toFixed(2)+')"></i>').join(''); };
+       paint(); setInterval(paint,600); },
+     why:'Radix\'s 12-step model gives every accent a defined role per step (step 3 = subtle bg, 6 = border, 9 = solid, 11 = text). Adopt the <b>model</b> even if not the package: it turns twelve ad-hoc color-mix() calls into one generated set of vars.'},
+    {n:'colord / culori', lib:'colord · MIT', tag:'mock', inst:'npm i colord', badge:'pick',
+     html:`<div class="col" style="gap:6px;font-family:var(--font-mono);font-size:11px;color:var(--ink-muted)">
+       <span>colord(accent).lighten(.1).toHex()</span><span>colord(accent).isReadable(bg)</span>
+       <span>colord(accent).alpha(.14).toRgbString()</span></div>`,
+     why:'2kb. Gives you programmatic hover/active/soft variants AND a readability check — so a future custom-accent feature can validate a hue against BOTH the light card and the dark pill before allowing it.'},
+    {n:'Contrast guard', lib:'colord + your presets', tag:'live', inst:'npm i colord',
+     html:`<div class="col" style="gap:7px;width:100%;max-width:230px">
+       <div class="row" style="justify-content:space-between"><span style="font-size:12px;color:var(--acc)">accent text on light</span><span class="contrast" data-c1>4.8:1</span></div>
+       <div class="row" style="justify-content:space-between;background:#15171d;padding:5px 8px;border-radius:6px">
+         <span style="font-size:12px;color:var(--acc)">accent text on notch</span><span class="contrast" data-c2>3.1:1</span></div></div>`,
+     init:(el)=>{ const lum=(r,g,b)=>{ const f=v=>{v/=255; return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);};
+         return .2126*f(r)+.7152*f(g)+.0722*f(b); };
+       const upd=()=>{ const raw=getComputedStyle(document.documentElement).getPropertyValue('--acc-rgb').trim().split(/[\s,]+/).map(Number);
+         const L=lum(...raw); const c1=(Math.max(L,1)+.05)/(Math.min(L,1)+.05);
+         const dl=lum(21,23,29); const c2=(Math.max(L,dl)+.05)/(Math.min(L,dl)+.05);
+         const set=(n,v)=>{ n.textContent=v.toFixed(1)+':1'; n.style.background = v>=4.5?'color-mix(in srgb,var(--verify) 34%,#fff)':'color-mix(in srgb,var(--react) 26%,#fff)';
+           n.style.color = v>=4.5?'#4a6f08':'#8d2b26'; };
+         set(el.querySelector('[data-c1]'), (1.05)/(L+.05)); set(el.querySelector('[data-c2]'), c2); };
+       upd(); setInterval(upd,500); },
+     why:'<b>Live — switch accents in the header and watch the numbers move.</b> Some of your presets (amber, teal) are below 4.5:1 as text on the light card. Today that only matters in a few spots; the moment accent-coloured text spreads it becomes a real legibility bug.'},
+    {n:'react-colorful', lib:'react-colorful · MIT', tag:'mock', inst:'npm i react-colorful',
+     html:`<div style="width:120px;height:120px;border-radius:8px;background:
+       linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,var(--acc));position:relative">
+       <span style="position:absolute;left:72%;top:32%;width:12px;height:12px;border-radius:999px;border:2px solid #fff;box-shadow:0 0 0 1px rgb(0 0 0/.3)"></span></div>`,
+     why:'2.8kb, zero deps — vs @uiw/react-color-wheel + shade-slider which you currently ship (two packages) for a picker the redesign removed from the flow. <b>Check whether those imports are still reachable; if not, delete them.</b>'},
+    {n:'Named themes', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="col" style="gap:6px;width:100%;max-width:210px;font-size:12px">
+       <div class="row" style="gap:8px"><i style="width:14px;height:14px;border-radius:4px;background:#665cff;display:block"></i><span>Violet</span><span class="lbl" style="margin-left:auto;font-size:11px">default</span></div>
+       <div class="row" style="gap:8px"><i style="width:14px;height:14px;border-radius:4px;background:#10b981;display:block"></i><span>Fern</span></div>
+       <div class="row" style="gap:8px"><i style="width:14px;height:14px;border-radius:4px;background:#f59e0b;display:block"></i><span>Amber</span></div></div>`,
+     why:'You already store a name per preset in accentPresets.ts but only render the hex swatch. Naming a colour makes it feel chosen rather than configured — and it gives the coach a line: "nice, Fern it is."'},
+    {n:'Dark-mode notch', lib:'prefers-color-scheme', tag:'mock', inst:'CSS only',
+     html:`<div class="row" style="gap:10px"><div class="cap" style="padding:7px 12px"><span class="cap-lbl" style="font-size:11.5px">always dark</span></div>
+       <div class="cap" style="padding:7px 12px;background:linear-gradient(180deg,#fbfcfe,#eef1f6);color:#0b0d12;border-color:var(--hairline)"><span class="cap-lbl" style="font-size:11.5px;color:#0b0d12">light variant</span></div></div>`,
+     why:'The notch is dark regardless of system appearance. On a light desktop in a bright room that is a black bar floating over white — deliberate, and defensible for legibility. Worth at least testing a light variant against a white Figma canvas before deciding.'},
+    {n:'OKLCH accents', lib:'CSS oklch()', tag:'mock', inst:'CSS only',
+     html:`<div class="row" style="gap:7px">${[0,60,120,180,240,300].map(hu=>'<i style="width:24px;height:24px;border-radius:6px;display:block;background:oklch(65% 0.18 '+hu+')"></i>').join('')}</div>`,
+     why:'Perceptually uniform: every swatch above has identical lightness/chroma, so a user cannot pick one that is secretly too pale for white text. If you ever reopen custom accents, generate the allowed range in OKLCH and the contrast problem solves itself.'}
+  ]
+});
+
+/* =========================================================================
+   19 — ICONS
+   ========================================================================= */
+const ico = (paths, sw) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (sw||1.6) +
+  '" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+const MIC = '<path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>';
+const PEN = '<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/>';
+const GEAR = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9z"/>';
+const CLOSE = '<path d="M18 6L6 18"/><path d="M6 6l12 12"/>';
+
+SECTIONS.push({
+  id:'icons', kicker:'atoms', title:'Icons',
+  blurb:'react-icons is imported from five namespaces in one file (Si, Fa6, Ri, Lu, plus the source-picker set). It works and tree-shakes, but it means five different design languages sitting next to each other — different stroke weights, different corner treatments, different optical sizes.',
+  today:{ label:'Kairo today — react-icons, five families mixed',
+    html:`<div class="ico-set" style="font-size:19px"><span>📷</span><span>🎙</span><span>✎</span><span>⚙</span>
+      <span class="lbl" style="font-size:11px">+ hand-written SVGs in NotchIcons.tsx and KairoMark.tsx</span></div>`,
+    pain:'Brand icons (Instagram, X, LinkedIn) genuinely need react-icons/si — keep that. Everything else (mic, pen, close, gear, check) should come from one set with one stroke weight so the UI reads as designed rather than assembled.'},
+  options:[
+    {n:'Lucide', lib:'lucide-react · ISC', tag:'live', inst:'npm i lucide-react', badge:'pick',
+     html:`<div class="ico-set">${ico(MIC,1.6)}${ico(PEN,1.6)}${ico(GEAR,1.6)}${ico(CLOSE,1.6)}</div>`,
+     why:'1.5px stroke, 24px grid, rounded caps — sits perfectly with Geist. 1000+ icons, ~1kb each, tree-shakes properly, and it is what shadcn/Base UI examples assume. <b>The default choice.</b>'},
+    {n:'Lucide, heavier stroke', lib:'lucide-react', tag:'live', inst:'strokeWidth={2}',
+     html:`<div class="ico-set">${ico(MIC,2.2)}${ico(PEN,2.2)}${ico(GEAR,2.2)}${ico(CLOSE,2.2)}</div>`,
+     why:'Same set at strokeWidth 2.2. On the dark notch, thin strokes disappear — you likely want a heavier weight there and the lighter one on the light settings card. One prop, two contexts.'},
+    {n:'Thin / SF-Symbols-ish', lib:'lucide or phosphor thin', tag:'live', inst:'weight="thin"',
+     html:`<div class="ico-set">${ico(MIC,1.1)}${ico(PEN,1.1)}${ico(GEAR,1.1)}${ico(CLOSE,1.1)}</div>`,
+     why:'Closest to macOS SF Symbols in feel. Elegant on the editorial light card; too fragile on the notch. Worth trying for Settings only.'},
+    {n:'Phosphor', lib:'@phosphor-icons/react · MIT', tag:'mock', inst:'npm i @phosphor-icons/react',
+     html:`<div class="ico-set" style="opacity:.9">${ico(MIC,1.9)}${ico(PEN,1.9)}${ico(GEAR,1.9)}${ico(CLOSE,1.9)}</div>`,
+     why:'Six weights including duotone and fill — the widest expressive range. Duotone with the accent as the second tone would be a distinctive look for the notch.'},
+    {n:'Tabler', lib:'@tabler/icons-react · MIT', tag:'mock', inst:'npm i @tabler/icons-react',
+     html:`<div class="ico-set">${ico(MIC,1.75)}${ico(PEN,1.75)}${ico(GEAR,1.75)}${ico(CLOSE,1.75)}</div>`,
+     why:'5,900+ icons — by far the biggest coverage, so you will never fail to find one. Slightly more geometric than Lucide.'},
+    {n:'Keep react-icons for brands', lib:'react-icons/si', tag:'mock', inst:'already installed', badge:'pick',
+     html:`<div class="ico-set" style="font-size:18px"><span>𝕏</span><span>in</span><span>◎</span><span>G</span></div>`,
+     why:'Brand marks must be the official glyph — no generic set has a correct X or LinkedIn logo. Rule: <b>react-icons/si for brands only, one set for everything else.</b>'},
+    {n:'Custom Kairo glyphs', lib:'your own SVG', tag:'mock', inst:'—',
+     html:`<div class="ico-set" style="color:var(--acc)"><svg viewBox="0 0 32 32" style="width:22px;height:22px"><path d="M6 3 L28 14 L17 17 L13 28 Z" fill="currentColor"/></svg>
+       <span class="eyes" style="transform:scale(1.4)"><i></i><i></i></span></div>`,
+     why:'The arrow and the eyes are already yours and already recognisable. Anything that represents <i>Kairo itself</i> should stay custom — only the generic UI verbs should come from a library.'}
+  ]
+});
+
+/* =========================================================================
+   20 — STATES
+   ========================================================================= */
+SECTIONS.push({
+  id:'states', kicker:'the unhappy paths', title:'Empty, error & permission states',
+  blurb:'Three states carry real product risk: permissions not granted (blocks everything), signed out (blocks everything), and the free quota exhausted (the paywall — the single most commercially important screen in the app). Today all three are plain text in a card.',
+  today:{ label:'Kairo today — text in a card',
+    html:`<div class="card-mini"><h5>You're signed out</h5><p>Sign in to use Kairo.</p>
+      <button class="b b-kairo" style="margin-top:9px;font-size:12.5px;padding:8px 13px">Sign in with Google</button></div>`,
+    pain:'Functional but flat. The quota-exhausted case in particular has no dedicated surface at all — the user just discovers a turn does not work. That is the moment you are asking for $10/mo and it deserves a designed screen.'},
+  options:[
+    {n:'Illustrated empty state', lib:'your own SVG', tag:'mock', inst:'—',
+     html:`<div class="empty"><span class="eyes" style="transform:scale(1.8);margin-bottom:6px"><i></i><i></i></span>
+       <b style="color:var(--ink);font-family:var(--font-display);font-size:13.5px">Nothing to show yet</b>
+       <span>Hold ⌥⌃ and ask about anything on screen.</span></div>`,
+     why:'Use the eyes as the empty-state mark everywhere. Consistent, costs nothing, and it makes an empty screen feel like Kairo waiting rather than a bug.'},
+    {n:'Paywall moment', lib:'design pattern', tag:'mock', inst:'—', badge:'pick',
+     demoClass:'desk',
+     html:`<div class="cap" style="flex-direction:column;align-items:flex-start;gap:8px;max-width:280px">
+       <div class="row"><span class="eyes"><i></i><i></i></span><span class="cap-txt">That was your last free turn.</span></div>
+       <div class="row" style="gap:7px"><button class="b" style="background:var(--acc);color:#fff;border-radius:8px;font-size:12px;padding:7px 12px">Go Pro — $10/mo</button>
+       <span class="kbd">maybe later</span></div></div>`,
+     why:'<b>Deliver the paywall through the notch, in the flow, at the exact moment.</b> A settings-window upsell is a different context from the moment of need. Keep the free-quota ring visible from turn 7 so it is never a surprise.'},
+    {n:'Permission recovery', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="col" style="width:100%;max-width:250px;gap:7px;font-size:12.5px">
+       <div class="row" style="gap:8px"><span class="ok">✓</span><span>Microphone</span></div>
+       <div class="row" style="gap:8px"><span style="color:var(--acc)">◉</span><span>Screen Recording</span>
+       <button class="b b-ghost" style="margin-left:auto;padding:4px 9px;font-size:11px">Open Settings</button></div>
+       <span class="lbl" style="font-size:11px">macOS applies this after a relaunch — I will restart for you.</span></div>`,
+     why:'Your App.tsx recovery screen explains the relaunch requirement in a paragraph of prose. A per-row status + one action button + one plain sentence converts far better than a wall of text at the highest-drop-off moment.'},
+    {n:'Offline / backend down', lib:'design pattern', tag:'mock', inst:'—',
+     demoClass:'desk',
+     html:`<div class="cap cap-pill"><span style="color:#ffd7a6">⚠</span><span class="cap-lbl">Can't reach Kairo — retrying…</span></div>`,
+     why:'Everything routes through api.meetkairo.xyz. There is no distinct offline state today: a network failure surfaces as a generic error string, so the user cannot tell "your internet" from "the product is broken".'},
+    {n:'Error with a way out', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div style="padding:10px 12px;border:1px solid color-mix(in srgb,#c83c32 34%,var(--hairline));border-radius:8px;background:color-mix(in srgb,#c83c32 6%,#fff);font-size:12px;max-width:250px">
+       <b style="display:block">Couldn't load voices</b><span style="color:var(--ink-muted)">Check your connection.</span>
+       <button class="b b-ghost" style="margin-top:8px;padding:4px 10px;font-size:11.5px">Retry</button></div>`,
+     why:'Every error string in the app today is a dead end — no retry, no next step. "Check your connection" without a Retry button forces the user to reopen the whole window.'},
+    {n:'Skeleton settings', lib:'CSS', tag:'live', inst:'—',
+     html:`<div class="col" style="width:100%;max-width:230px;gap:9px">
+       <div class="row" style="gap:9px"><div class="skel" style="width:30px;height:30px;border-radius:999px"></div>
+       <div class="col" style="gap:5px;flex:1"><div class="skel" style="height:9px;width:60%"></div><div class="skel" style="height:9px;width:80%"></div></div></div>
+       <div class="skel" style="height:26px;width:100%;border-radius:6px"></div></div>`,
+     why:'Replaces the "Loading…" flash when Settings opens. Shape-matched skeletons make the window feel like it opened instantly even when /v1/me takes 400ms.'},
+    {n:'First-run notch hint', lib:'design pattern', tag:'mock', inst:'—',
+     demoClass:'desk',
+     html:`<div class="cap cap-pill" style="opacity:.6"><span class="orb" style="width:12px;height:12px"></span><span class="cap-lbl">Kairo is listening for ⌥⌃</span></div>`,
+     why:'A dimmed idle presence for the first few sessions solves "is it even running?" — currently idle means the capsule unmounts entirely and the app is invisible until you remember the chord.'}
+  ]
+});
+
+/* =========================================================================
+   21 — FEEL / POLISH
+   ========================================================================= */
+SECTIONS.push({
+  id:'feel', kicker:'craft', title:'Feel: motion, sound, focus',
+  blurb:'The details that separate "a Tauri app" from "a Mac app". You already do two of these better than most shipped software — reduced-motion handling is thorough, and sound design exists (core/sound.ts, music.ts, playChime). The rest is missing.',
+  today:{ label:'Kairo today — reduced-motion handled, focus not',
+    html:`<div class="col" style="gap:8px;width:100%;max-width:240px;font-size:12.5px">
+      <div class="row" style="gap:8px"><span class="ok">✓</span><span>prefers-reduced-motion everywhere</span></div>
+      <div class="row" style="gap:8px"><span class="ok">✓</span><span>audio cues (chime, morph, settle)</span></div>
+      <div class="row" style="gap:8px"><span class="bad">✕</span><span>:focus-visible rings</span></div>
+      <div class="row" style="gap:8px"><span class="bad">✕</span><span>prefers-contrast / forced-colors</span></div></div>`,
+    pain:'Exactly one :focus-visible rule exists in the whole codebase (the annotation canvas). Tab through Settings and you cannot see where you are.'},
+  options:[
+    {n:'Focus rings', lib:':focus-visible + one token', tag:'live', inst:'CSS only', badge:'pick',
+     html:`<div class="row" style="gap:9px"><button class="b b-kairo" style="outline:2px solid rgb(var(--acc-rgb)/.7);outline-offset:2px">focused</button>
+       <button class="sw sw-base" data-toggle data-on="1" style="outline:2px solid rgb(var(--acc-rgb)/.7);outline-offset:3px"><i></i></button></div>`,
+     why:'One rule, one token, applied globally: <code>:focus-visible{outline:2px solid rgb(var(--kairo-accent-rgb)/.7);outline-offset:2px}</code>. Ten minutes, and keyboard use stops being guesswork.'},
+    {n:'Sound design', lib:'howler.js or your Web Audio', tag:'mock', inst:'npm i howler',
+     html:`<div class="col" style="gap:6px;font-size:12px;width:100%;max-width:230px">
+       <div class="row" style="justify-content:space-between"><span>recording start</span><span class="lbl mono" style="font-size:10.5px">rising two-note</span></div>
+       <div class="row" style="justify-content:space-between"><span>found the target</span><span class="lbl mono" style="font-size:10.5px">soft chime</span></div>
+       <div class="row" style="justify-content:space-between"><span>error</span><span class="lbl mono" style="font-size:10.5px">low blip</span></div></div>`,
+     why:'You already hand-roll Web Audio in core/sound.ts and it works — no library needed. The gap is coverage: sounds exist for onboarding beats but not for the everyday loop (turn complete, error, quota warning).'},
+    {n:'Motion tokens', lib:'CSS custom props', tag:'mock', inst:'—', badge:'pick',
+     html:`<div class="col" style="gap:5px;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-muted)">
+       <span>--ease-out: cubic-bezier(.22,1,.36,1)</span><span>--ease-spring: cubic-bezier(.34,1.28,.5,1)</span>
+       <span>--dur-fast: 160ms · --dur: 240ms · --dur-morph: 420ms</span></div>`,
+     why:'There are at least eight distinct duration values and six easing curves scattered across the three CSS files. Three durations and two curves is enough for the entire product, and consistency is what actually reads as "polished".'},
+    {n:'Hover intent', lib:'design pattern', tag:'mock', inst:'—',
+     html:`<div class="row" style="gap:8px"><button class="b b-ghost" style="font-size:12px">no delay</button>
+       <button class="b b-ghost" style="font-size:12px">120ms in / 0 out</button></div>`,
+     why:'Tooltips and the notch hover-reveal should have asymmetric delay — slow to appear, instant to leave. Without it a pointer crossing the notch triggers state changes the user did not intend.'},
+    {n:'prefers-contrast / forced-colors', lib:'CSS media queries', tag:'mock', inst:'CSS only',
+     html:`<div class="cap" style="border-color:#fff;border-width:2px"><span class="cap-lbl">high-contrast variant</span></div>`,
+     why:'Unhandled today. Increase Contrast is a common macOS accessibility setting and your hairline borders (10% ink) vanish under it. Two media queries covers it.'},
+    {n:'Window chrome', lib:'tauri window decorations', tag:'mock', inst:'already installed',
+     html:`<div class="sheet" style="max-width:230px"><div class="sheet-h" style="background:var(--canvas-soft);padding:7px 11px">
+       <span class="row" style="gap:5px"><i style="width:9px;height:9px;border-radius:999px;background:#ff5f57;display:block"></i><i style="width:9px;height:9px;border-radius:999px;background:#febc2e;display:block"></i><i style="width:9px;height:9px;border-radius:999px;background:#28c840;display:block"></i></span>
+       <b style="font-size:11.5px">Kairo</b><span></span></div><div class="sheet-b">translucent titlebar · vibrancy</div></div>`,
+     why:'Settings uses an overlay titlebar with a manual drag region — correct. The next step for native feel is NSVisualEffectView vibrancy behind the card, which Tauri exposes on macOS.'}
+  ]
+});
+
+/* =========================================================================
+   22 — THE PLAN
+   ========================================================================= */
+SECTIONS.push({
+  id:'plan', kicker:'what i would actually do', title:'Recommended stack & order',
+  blurb:'The honest summary: do NOT re-skin Kairo. The visual system is better than anything a component library would give you, and the three surfaces that make the product special (notch, overlay, pet) have no off-the-shelf equivalent. What you should buy is behaviour for the generic controls, and character for the special ones.',
+  note:'<b>Total dependency delta if you take all of it:</b> +5 packages (@base-ui-components/react, sonner, cmdk, lucide-react, perfect-freehand) ≈ 60–80kb gzipped, minus whatever you delete: @uiw/react-color-wheel, @uiw/react-color-shade-slider, and most of react-icons. Roughly net-neutral on bundle size, several hundred lines lighter in the codebase, and three whole bug classes (focus traps, listbox keyboard nav, dismissable layers) stop being yours to maintain.',
+  plan:[
+    {n:1,t:'Sonner + toast routing',e:'~2h',p:'Install sonner, restyle it dark to match the capsule, and route every existing error string through it. Keep the persistent billing notice inline. This is the largest UX gap in the product and the smallest fix.'},
+    {n:2,t:'Tooltips + a shortcut legend',e:'~2h',p:'Base UI Tooltip (or tippy.js) on every icon button, and a shortcut row in Settings. Two shortcuts run this entire product and neither is written down after onboarding.'},
+    {n:3,t:'Base UI Dialog for the Skills modal',e:'~1h',p:'Delete the hand-rolled scrim. Focus trap, Escape, scroll lock, return-focus — all bugs today, all free. Or drop the modal entirely and expand the list in place.'},
+    {n:4,t:'Focus rings + motion tokens',e:'~1h',p:'One :focus-visible rule with the accent, and collapse eight durations / six easings down to three and two. Pure CSS, no dependency, immediately visible as "polish".'},
+    {n:5,t:'Rebuild the voice picker',e:'~4h',p:'cmdk or Base UI Combobox: search, group by language, ▶ preview per row without saving. It is the worst control in the app and it sits on top of your most differentiated feature (multilingual voice).'},
+    {n:6,t:'perfect-freehand for the pen',e:'~2h',p:'Swap the constant-width polyline in penDraw.ts for pressure-tapered strokes. Three lines, and the ⌥⇧P pen instantly reads as a real marker.'},
+    {n:7,t:'Elapsed-aware thinking copy + skeletons',e:'~3h',p:'Make thinkingVerbs.ts time-aware so an 8-second turn acknowledges itself, and replace every "Loading…" with a shape-matched skeleton.'},
+    {n:8,t:'Motion layout for the capsule',e:'~4h',p:'Replace useCapsuleMorph with <code>&lt;motion.div layout&gt;</code>. Deletes the measurement code, makes interrupted morphs safe, and ends the CSS-vs-framer-motion turf war the comments already warn about.'},
+    {n:9,t:'Give the pet a face',e:'~1–2 days',p:'Eyes that track the target, squash-and-stretch on the spring, and a graded idle retreat. Then evaluate Rive — a state machine driven by mic level and a thinking bool is the path to a real character without more animation code.'},
+    {n:10,t:'Annotation vocabulary beyond the box',e:'~1 week',p:'Spotlight mask for small targets, an arrow + two-word label as a second mode, numbered markers for follow-along. This is the product\'s core moment and it currently has exactly one way to speak.'}
+  ]
+});
+
+/*__MORE_SECTIONS__*/
+
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+const app = document.getElementById('app');
+const toc = document.getElementById('toc');
+
+app.appendChild(h(`<div class="intro">
+  <p class="kick">kairo desktop · every surface except the website landing page</p>
+  <h1>UI &amp; UX library explorer</h1>
+  <p>A menu of concrete replacements for every hand-built control in the app, in the landing page's own visual language, so you can judge them in context. Nothing here touches the product — this file is a sandbox.</p>
+  <p style="font-size:13px"><b>How to read a card.</b>
+  <span class="badge cur">current</span> is a pixel-close recreation of what ships today.
+  <span class="badge live">live</span> means the real library is loaded from a CDN on this page and you are seeing its actual behaviour.
+  <span class="badge mock">mock</span> means it is a faithful hand-built recreation of how that library looks and behaves — enough to judge the design, not the API.
+  <span class="badge pick">pick</span> is my recommendation for that slot.</p>
+  <p style="font-size:13px">The accent dots in the header retint every demo live, exactly like the app's user-chosen accent does — use them to check that a candidate survives all six presets.</p>
+</div>`));
+
+function renderSection(s){
+  const sec = h('<section class="sec" id="' + s.id + '"></section>');
+  sec.appendChild(h('<div class="sec-h"><span class="kick">' + s.kicker + '</span></div>'));
+  sec.querySelector('.sec-h').insertAdjacentHTML('afterbegin', '<h2>' + s.title + '</h2>');
+  sec.appendChild(h('<p class="sec-blurb">' + s.blurb + '</p>'));
+
+  if (s.audit){
+    const list = h('<div class="audit"></div>');
+    s.audit.forEach((a,i) => list.appendChild(h(
+      '<div class="aud"><span class="n">' + String(i+1).padStart(2,'0') + '</span>' +
+      '<div><h4>' + a.t + '</h4><p>' + a.p + '</p></div>' +
+      '<span class="sev ' + a.s + '">' + (a.s === 'hi' ? 'high' : a.s === 'md' ? 'medium' : 'low') + '</span></div>')));
+    sec.appendChild(list);
+  }
+
+  if (s.today){
+    const t = h('<div class="today"><div class="demo" style="margin:0"></div>' +
+      '<div class="t-meta"><h4><span class="badge cur">current</span> ' + s.today.label + '</h4>' +
+      '<p class="t-pain">' + s.today.pain + '</p></div></div>');
+    const d = t.querySelector('.demo');
+    d.innerHTML = s.today.html;
+    if (s.today.dark) d.classList.add('dark');
+    sec.appendChild(t);
+    wireToggles(d); wireSeg(d);
+    if (s.today.init) { try { s.today.init(d); } catch(e){ console.warn('today init failed', s.id, e); } }
+  }
+
+  if (s.note) sec.appendChild(h('<div class="note">' + s.note + '</div>'));
+
+  if (s.plan){
+    const list = h('<div class="plan"></div>');
+    s.plan.forEach(p => list.appendChild(h(
+      '<div class="p"><span class="num">' + p.n + '</span>' +
+      '<div><b>' + p.t + '</b><p>' + p.p + '</p></div>' +
+      '<span class="eff">' + p.e + '</span></div>')));
+    sec.appendChild(list);
+  }
+
+  if (s.options){
+    const grid = h('<div class="grid"></div>');
+    s.options.forEach(o => {
+      const card = h('<div class="opt" data-search="' + (o.n + ' ' + o.lib).toLowerCase() + '"></div>');
+      const badge = o.badge ? '<span class="badge ' + o.badge + '">' + o.badge + '</span>' : '';
+      const tag = '<span class="badge ' + o.tag + '" data-tagslot>' + o.tag + '</span>';
+      card.appendChild(h('<div class="opt-h"><h4>' + o.n + '</h4>' + (badge || tag) + '</div>'));
+      if (badge) card.querySelector('.opt-h').insertAdjacentHTML('beforeend', tag);
+      card.appendChild(h('<div class="lib">' + o.lib + '</div>'));
+      const demo = h('<div class="demo ' + (o.demoClass || '') + '"></div>');
+      demo.innerHTML = o.html;
+      card.appendChild(demo);
+      card.appendChild(h('<div class="why">' + o.why + '</div>'));
+      if (o.inst && o.inst !== '—') card.appendChild(h('<div class="inst">' + o.inst + '</div>'));
+      grid.appendChild(card);
+      wireToggles(demo); wireSeg(demo);
+      if (o.init) { try { o.init(demo); } catch(e){ console.warn('init failed', o.n, e); } }
+    });
+    sec.appendChild(grid);
+  }
+  app.appendChild(sec);
+  toc.appendChild(h('<a href="#' + s.id + '">' + s.title + '</a>'));
+}
+
+SECTIONS.forEach(renderSection);
+
+/* copy-to-clipboard on install lines */
+document.addEventListener('click', (e) => {
+  const i = e.target.closest('.inst'); if (!i) return;
+  navigator.clipboard?.writeText(i.textContent.trim());
+  i.classList.add('copied'); setTimeout(() => i.classList.remove('copied'), 900);
+});
+
+/* accent switcher */
+const dots = document.getElementById('accDots');
+ACCENTS.forEach((hex,i) => {
+  const b = h('<button class="acc-dot" style="background:' + hex + '" data-on="' + (i===0?1:0) + '"></button>');
+  b.addEventListener('click', () => {
+    document.documentElement.style.setProperty('--acc', hex);
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), bl = parseInt(hex.slice(5,7),16);
+    document.documentElement.style.setProperty('--acc-rgb', r + ' ' + g + ' ' + bl);
+    dots.querySelectorAll('.acc-dot').forEach(d => d.dataset.on = '0'); b.dataset.on = '1';
+  });
+  dots.appendChild(b);
+});
+
+/* filter */
+document.getElementById('srch').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll('.opt').forEach(o => o.classList.toggle('hidden', q && !o.dataset.search.includes(q)));
+  document.querySelectorAll('.sec').forEach(s => {
+    const g = s.querySelector('.grid'); if (!g) return;
+    s.classList.toggle('hidden', q && ![...g.children].some(c => !c.classList.contains('hidden')));
+  });
+});
+
+/* toc active state */
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(en => {
+    if (!en.isIntersecting) return;
+    toc.querySelectorAll('a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + en.target.id));
+  });
+}, { rootMargin: '-70px 0px -70% 0px' });
+document.querySelectorAll('.sec').forEach(s => io.observe(s));
+</script>
+</body>
+</html>
