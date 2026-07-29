@@ -14,6 +14,10 @@ export type ThinkingTier = {
   label: (verb: string) => string;
 };
 
+/**
+ * A turn that genuinely captured the screen. Naming what Kairo is doing is reassuring precisely
+ * because it is TRUE — so this set is only ever used when a capture actually happened.
+ */
 export const THINKING_TIERS: readonly ThinkingTier[] = [
   { fromMs: 0, label: (verb) => verb },
   { fromMs: 3000, label: () => 'Reading the screen' },
@@ -21,10 +25,27 @@ export const THINKING_TIERS: readonly ThinkingTier[] = [
   { fromMs: 13000, label: () => 'Almost there' }
 ];
 
-/** The label for a spell that began `elapsedMs` ago. */
-export function thinkingLabel(verb: string, elapsedMs: number): string {
-  let current = THINKING_TIERS[0];
-  for (const tier of THINKING_TIERS) {
+/**
+ * A turn that never touches the screen: the onboarding say-hi drill is transcribe → chat → speak,
+ * with no capture anywhere in it (demoController.runTalkTurn). Claiming to read the screen there is
+ * a lie the user can catch, and it is confusing during the one act that is teaching them what Kairo
+ * even does.
+ */
+export const THINKING_TIERS_OFFSCREEN: readonly ThinkingTier[] = [
+  { fromMs: 0, label: (verb) => verb },
+  { fromMs: 3000, label: () => 'Still with you' },
+  { fromMs: 7000, label: () => 'Taking a little longer' },
+  { fromMs: 13000, label: () => 'Almost there' }
+];
+
+/**
+ * The label for a spell that began `elapsedMs` ago. `readsScreen` picks the tier set — pass false
+ * for anything that is not a vision turn.
+ */
+export function thinkingLabel(verb: string, elapsedMs: number, readsScreen = true): string {
+  const tiers = readsScreen ? THINKING_TIERS : THINKING_TIERS_OFFSCREEN;
+  let current = tiers[0];
+  for (const tier of tiers) {
     if (elapsedMs >= tier.fromMs) current = tier;
   }
   return current.label(verb);

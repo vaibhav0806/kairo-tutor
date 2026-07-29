@@ -1617,7 +1617,10 @@ export function NotchApp() {
       ? 'Listening'
       : capsuleMode === 'speaking'
         ? 'Speaking'
-        : thinkingLabel(thinkingVerb, thinkingElapsed);
+        // 'coach' is onboarding, whose only busy state is the Act 2 say-hi drill — transcribe →
+      // chat → speak, with no screen capture anywhere in it. Saying "reading the screen" there is
+      // simply untrue, and it lands during the act that is teaching the user what Kairo does.
+      : thinkingLabel(thinkingVerb, thinkingElapsed, capsuleMode !== 'coach');
 
   return (
     <>
