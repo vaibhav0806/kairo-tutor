@@ -119,33 +119,53 @@ function useLivePenStroke(displayBounds: OverlayDisplayBounds) {
     return () => unlisten();
   }, []);
 
+  // How many points are already on the canvas. Ink is additive, so a frame only ever needs to draw
+  // what arrived since the last one — redrawing the whole path meant the per-frame cost grew with
+  // the length of the stroke (and on a Retina display that is a 3420x2224 buffer being cleared and
+  // re-stroked 120 times a second). Reset to 0 whenever the layer is blanked.
+  const drawnRef = useRef(0);
+
   const paint = useCallback(() => {
     rafRef.current = 0;
     const canvas = canvasRef.current;
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
-    context.clearRect(0, 0, displayBounds.width, displayBounds.height);
     const points = pointsRef.current;
-    if (points.length === 0) return;
+
+    // Stroke finished / cancelled → blank the layer once and start fresh.
+    if (points.length === 0) {
+      if (drawnRef.current !== 0) {
+        context.clearRect(0, 0, displayBounds.width, displayBounds.height);
+        drawnRef.current = 0;
+      }
+      return;
+    }
 
     context.strokeStyle = `rgb(${accentRef.current})`;
     context.fillStyle = `rgb(${accentRef.current})`;
-    if (points.length === 1) {
+
+    // First sample: a dot, so a tap leaves a mark.
+    if (drawnRef.current === 0) {
       context.beginPath();
       context.arc(points[0].x, points[0].y, 2.5, 0, Math.PI * 2);
       context.fill();
-      return;
+      drawnRef.current = 1;
     }
-    // One continuous quadratic through the midpoints — no per-segment round-cap beads.
+    if (points.length < 2 || drawnRef.current >= points.length) return;
+
+    // Continue the path from the last point already drawn. Starting one point BEHIND keeps the
+    // quadratic continuous across frames — otherwise every frame boundary shows a faint kink.
+    const from = Math.max(0, drawnRef.current - 1);
     context.beginPath();
-    context.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index < points.length - 1; index += 1) {
+    context.moveTo(points[from].x, points[from].y);
+    for (let index = from + 1; index < points.length - 1; index += 1) {
       const midX = (points[index].x + points[index + 1].x) / 2;
       const midY = (points[index].y + points[index + 1].y) / 2;
       context.quadraticCurveTo(points[index].x, points[index].y, midX, midY);
     }
     context.lineTo(points[points.length - 1].x, points[points.length - 1].y);
     context.stroke();
+    drawnRef.current = points.length;
   }, [displayBounds.width, displayBounds.height]);
 
   const schedule = useCallback(() => {
