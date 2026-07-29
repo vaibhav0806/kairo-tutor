@@ -1738,3 +1738,120 @@ input {
   cursor: default;
   opacity: 0.5;
 }
+
+/* ---- The switch (Base UI Switch, styled here) ------------------------------------------------
+   macOS geometry and physics — the knob stretches while held and settles on release — but filled
+   with the USER'S accent instead of the system green, so Settings reads as theirs. Base UI owns
+   the semantics; every pixel below is ours. */
+.kswitch {
+  appearance: none;
+  background: rgb(11 13 18 / 0.16);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 0.5px rgb(11 13 18 / 0.06);
+  cursor: pointer;
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0;
+  position: relative;
+  transition: background-color var(--dur) var(--ease-out);
+  width: 44px;
+}
+.kswitch[data-checked] {
+  background: rgb(var(--kairo-accent-rgb, 102 92 255));
+}
+.kswitch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.kswitch-knob {
+  background: #ffffff;
+  border-radius: 999px;
+  box-shadow:
+    0 2px 6px rgb(11 13 18 / 0.18),
+    0 1px 1px rgb(11 13 18 / 0.14);
+  display: block;
+  height: 22px;
+  left: 2px;
+  position: absolute;
+  top: 2px;
+  transition:
+    transform var(--dur) var(--ease-out),
+    width var(--dur-fast) var(--ease-out);
+  width: 22px;
+}
+.kswitch[data-checked] .kswitch-knob {
+  transform: translateX(18px);
+}
+/* Press: the knob elongates toward the direction it would travel. */
+.kswitch:active .kswitch-knob {
+  width: 26px;
+}
+.kswitch[data-checked]:active .kswitch-knob {
+  transform: translateX(14px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kswitch,
+  .kswitch-knob {
+    transition: none;
+  }
+}
+
+/* ---- Segmented control (components/Segmented.tsx) --------------------------------------------
+   One indicator that travels, filled with the user's accent, on the spring easing the notch uses
+   so the two surfaces feel related. */
+.kseg {
+  align-items: center;
+  background: var(--canvas-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-inset);
+  display: flex;
+  isolation: isolate;
+  padding: 3px;
+  position: relative;
+}
+.kseg-ind {
+  background: rgb(var(--kairo-accent-rgb, 102 92 255));
+  border-radius: calc(var(--radius-inset) - 2px);
+  bottom: 3px;
+  left: 0;
+  position: absolute;
+  top: 3px;
+  z-index: 0;
+  transition:
+    transform var(--dur-morph) var(--ease-spring),
+    width var(--dur-morph) var(--ease-spring),
+    opacity var(--dur-fast) ease;
+}
+.kseg-opt {
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius-inset) - 2px);
+  color: var(--ink-muted);
+  cursor: pointer;
+  flex: 1;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 12px;
+  position: relative;
+  transition: color var(--dur-fast) ease;
+  z-index: 1;
+}
+.kseg-opt:hover:not(:disabled):not([data-active='true']) {
+  color: var(--ink);
+}
+.kseg-opt[data-active='true'] {
+  color: #ffffff;
+  font-weight: 600;
+}
+.kseg-opt:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kseg-ind {
+    transition: none;
+  }
+}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { Switch } from '@base-ui/react/switch';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
@@ -396,7 +397,11 @@ export function SettingsView() {
         <section className="s-section">
           <div className="settings-row s-item">
             <div className="s-item-name">Launch at login</div>
-            <Toggle checked={launchAtLogin} onChange={(v) => void toggleLaunch(v)} />
+            <Toggle
+              checked={launchAtLogin}
+              label="Launch at login"
+              onChange={(v) => void toggleLaunch(v)}
+            />
           </div>
         </section>
 
@@ -441,15 +446,29 @@ export function SettingsView() {
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+/**
+ * The switch. Base UI owns the behaviour (correct switch semantics, keyboard, focus, form
+ * integration); the look is ours. Geometry follows macOS — the knob stretches while pressed and
+ * settles on release — and the "on" fill is the user's accent rather than the system green, so
+ * Settings reads as theirs.
+ */
+function Toggle({
+  checked,
+  onChange,
+  label
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
   return (
-    <button
-      role="switch"
-      aria-checked={checked}
-      className={`s-toggle${checked ? ' s-toggle-on' : ''}`}
-      onClick={() => onChange(!checked)}
+    <Switch.Root
+      aria-label={label}
+      checked={checked}
+      onCheckedChange={onChange}
+      className="kswitch"
     >
-      <span className="s-toggle-knob" />
-    </button>
+      <Switch.Thumb className="kswitch-knob" />
+    </Switch.Root>
   );
 }

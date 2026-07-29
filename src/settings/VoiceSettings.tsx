@@ -3,6 +3,7 @@ import type { PreferencesResponse, TtsProvider, Voice } from '@kairo/shared';
 import type { NativeBridge } from '../native/nativeBridge';
 import { klog } from '../core/logger';
 import { KButton } from '../components/KButton';
+import { Segmented } from '../components/Segmented';
 
 const PROVIDER_LABEL: Record<TtsProvider, string> = {
   sarvam: 'Sarvam',
@@ -115,20 +116,18 @@ export function VoiceSettings({ bridge }: { bridge: NativeBridge }) {
       <div className="s-label">Voice</div>
 
       {prefs.availableProviders.length > 1 && (
-        <div className="s-segmented">
-          {prefs.availableProviders.map((provider) => (
-            <button
-              key={provider}
-              className={`s-segment${provider === prefs.ttsProvider ? ' s-segment-active' : ''}`}
-              disabled={saving}
-              onClick={() => {
-                if (provider !== prefs.ttsProvider) void save({ ttsProvider: provider });
-              }}
-            >
-              {PROVIDER_LABEL[provider]}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Voice engine"
+          disabled={saving}
+          value={prefs.ttsProvider}
+          options={prefs.availableProviders.map((provider) => ({
+            value: provider,
+            label: PROVIDER_LABEL[provider]
+          }))}
+          onChange={(provider) => {
+            if (provider !== prefs.ttsProvider) void save({ ttsProvider: provider });
+          }}
+        />
       )}
       <p className="settings-muted s-voice-blurb">{PROVIDER_BLURB[prefs.ttsProvider]}</p>
 

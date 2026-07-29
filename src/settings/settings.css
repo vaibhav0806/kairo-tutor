@@ -220,37 +220,6 @@
   color: #527b09;
 }
 
-/* iOS-style toggle */
-.s-toggle {
-  appearance: none;
-  border: none;
-  cursor: pointer;
-  width: 40px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgb(11 13 18 / 0.18);
-  position: relative;
-  transition: background var(--dur-fast) ease;
-  flex-shrink: 0;
-}
-.s-toggle-on {
-  background: var(--s-accent);
-}
-.s-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgb(11 13 18 / 0.25);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-.s-toggle-on .s-toggle-knob {
-  transform: translateX(16px);
-}
-
 .settings-foot {
   display: flex;
   align-items: center;
@@ -351,41 +320,7 @@
   overflow: hidden;
 }
 
-/* Voice picker — engine segmented control + voice dropdown */
-.s-segmented {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: var(--radius-inset);
-  border: 1px solid var(--hairline);
-  background: var(--canvas-soft);
-  margin-bottom: 8px;
-}
-.s-segment {
-  flex: 1;
-  font-family: inherit;
-  font-size: 12.5px;
-  color: var(--ink-soft);
-  padding: 6px 10px;
-  border: 0;
-  border-radius: calc(var(--radius-inset) - 2px);
-  background: transparent;
-  cursor: pointer;
-}
-.s-segment:hover:not(:disabled) {
-  color: var(--ink);
-}
-.s-segment-active,
-.s-segment-active:hover {
-  color: var(--ink);
-  background: var(--canvas);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
-}
-.s-segment:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
+/* Voice picker — the engine control is components/Segmented.tsx (.kseg in styles.css). */
 .s-voice-blurb {
   margin: 0 0 8px;
   font-size: 12px;
