@@ -10,6 +10,7 @@ import { syncUserName } from './onboarding/userName';
 import { SettingsView } from './settings/SettingsView';
 import { KairoLockup } from './components/KairoMark';
 import { KairoToaster } from './components/KairoToaster';
+import { KButton } from './components/KButton';
 
 // The main window is normally hidden. Rust only reveals it on first run when TCC
 // permissions still need granting (see lib.rs setup). So this component is purely
@@ -185,25 +186,23 @@ export function App() {
               </div>
             ))}
           </div>
-          <button
-            className="primary-button"
-            type="button"
+          <KButton
+            busy={isRequestingPermissions}
             onClick={() => void requestRequiredPermissions()}
-            disabled={isRequestingPermissions}
           >
-            {isRequestingPermissions ? 'Checking...' : 'Enable permissions'}
-          </button>
+            {isRequestingPermissions ? 'Checking…' : 'Enable permissions'}
+          </KButton>
           <p className="permission-hint">
             Already granted them in System Settings? macOS only applies Screen Recording
             and Accessibility after a restart — relaunch Kairo to detect them.
           </p>
-          <button
-            className="secondary-button"
-            type="button"
+          <KButton
+            variant="ghost"
+            className="permission-restart"
             onClick={() => void nativeBridge.restartApp()}
           >
             Restart Kairo
-          </button>
+          </KButton>
         </section>
       ) : (
         <section className="permission-onboarding" aria-label="Setup complete">

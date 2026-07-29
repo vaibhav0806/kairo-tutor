@@ -129,6 +129,110 @@ input {
   border-radius: inherit;
 }
 
+/* ---- The button (components/KButton.tsx) -----------------------------------------------------
+   One implementation, three variants. The primary press is the site's: the button slides into its
+   own hard violet offset shadow, which tightens as it goes. Shadows are tinted with the user's
+   accent so Settings belongs to whoever is using it. */
+.kbtn {
+  align-items: center;
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-button);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 640;
+  gap: 7px;
+  justify-content: center;
+  padding: 10px 16px;
+  white-space: nowrap;
+  transition:
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out),
+    background-color var(--dur-fast) ease,
+    opacity 120ms ease;
+}
+
+.kbtn[data-variant='primary'] {
+  background: var(--ink-strong);
+  border-color: var(--ink-strong);
+  color: #ffffff;
+  box-shadow: 5px 5px 0 rgb(var(--kairo-accent-rgb, 102 92 255) / 19%);
+}
+.kbtn[data-variant='primary']:hover:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 3px 3px 0 rgb(var(--kairo-accent-rgb, 102 92 255) / 26%);
+}
+.kbtn[data-variant='primary']:active:not(:disabled) {
+  transform: translate(4px, 4px);
+  box-shadow: 1px 1px 0 rgb(var(--kairo-accent-rgb, 102 92 255) / 30%);
+}
+
+.kbtn[data-variant='ghost'] {
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--ink-subtle);
+  font-size: 12.5px;
+  font-weight: 620;
+  padding: 7px 14px;
+}
+.kbtn[data-variant='ghost']:hover:not(:disabled) {
+  background: var(--surface-soft);
+  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.kbtn[data-variant='ghost']:active:not(:disabled) {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+/* The accent-outlined micro action (a single row's "Grant"). */
+.kbtn[data-variant='mini'] {
+  background: transparent;
+  border-color: rgb(var(--kairo-accent-rgb, 102 92 255) / 35%);
+  color: color-mix(in srgb, rgb(var(--kairo-accent-rgb, 102 92 255)) 70%, var(--ink));
+  font-size: 12px;
+  padding: 5px 12px;
+}
+.kbtn[data-variant='mini']:hover:not(:disabled) {
+  border-color: rgb(var(--kairo-accent-rgb, 102 92 255) / 55%);
+  background: rgb(var(--kairo-accent-rgb, 102 92 255) / 7%);
+}
+
+.kbtn:disabled {
+  cursor: default;
+  opacity: 0.45;
+  transform: none;
+}
+/* Busy keeps the label — a spinner that replaces the text makes the button jump width. */
+.kbtn[data-busy='true'] {
+  cursor: progress;
+  opacity: 0.75;
+}
+.kbtn-spin {
+  border: 2px solid currentColor;
+  border-radius: 999px;
+  border-top-color: transparent;
+  display: inline-block;
+  flex: none;
+  height: 12px;
+  width: 12px;
+  opacity: 0.8;
+  animation: kbtn-spin 700ms linear infinite;
+}
+@keyframes kbtn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kbtn {
+    transition: none;
+  }
+  .kbtn-spin {
+    animation-duration: 1.6s;
+  }
+}
+
 /* ---- Toasts (components/KairoToaster.tsx) ----------------------------------------------------
    Sonner supplies the behaviour; the look is entirely ours (it mounts `unstyled`). Same surface
    language as the settings card so a toast reads as part of the app, not a web notification. */
@@ -318,29 +422,11 @@ input {
   color: #527b09;
 }
 
-.primary-button {
-  background: var(--ink-strong);
-  border: 1px solid var(--ink-strong);
-  border-radius: var(--radius-button);
-  box-shadow: var(--shadow-offset);
-  color: #ffffff;
-  cursor: pointer;
-  font-weight: 680;
-  padding: 13px 20px;
-  white-space: nowrap;
-  transition:
-    transform var(--dur) var(--ease-out),
-    box-shadow var(--dur) var(--ease-out);
-}
-
-.primary-button:hover:not(:disabled) {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-offset-hover);
-}
-
-.primary-button:disabled {
-  opacity: 0.45;
-  cursor: default;
+/* The permission screen's "Restart Kairo" — full-width under the hint, so it reads as the
+   fallback path rather than a second primary action. */
+.permission-restart {
+  margin-top: 14px;
+  width: 100%;
 }
 
 .permission-hint {
@@ -988,24 +1074,6 @@ input {
 
 .annotation-overlay-canvas[data-tool="erase"] {
   cursor: crosshair;
-}
-
-.secondary-button {
-  background: transparent;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-button);
-  color: var(--ink-subtle);
-  cursor: pointer;
-  font-weight: 640;
-  margin-top: 14px;
-  padding: 11px 12px;
-  width: 100%;
-  transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease;
-}
-
-.secondary-button:hover {
-  background: var(--surface-soft);
-  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
 }
 
 .response p {

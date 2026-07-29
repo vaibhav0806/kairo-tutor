@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { NativeBridge, NativeUpdateInfo } from '../native/nativeBridge';
 import { klog } from '../core/logger';
 import { notify } from '../core/notify';
+import { KButton } from '../components/KButton';
 
 type State =
   | { kind: 'idle' }
@@ -98,13 +99,13 @@ export function UpdateSettings({ bridge, version }: { bridge: NativeBridge; vers
           </div>
         </div>
         {state.kind === 'available' ? (
-          <button className="s-btn" disabled={busy} onClick={() => void install()}>
+          <KButton busy={busy} onClick={() => void install()}>
             Update &amp; restart
-          </button>
+          </KButton>
         ) : (
-          <button className="s-btn s-btn-ghost" disabled={busy} onClick={() => void check(true)}>
+          <KButton variant="ghost" busy={busy} onClick={() => void check(true)}>
             Check
-          </button>
+          </KButton>
         )}
       </div>
     </section>

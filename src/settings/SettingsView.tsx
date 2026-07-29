@@ -10,6 +10,7 @@ import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import { notify, notifySaving } from '../core/notify';
 import { KairoLockup } from '../components/KairoMark';
+import { KButton } from '../components/KButton';
 import { VoiceSettings } from './VoiceSettings';
 import { UpdateSettings } from './UpdateSettings';
 import { ACCENT_PRESETS } from '../onboarding/accentPresets';
@@ -221,9 +222,7 @@ export function SettingsView() {
           <KairoLockup className="settings-brand" />
           <h2 className="settings-h2">You're signed out</h2>
           <p className="settings-muted">Sign in to use Kairo.</p>
-          <button className="s-btn s-btn-primary" onClick={() => void startGoogleAuth()}>
-            Sign in with Google
-          </button>
+          <KButton onClick={() => void startGoogleAuth()}>Sign in with Google</KButton>
         </div>
       </div>
     );
@@ -245,12 +244,16 @@ export function SettingsView() {
               <div className="settings-name">{me?.account_name ?? me?.display_name ?? 'Your account'}</div>
               <div className="settings-muted">{me?.user.email ?? ''}</div>
             </div>
-            <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(async () => {
-              await signOut();
-              await refresh();
-            }, "Couldn't sign you out")}>
+            <KButton
+              variant="ghost"
+              busy={busy}
+              onClick={withBusy(async () => {
+                await signOut();
+                await refresh();
+              }, "Couldn't sign you out")}
+            >
               Log out
-            </button>
+            </KButton>
           </div>
         </section>
 
@@ -280,17 +283,22 @@ export function SettingsView() {
             <p className="settings-muted">Payment needs attention · update it in subscription settings</p>
           ) : null}
           {canManageSubscription ? (
-            <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(() => bridge.openBillingPortal(), "Couldn't open subscription settings")}>
+            <KButton
+              variant="ghost"
+              busy={busy}
+              onClick={withBusy(() => bridge.openBillingPortal(), "Couldn't open subscription settings")}
+            >
               {busy ? 'Opening…' : 'Manage subscription'}
-            </button>
+            </KButton>
           ) : isPending ? (
-            <button className="s-btn s-btn-primary" disabled>
-              Waiting for payment confirmation…
-            </button>
+            <KButton disabled>Waiting for payment confirmation…</KButton>
           ) : !isPro ? (
-            <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout(), "Couldn't start checkout")}>
+            <KButton
+              busy={busy}
+              onClick={withBusy(() => bridge.startCheckout(), "Couldn't start checkout")}
+            >
               {me?.status === 'failed' ? 'Try upgrading again — $10/mo' : 'Upgrade to Pro — $10/mo'}
-            </button>
+            </KButton>
           ) : (
             <p className="settings-muted">Complimentary access · no subscription to manage</p>
           )}
@@ -309,9 +317,13 @@ export function SettingsView() {
                 if (e.key === 'Enter') void saveName();
               }}
             />
-            <button className="s-btn s-btn-ghost" disabled={name.trim() === savedName.trim()} onClick={() => void saveName()}>
+            <KButton
+              variant="ghost"
+              disabled={name.trim() === savedName.trim()}
+              onClick={() => void saveName()}
+            >
               Save
-            </button>
+            </KButton>
           </div>
         </section>
 
@@ -345,9 +357,9 @@ export function SettingsView() {
                   {skills.filter((s) => s.enabled).length} of {skills.length} enabled
                 </div>
               </div>
-              <button className="s-btn s-btn-ghost" onClick={() => setSkillsOpen(true)}>
+              <KButton variant="ghost" onClick={() => setSkillsOpen(true)}>
                 Manage
-              </button>
+              </KButton>
             </div>
           </section>
         )}
@@ -364,14 +376,12 @@ export function SettingsView() {
                   {granted ? (
                     <span className="s-ok">Granted</span>
                   ) : (
-                    <button
-                      className="s-btn s-btn-mini"
-                      onClick={async () => {
-                        await bridge.openPermissionSettings(key);
-                      }}
+                    <KButton
+                      variant="mini"
+                      onClick={() => void bridge.openPermissionSettings(key)}
                     >
                       Grant
-                    </button>
+                    </KButton>
                   )}
                 </div>
               );
@@ -404,9 +414,9 @@ export function SettingsView() {
           <div className="s-modal" onClick={(e) => e.stopPropagation()}>
             <div className="s-modal-head">
               <span className="s-modal-title">Skills</span>
-              <button className="s-btn s-btn-ghost" onClick={() => setSkillsOpen(false)}>
+              <KButton variant="ghost" onClick={() => setSkillsOpen(false)}>
                 Done
-              </button>
+              </KButton>
             </div>
             <p className="settings-muted">Uncheck a skill to hide it from Kairo entirely.</p>
             <div className="s-modal-list">

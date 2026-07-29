@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PreferencesResponse, TtsProvider, Voice } from '@kairo/shared';
 import type { NativeBridge } from '../native/nativeBridge';
 import { klog } from '../core/logger';
+import { KButton } from '../components/KButton';
 
 const PROVIDER_LABEL: Record<TtsProvider, string> = {
   sarvam: 'Sarvam',
@@ -145,13 +146,14 @@ export function VoiceSettings({ bridge }: { bridge: NativeBridge }) {
             </option>
           ))}
         </select>
-        <button
-          className="s-btn s-btn-ghost"
-          disabled={!!previewing || voices.length === 0}
+        <KButton
+          variant="ghost"
+          disabled={voices.length === 0}
+          busy={!!previewing}
           onClick={() => void preview(prefs.ttsVoiceId)}
         >
           {previewing ? 'Playing…' : 'Preview'}
-        </button>
+        </KButton>
       </div>
 
       {selected?.description && (

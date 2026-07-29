@@ -178,62 +178,6 @@
   color: color-mix(in srgb, var(--s-accent) 68%, var(--ink));
 }
 
-/* Buttons — the site's shape: near-square, ink fill for the primary action, and a hard offset
-   shadow the button slides into on hover. */
-.s-btn {
-  appearance: none;
-  border: 1px solid transparent;
-  cursor: pointer;
-  border-radius: var(--radius-button);
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 640;
-  padding: 10px 16px;
-  transition:
-    transform var(--dur) var(--ease-out),
-    box-shadow var(--dur) var(--ease-out),
-    background-color var(--dur-fast) ease,
-    opacity var(--dur-fast) ease;
-}
-.s-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.s-btn-primary {
-  background: var(--ink-strong);
-  border-color: var(--ink-strong);
-  color: #ffffff;
-  box-shadow: 5px 5px 0 color-mix(in srgb, var(--s-accent) 19%, transparent);
-}
-.s-btn-primary:hover:not(:disabled) {
-  transform: translate(2px, 2px);
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--s-accent) 26%, transparent);
-}
-.s-btn-primary:active:not(:disabled) {
-  transform: translate(4px, 4px);
-  box-shadow: 1px 1px 0 color-mix(in srgb, var(--s-accent) 30%, transparent);
-}
-.s-btn-ghost {
-  background: transparent;
-  color: var(--ink-subtle);
-  border-color: var(--hairline);
-  padding: 7px 14px;
-  font-size: 12.5px;
-}
-.s-btn-ghost:hover:not(:disabled) {
-  background: var(--surface-soft);
-}
-.s-btn-mini {
-  background: transparent;
-  color: color-mix(in srgb, var(--s-accent) 70%, var(--ink));
-  border-color: color-mix(in srgb, var(--s-accent) 35%, transparent);
-  padding: 5px 12px;
-  font-size: 12px;
-}
-.s-btn-mini:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--s-accent) 55%, transparent);
-}
-
 .s-input {
   flex: 1;
   min-width: 0;
