@@ -266,7 +266,9 @@ describe('askTutorFromNotch', () => {
       state: 'showing_step',
       layout: 'answer',
       title: 'Kairo answered',
-      detail: expect.stringContaining('Kairo could not complete the request')
+      // The copy is chosen by classifyTutorFailure; what matters here is that the turn ends in a
+      // visible, user-actionable message instead of sitting in 'thinking'.
+      detail: expect.stringContaining("Kairo couldn't finish that one")
     });
   });
 });

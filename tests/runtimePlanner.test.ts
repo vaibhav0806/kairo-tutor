@@ -35,7 +35,8 @@ describe('createRuntimeTutorPlanner', () => {
 
     await expect(result).resolves.toMatchObject({
       mode: 'stuck_help',
-      screenText: expect.stringContaining('Kairo could not complete the request'),
+      // A timeout IS an unreachable backend, so it gets that copy rather than the generic one.
+      screenText: expect.stringContaining("Couldn't reach Kairo's servers"),
       providerMetadata: {
         confidenceState: 'low',
         warnings: [expect.stringContaining('timed out')]
@@ -88,9 +89,11 @@ describe('createRuntimeTutorPlanner', () => {
     await expect(planner(input)).resolves.toMatchObject({
       mode: 'stuck_help',
       skillSlug: 'blender',
-      voiceText: expect.stringContaining('provider'),
-      screenText: expect.stringContaining('Kairo could not complete the request'),
-      expectedNextState: 'provider_configuration_required',
+      // The user hears a human line; the raw cause (a missing key, here) stays in the warnings for
+      // the log, never in the spoken copy.
+      voiceText: expect.stringContaining('Something went wrong'),
+      screenText: expect.stringContaining("Kairo couldn't finish that one"),
+      expectedNextState: 'tutor_failure_unknown',
       providerMetadata: {
         confidenceState: 'low',
         warnings: [expect.stringContaining('OPENROUTER_API_KEY')]
