@@ -27,3 +27,17 @@ describe('closed-alpha access', () => {
     expect(page).not.toContain('You’re on the list.');
   });
 });
+
+describe('callbackPage · local dev hint', () => {
+  it('explains the empty dev invite list, so it does not read as a broken sign-in', () => {
+    const page = callbackPage(null, 'waitlist', true);
+    expect(page).toContain('access_invite');
+    expect(page).toContain('npm run invite -- add');
+  });
+
+  it('never leaks the developer hint to the hosted deployment', () => {
+    const page = callbackPage(null, 'waitlist');
+    expect(page).not.toContain('npm run invite');
+    expect(page).not.toContain('access_invite');
+  });
+});

@@ -62,8 +62,14 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
     // Closed alpha: no invite, no session. The Better Auth user row stays — when they are invited
     // later, the next sign-in just works with no re-signup.
     if (!(await isInvited(session.user.email))) {
-      req.log.info('sign-in refused: email not on the alpha invite list');
-      return page().status(403).send(callbackPage(null, 'waitlist'));
+      // Name the email and the environment. On a fresh Neon `dev` branch the invite table starts
+      // EMPTY, so a developer testing locally hits this and reads it as "sign-in is broken" — it is
+      // not, it is the closed-alpha gate doing its job against a list nobody has been added to yet.
+      req.log.warn(
+        { email: session.user.email, target: env.KAIRO_SERVER_TARGET },
+        'sign-in refused: email not on the alpha invite list — add it with `npm run invite -- add <email>`',
+      );
+      return page().status(403).send(callbackPage(null, 'waitlist', env.KAIRO_SERVER_TARGET === 'local'));
     }
     await markRedeemed(session.user.email);
 
@@ -107,7 +113,12 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
  *                 place that person learns why the app never opened, so it says so plainly and
  *                 does not imply they did anything wrong.
  */
-export function callbackPage(deepLink: string | null, state: 'error' | 'waitlist' = 'error'): string {
+export function callbackPage(
+  deepLink: string | null,
+  state: 'error' | 'waitlist' = 'error',
+  /** Local dev only: the waitlist page also explains how to add yourself to the list. */
+  devHint = false,
+): string {
   const safe = deepLink?.replace(/"/g, '&quot;') ?? '';
   const success = Boolean(deepLink);
   const waitlist = !success && state === 'waitlist';
@@ -164,6 +175,9 @@ export function callbackPage(deepLink: string | null, state: 'error' | 'waitlist
     a.btn:hover{transform:translate(2px,2px);box-shadow:3px 3px 0 rgb(102 92 255 / 27%)}
     a.text{color:var(--muted);font-size:13px;text-underline-offset:3px}
     .hint{margin:0;font:500 11px/1.45 var(--mono);color:var(--muted);text-align:right}
+    .devhint{max-width:455px;margin:20px 0 0;padding:13px 15px;border:1px solid rgb(11 13 18 / 12%);
+      border-radius:8px;background:rgb(255 216 77 / 14%);color:var(--ink);font-size:13px;line-height:1.55}
+    .devhint code{font:500 12px/1.6 var(--mono);background:rgb(11 13 18 / 6%);padding:2px 5px;border-radius:4px}
     @media(max-width:560px){body{padding:20px}.shell{transform:translate(-3px,-3px)}main{padding:26px 24px 28px}
       .content{padding:42px 0 38px}footer{align-items:flex-start;flex-direction:column}.hint{text-align:left}.actions{align-items:flex-start;flex-direction:column}}
     @media(prefers-reduced-motion:no-preference){main{animation:arrive .52s cubic-bezier(.2,.8,.2,1) both}.dot{animation:pulse 1.8s ease-in-out infinite}
@@ -184,6 +198,9 @@ export function callbackPage(deepLink: string | null, state: 'error' | 'waitlist
           : waitlist
             ? 'Kairo is in a small closed alpha right now. Your email is on the waitlist — we’ll send an invite as soon as a spot opens, and this same sign-in will just work.'
             : 'The browser session is missing or expired. Start sign-in again and Kairo will bring you straight back.'}</p>
+        ${waitlist && devHint
+          ? `<p class="devhint"><strong>Local dev:</strong> this is the closed-alpha gate, not a broken sign-in — your email is not on the <code>access_invite</code> list in the Neon <code>dev</code> branch, which starts empty. Add yourself:<br><code>npm run invite -- add you@example.com</code></p>`
+          : ''}
       </section>
       <footer>
         <div class="actions">${success
