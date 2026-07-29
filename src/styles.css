@@ -290,29 +290,34 @@ input {
   max-width: 62ch;
 }
 
+/* Everything Kairo draws on the user's screen takes the USER'S accent (--kairo-accent-rgb, set
+   app-wide by applyAccent on <html> in every webview) — the same var the highlight box and the
+   companion cursor use. These used to be a hardcoded #a78bfa, so the pen ignored the colour the
+   user picked in onboarding. Falls back to brand violet if the var is missing. */
 .annotation-shape {
+  --mark-rgb: var(--kairo-accent-rgb, 102 92 255);
   filter: drop-shadow(0 4px 12px rgb(0 0 0 / 0.22));
   position: absolute;
 }
 
 .annotation-shape.rectangle {
-  border: 3px solid #a78bfa;
+  border: 3px solid rgb(var(--mark-rgb));
   border-radius: 6px;
 }
 
 .annotation-shape.circle {
-  border: 3px solid #a78bfa;
+  border: 3px solid rgb(var(--mark-rgb));
   border-radius: 999px;
 }
 
 .annotation-shape.highlight {
-  background: rgb(167 139 250 / 0.2);
-  border: 2px solid rgb(167 139 250 / 0.76);
+  background: rgb(var(--mark-rgb) / 0.2);
+  border: 2px solid rgb(var(--mark-rgb) / 0.76);
   border-radius: 6px;
 }
 
 .annotation-shape.underline {
-  border-bottom: 5px solid #a78bfa;
+  border-bottom: 5px solid rgb(var(--mark-rgb));
 }
 
 .annotation-shape.pen {
@@ -321,11 +326,21 @@ input {
 
 .annotation-shape.pen polyline {
   fill: none;
-  stroke: #a78bfa;
+  stroke: rgb(var(--mark-rgb));
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 5px;
   vector-effect: non-scaling-stroke;
+}
+
+/* The in-progress pen stroke (OverlayApp's useLivePenStroke). Sits above the committed shapes,
+   never takes pointer events, and carries NO filter — a drop-shadow on a layer that repaints
+   every frame is exactly what made the old SVG draft stutter. */
+.annotation-live-canvas {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 4;
 }
 
 /* Hold-to-point cosmetic strokes: same geometry as the pen, softer + fading
@@ -474,12 +489,12 @@ input {
   position: absolute;
 }
 
-/* The steady main circle on the point. */
+/* The steady main circle on the point. Accent-tinted like every other mark Kairo draws. */
 .overlay-pointer-ring {
   animation: overlay-pointer-in 0.3s cubic-bezier(0.2, 1.35, 0.4, 1) both;
-  border: 2.5px solid #a78bfa;
+  border: 2.5px solid rgb(var(--kairo-accent-rgb, 102 92 255));
   border-radius: 999px;
-  box-shadow: 0 0 10px rgb(102 92 255 / 0.6);
+  box-shadow: 0 0 10px rgb(var(--kairo-accent-rgb, 102 92 255) / 0.6);
   height: 18px;
   left: 50%;
   margin: -9px 0 0 -9px;
@@ -491,7 +506,7 @@ input {
 /* Pulsing ring expanding outward from the main circle — draws attention. */
 .overlay-pointer-ping {
   animation: overlay-pointer-ping 1.5s ease-out infinite;
-  border: 2px solid rgb(168 139 250 / 0.7);
+  border: 2px solid rgb(var(--kairo-accent-rgb, 102 92 255) / 0.7);
   border-radius: 999px;
   height: 18px;
   left: 50%;

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
+import { klog } from '../core/logger';
 import {
   eraseAnnotationAtPoint,
   type AnnotationPoint,
@@ -36,6 +37,148 @@ function displayPointFromPointerEvent(event: PointerEvent<HTMLElement>): Annotat
   return {
     x: event.clientX - bounds.left,
     y: event.clientY - bounds.top
+  };
+}
+
+// Every sample the OS captured between two frames. A trackpad/mouse reports far faster than the
+// display refreshes, so without this the stroke is built from ~1 point per frame and corners get
+// cut. Absent outside Chromium/WebKit (tests) → fall back to the single event.
+function coalescedDisplayPoints(event: PointerEvent<HTMLElement>): AnnotationPoint[] {
+  const bounds = event.currentTarget.getBoundingClientRect();
+  const native = event.nativeEvent as globalThis.PointerEvent & {
+    getCoalescedEvents?: () => globalThis.PointerEvent[];
+  };
+  const raw = native.getCoalescedEvents?.();
+  const samples = raw && raw.length > 0 ? raw : [native];
+
+  return samples.map((sample) => ({
+    x: sample.clientX - bounds.left,
+    y: sample.clientY - bounds.top
+  }));
+}
+
+/**
+ * The LIVE pen stroke, drawn imperatively on a canvas in one rAF loop.
+ *
+ * This used to be React state: `setDraftPenPoints([...draftPenPoints, point])` ran on every
+ * `pointermove`, so each of up to 120 events per second copied the whole array, forced a render,
+ * re-derived the bounding box across every point, rebuilt the entire `<polyline points>` string
+ * and repainted an SVG carrying a `drop-shadow` filter. That is where the lag came from.
+ *
+ * Now a drag touches no React state at all — points accumulate in a ref, one rAF paints them, and
+ * React only hears about the stroke on pointerup. Same approach GestureLayer already uses for the
+ * hold-to-point comet, for the same reason.
+ */
+function useLivePenStroke(displayBounds: OverlayDisplayBounds) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pointsRef = useRef<AnnotationPoint[]>([]);
+  const rafRef = useRef(0);
+  // Falls back to the brand violet only if the accent var can't be read (it is set app-wide by
+  // applyAccent on <html> in every webview).
+  const accentRef = useRef('102, 92, 255');
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+    canvas.width = Math.round(displayBounds.width * dpr);
+    canvas.height = Math.round(displayBounds.height * dpr);
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.scale(dpr, dpr); // draw in CSS px, crisp on retina
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.lineWidth = 5;
+  }, [displayBounds.width, displayBounds.height]);
+
+  // Accent tint: read the var once, then keep it live off accent:changed (the onboarding colour
+  // pick recolours mid-session). Same contract GestureLayer uses.
+  useEffect(() => {
+    const hexToRgb = (hex: string): string | null => {
+      const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+      if (!match) return null;
+      const value = parseInt(match[1], 16);
+      return `${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}`;
+    };
+    const fromVar = getComputedStyle(document.documentElement)
+      .getPropertyValue('--kairo-accent-rgb')
+      .trim();
+    if (fromVar) accentRef.current = fromVar.replace(/\s+/g, ', ');
+
+    let unlisten = () => {};
+    void listen<{ hex?: string }>('accent:changed', (event) => {
+      const rgb = event.payload?.hex ? hexToRgb(event.payload.hex) : null;
+      if (rgb) accentRef.current = rgb;
+    })
+      .then((next) => {
+        unlisten = next;
+      })
+      .catch(() => {
+        /* browser preview / tests have no event bus */
+      });
+    return () => unlisten();
+  }, []);
+
+  const paint = useCallback(() => {
+    rafRef.current = 0;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, displayBounds.width, displayBounds.height);
+    const points = pointsRef.current;
+    if (points.length === 0) return;
+
+    context.strokeStyle = `rgb(${accentRef.current})`;
+    context.fillStyle = `rgb(${accentRef.current})`;
+    if (points.length === 1) {
+      context.beginPath();
+      context.arc(points[0].x, points[0].y, 2.5, 0, Math.PI * 2);
+      context.fill();
+      return;
+    }
+    // One continuous quadratic through the midpoints — no per-segment round-cap beads.
+    context.beginPath();
+    context.moveTo(points[0].x, points[0].y);
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const midX = (points[index].x + points[index + 1].x) / 2;
+      const midY = (points[index].y + points[index + 1].y) / 2;
+      context.quadraticCurveTo(points[index].x, points[index].y, midX, midY);
+    }
+    context.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+    context.stroke();
+  }, [displayBounds.width, displayBounds.height]);
+
+  const schedule = useCallback(() => {
+    if (rafRef.current === 0) rafRef.current = requestAnimationFrame(paint);
+  }, [paint]);
+
+  useEffect(
+    () => () => {
+      if (rafRef.current !== 0) cancelAnimationFrame(rafRef.current);
+    },
+    []
+  );
+
+  return {
+    canvasRef,
+    /** Points collected so far (live reference — never copied per move). */
+    pointsRef,
+    begin(point: AnnotationPoint) {
+      pointsRef.current = [point];
+      schedule();
+    },
+    extend(points: AnnotationPoint[]) {
+      if (pointsRef.current.length === 0) return;
+      for (const point of points) pointsRef.current.push(point);
+      schedule();
+    },
+    /** Hand the finished stroke back and blank the live layer. */
+    end(): AnnotationPoint[] {
+      const points = pointsRef.current;
+      pointsRef.current = [];
+      schedule();
+      return points;
+    }
   };
 }
 
@@ -93,9 +236,10 @@ function AnnotationOverlay({
 }) {
   const [tool, setTool] = useState<OverlayAnnotationTool>(initialTool);
   const [annotations, setAnnotations] = useState<UserAnnotation[]>([]);
-  const [draftPenPoints, setDraftPenPoints] = useState<AnnotationPoint[] | null>(null);
   const sequence = useRef(0);
   const annotationsRef = useRef<UserAnnotation[]>([]);
+  const drawingRef = useRef(false);
+  const live = useLivePenStroke(displayBounds);
 
   useEffect(() => {
     setTool(initialTool);
@@ -140,14 +284,6 @@ function AnnotationOverlay({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onDone]);
 
-  const draftAnnotation = draftPenPoints
-    ? createPenAnnotationFromDisplayPoints({
-        id: 'draft-annotation',
-        displayBounds,
-        points: draftPenPoints
-      })
-    : null;
-
   // Remove the topmost annotation under the cursor (object eraser).
   function eraseAtPoint(point: AnnotationPoint) {
     const screenPoint = toScreenPoint(point, displayBounds);
@@ -172,7 +308,8 @@ function AnnotationOverlay({
       return;
     }
 
-    setDraftPenPoints([point]);
+    drawingRef.current = true;
+    live.begin(point);
   }
 
   function handlePointerMove(event: PointerEvent<HTMLElement>) {
@@ -184,9 +321,8 @@ function AnnotationOverlay({
       return;
     }
 
-    if (draftPenPoints) {
-      setDraftPenPoints([...draftPenPoints, displayPointFromPointerEvent(event)]);
-    }
+    // No setState here — the whole point of the canvas rewrite.
+    if (drawingRef.current) live.extend(coalescedDisplayPoints(event));
   }
 
   function handlePointerUp(event: PointerEvent<HTMLElement>) {
@@ -194,17 +330,18 @@ function AnnotationOverlay({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    if (tool === 'erase' || !draftPenPoints) {
+    if (tool === 'erase' || !drawingRef.current) {
       return;
     }
 
-    const points = [...draftPenPoints, displayPointFromPointerEvent(event)];
+    drawingRef.current = false;
+    live.extend([displayPointFromPointerEvent(event)]);
+    const points = live.end();
     const previewAnnotation = createPenAnnotationFromDisplayPoints({
       id: 'preview',
       displayBounds,
       points
     });
-    setDraftPenPoints(null);
 
     if (
       points.length < 2 ||
@@ -219,6 +356,7 @@ function AnnotationOverlay({
       displayBounds,
       points
     });
+    klog('overlay', 'debug', 'pen stroke committed', { points: points.length });
     setAnnotations((current) => [...current, annotation]);
     void emit('annotation:add', annotation);
   }
@@ -235,17 +373,26 @@ function AnnotationOverlay({
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
-          setDraftPenPoints(null);
+          drawingRef.current = false;
+          live.end();
         }}
         role="presentation"
       >
-        {[...annotations, ...(draftAnnotation ? [draftAnnotation] : [])].map((annotation) => (
+        {annotations.map((annotation) => (
           <OverlayAnnotationShape
             annotation={annotation}
             displayBounds={displayBounds}
             key={annotation.id}
           />
         ))}
+        {/* The in-progress stroke. Committed strokes stay SVG (static, so they cost nothing);
+            only the live one needs a canvas. */}
+        <canvas
+          aria-hidden="true"
+          className="annotation-live-canvas"
+          ref={live.canvasRef}
+          style={{ width: `${displayBounds.width}px`, height: `${displayBounds.height}px` }}
+        />
       </div>
     </div>
   );
