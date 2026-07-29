@@ -30,6 +30,14 @@ open -a "Brave Browser" docs/ui-explorations/ui-library-explorer.html
 
 **Non-goals:** Tailwind, shadcn adoption, a component framework, dark/light theming of the whole app, custom (non-preset) accent colours, replacing the companion cursor, replacing the highlight-box draw animation.
 
+> **Build log — 2026-07-29.** Phases 0, 1, 2, 3, 4, 5, 7a, 8, 9 and the failure-copy half of 10 are
+> shipped on `main` (`9af57d1`..`744b32f`, eleven commits). `npm run typecheck`, `npm run test`
+> (223 passing, +23 new), `cargo check` and `npm run build` all pass; the packaged `.app` has not
+> been launched yet — that is the founder's pass. Still open: **Phase 6** (held on Q1) and the parts
+> of Phase 10 that render in the capsule (paywall moment, first-run hint), which depend on it.
+> Bundle check: the always-on WebViews did not grow — NotchApp 37.6kb, CursorApp 13.1kb; sonner and
+> Base UI land only in the lazily-loaded settings chunk.
+
 ---
 
 ## 1. Locked decisions
@@ -135,7 +143,7 @@ You said presets only, forever. Then OKLCH's value (safely *generating* arbitrar
 
 Effort is my estimate for a focused session, excluding your review passes. Dependencies are listed; anything without one can start immediately.
 
-### Phase 0 · Tokens + primitives groundwork
+### Phase 0 · Tokens + primitives groundwork — **SHIPPED**
 **Goal:** stop the drift before adding anything on top.
 **Files:** `src/styles.css`, `src/settings/settings.css`, `src/onboarding/onboarding.css`, new `src/core/accentTokens.ts`.
 
@@ -147,7 +155,7 @@ Effort is my estimate for a focused session, excluding your review passes. Depen
 **Acceptance:** tab through Settings and the onboarding cards — focus is visible everywhere; `grep -c "cubic-bezier" src/**/*.css` drops to ≤3 distinct curves.
 **Effort:** ~2h.
 
-### Phase 1 · Feedback system
+### Phase 1 · Feedback system — **SHIPPED** (settings lane; the notch lane waits on Phase 6)
 **Goal:** nothing fails silently again.
 **Depends on:** Q2 answered. **Files:** new `src/core/notify.ts`, `src/settings/*`, `src/notch/NotchApp.tsx`.
 
@@ -161,7 +169,7 @@ Effort is my estimate for a focused session, excluding your review passes. Depen
 **Acceptance:** kill the backend, then change a voice → a toast appears in Settings *and* the notch stays quiet; exhaust the quota mid-turn → the notch reports it, Settings stays quiet.
 **Effort:** ~3h.
 
-### Phase 2 · Controls pass
+### Phase 2 · Controls pass — **SHIPPED**
 **Goal:** the three locked atom decisions.
 **Files:** `src/styles.css`, `src/settings/settings.css`, `src/settings/SettingsView.tsx`, `src/settings/VoiceSettings.tsx`, `src/onboarding/onboarding.css`.
 
@@ -172,7 +180,7 @@ Effort is my estimate for a focused session, excluding your review passes. Depen
 **Acceptance:** no visual regression against the current screenshots; keyboard operable; press states on every button.
 **Effort:** ~4h.
 
-### Phase 3 · Voice picker rebuild
+### Phase 3 · Voice picker rebuild — **SHIPPED**
 **Goal:** the worst control becomes the best one.
 **Depends on:** Phase 2. **Files:** `src/settings/VoiceSettings.tsx`, `settings.css`. **Server: no change needed** — `bridge.previewVoice(provider, voiceId)` already accepts an arbitrary voice id, so preview-without-saving works today.
 
@@ -186,7 +194,7 @@ Effort is my estimate for a focused session, excluding your review passes. Depen
 **Acceptance:** with ElevenLabs enabled, type "ra" → filtered in <16ms; preview three voices without a single `PATCH /preferences`; switch engine → list reloads and the stored voice is whatever the server actually chose.
 **Effort:** ~4h.
 
-### Phase 4 · Dialog + skills search
+### Phase 4 · Dialog + skills search — **SHIPPED**
 **Goal:** a modal that works, and survives hundreds of skills.
 **Depends on:** Phase 0. **Files:** `src/settings/SettingsView.tsx`, `settings.css`.
 
@@ -199,7 +207,7 @@ Effort is my estimate for a focused session, excluding your review passes. Depen
 **Acceptance:** Escape closes; Tab cycles inside; the page behind does not scroll; 200 synthetic skills scroll at 60fps.
 **Effort:** ~3h.
 
-### Phase 5 · Pen: performance + accent
+### Phase 5 · Pen: performance + accent — **SHIPPED** (perfect-freehand still optional)
 **Goal:** the pen stops lagging and follows the user's colour. **This is a real bug, diagnosed:**
 
 `OverlayApp.tsx:187` calls `setDraftPenPoints([...draftPenPoints, point])` **on every `pointermove`**. Each move therefore:
@@ -223,7 +231,7 @@ On a 120Hz trackpad that is ~120 React renders/second with growing work per rend
 **Acceptance:** draw a fast 3-second scribble — no visible lag, `performance` panel shows no long tasks; switch accent mid-session and the next stroke is the new colour.
 **Effort:** ~4h (rewrite) + 1h (perfect-freehand, optional).
 
-### Phase 6 · Capsule architecture + typing prompt
+### Phase 6 · Capsule architecture + typing prompt — **HELD on Q1**
 **Goal:** resolve the morph complaint and land the light command card.
 **Depends on:** Q1. **Files:** `src/notch/NotchCapsule.tsx`, `useCapsuleMorph.ts`, `useModePresence.ts`, `src/styles.css`, `src-tauri/src/panels.rs` (if the card is a second panel).
 
@@ -239,7 +247,7 @@ Assuming **Option A**:
 **Effort:** ~6h (+ Rust panel work if the card is separate — likely, ~2h).
 **Risk:** highest-risk phase. Touches the hit-rect contract, click-through, and the onboarding progress dots that live inside the pill. Do it after Phases 1–5 have shipped and settled.
 
-### Phase 7 · Caption
+### Phase 7 · Caption — **7a SHIPPED, 7b CUT**
 **Depends on:** Q3. **Files:** `src/notch/NotchCapsule.tsx`, `src/notch/streamingTts.ts`, `src/notch/useTTSPlayback.ts`.
 
 - **7a — word blur-in.** Replace the per-character motion spans (~90 nodes/caption) with per-word (~8). Same effect, an order of magnitude fewer animated nodes; removes the 400ms delay cap flattening long lines.
@@ -248,7 +256,7 @@ Assuming **Option A**:
 **Acceptance:** a 90-char caption animates with ≤12 animated nodes; the highlight never runs ahead of the audio (bias the estimator ~60ms late — early is much worse than late).
 **Effort:** 7a ~2h, 7b ~3h.
 
-### Phase 8 · Thinking + optimistic saves
+### Phase 8 · Thinking + optimistic saves — **SHIPPED**
 **Files:** `src/notch/thinkingVerbs.ts`, `NotchApp.tsx`, `src/settings/VoiceSettings.tsx`, `SettingsView.tsx`.
 
 1. Elapsed-aware copy: 0–2s "Looking…", 2–5s "Reading the screen…", 5–9s "Still going — this one is dense…", 9s+ "Almost there…". Verb pool stays; the *tier* is time-driven.
@@ -258,7 +266,7 @@ Assuming **Option A**:
 **Acceptance:** an 8-second turn shows three different lines; a voice change applies before the network round-trip completes.
 **Effort:** ~3h.
 
-### Phase 9 · Progress
+### Phase 9 · Progress — **SHIPPED**
 **Files:** `src/settings/SettingsView.tsx`, new `src/components/QuotaRing.tsx`, `src/App.tsx`, `src/settings/UpdateSettings.tsx`.
 
 1. **Quota ring** for `me.usage.used / limit`, accent-filled, with the count beside it. Replaces the grey text pill.
@@ -268,7 +276,7 @@ Assuming **Option A**:
 **Acceptance:** quota ring updates live after a turn; permission screen shows exactly one action at a time.
 **Effort:** ~3h.
 
-### Phase 10 · States
+### Phase 10 · States — **PARTIAL** (failure copy + permission checklist done; paywall + first-run hint need Phase 6)
 **Depends on:** Phase 6 (they render in the command card). **Files:** `src/notch/NotchApp.tsx`, `src/App.tsx`, `src/core/orchestrator.ts`.
 
 1. **Paywall moment** — on the turn that exhausts the quota, the command card says so *in the flow* with "Go Pro — $10/mo" and "maybe later". Also show the ring from turn 7 so it is never a surprise.
@@ -279,7 +287,7 @@ Assuming **Option A**:
 **Acceptance:** unplug the network mid-turn → the notch says the server is unreachable, not "something went wrong".
 **Effort:** ~4h.
 
-### Phase 11 · Custom icon set
+### Phase 11 · Custom icon set — **CUT**
 **Goal:** one visual language for every UI verb. **Yes, I can draw these** — flat SVG on a 24px grid, 1.75px stroke to sit with Geist, squared terminals to echo the near-square shape language, `currentColor` throughout.
 
 **Files:** new `src/components/icons/` (one `Icon.tsx` with a name union + a `paths.ts`), replacing `src/notch/NotchIcons.tsx` and the generic `react-icons` imports.
@@ -292,7 +300,7 @@ Inventory (16): `mic`, `mic-off`, `pen`, `eraser`, `close`, `check`, `chevron-do
 **Acceptance:** every UI icon comes from one file; two stroke weights (light card 1.6, dark notch 2.0) via one prop.
 **Effort:** ~4h.
 
-### Phase 12 · Accent tokens + names
+### Phase 12 · Accent tokens + names — **CUT**
 **Files:** `src/onboarding/accentPresets.ts`, `src/core/accent.ts`, `src/settings/SettingsView.tsx`, all three CSS files.
 
 1. Per-preset derived tokens (Q5), authored in OKLCH, emitted as hex/rgb.
@@ -303,7 +311,7 @@ Inventory (16): `mic`, `mic-off`, `pen`, `eraser`, `close`, `check`, `chevron-do
 **Acceptance:** every preset passes 4.5:1 as text on `--canvas-raised` and 4.5:1 on the notch surface; zero `color-mix()` on raw `--accent` left outside the token file.
 **Effort:** ~3h.
 
-### Phase 13 · Voice visual boundary (+ Rive later)
+### Phase 13 · Voice visual boundary (+ Rive later) — **DEFERRED**
 **Depends on:** Q4. **Files:** new `src/notch/VoiceVisual.tsx`, `NotchCapsule.tsx`, `MicMeter.tsx`.
 
 - **13a:** the component boundary + a canvas "presence" fallback fed by the existing `cursor:level` stream (no second `getUserMedia` — native `cpal` stays the only capture path).
