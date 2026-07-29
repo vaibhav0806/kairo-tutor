@@ -165,8 +165,8 @@ body.onboarding-document {
   background: var(--ink-strong);
   box-shadow: var(--ob-shadow);
   transition:
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
 }
 .ob-color-confirm:hover {
   transform: translate(2px, 2px);
@@ -233,7 +233,7 @@ body.onboarding-document {
   color: #1f1f1f;
   cursor: pointer;
   user-select: none;
-  transition: background-color 120ms ease, transform 60ms ease;
+  transition: background-color var(--dur-fast) ease, transform 60ms ease;
 }
 .google-signin-btn svg {
   display: block;
@@ -310,8 +310,8 @@ body.onboarding-document {
   cursor: pointer;
   box-shadow: 0 0 0 1px var(--hairline);
   transition:
-    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 160ms ease;
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) ease;
 }
 .ob-swatch:hover {
   transform: translateY(-2px) scale(1.05);
@@ -396,9 +396,9 @@ body.onboarding-document {
   font-weight: 550;
   cursor: pointer;
   transition:
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-color 160ms ease,
-    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform var(--dur) var(--ease-out),
+    border-color var(--dur-fast) ease,
+    box-shadow var(--dur) var(--ease-out);
 }
 .ob-source-btn:hover {
   transform: translate(-2px, -2px);
@@ -468,8 +468,8 @@ body.onboarding-document {
   background: var(--ink-strong);
   box-shadow: 7px 7px 0 rgb(102 92 255 / 19%);
   transition:
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
 }
 .ob-hero-cta:hover {
   transform: translate(3px, 3px);

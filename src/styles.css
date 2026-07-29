@@ -38,6 +38,17 @@
   --shadow-offset: 6px 6px 0 rgb(102 92 255 / 19%);
   --shadow-offset-hover: 3px 3px 0 rgb(102 92 255 / 26%);
 
+  /* Motion — the WHOLE vocabulary for UI chrome (buttons, toggles, rows, panels).
+     Two curves, three durations; if a new transition needs a fourth value, it is
+     probably wrong. NOTE: the annotation/cursor choreography (kairo-box-draw, the
+     pet spring, the capsule morph) keeps its own literals on purpose — those are
+     welded to JS constants in core/penDraw.ts and notch/NotchCapsule.tsx. */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.28, 0.5, 1);
+  --dur-fast: 160ms;
+  --dur: 240ms;
+  --dur-morph: 420ms;
+
   color: var(--ink);
   background: var(--canvas);
   font-family: var(--font-body);
@@ -99,6 +110,23 @@ body.cursor-document {
 button,
 input {
   font: inherit;
+}
+
+/* Keyboard focus, everywhere, in the user's accent. Before this only the annotation
+   canvas had a focus style, so tabbing through Settings or the onboarding cards was
+   invisible. Pointer clicks never show it (:focus-visible), so nothing changes for
+   mouse users. Surfaces that need a different offset override locally. */
+:focus-visible {
+  outline: 2px solid rgb(var(--kairo-accent-rgb, 102 92 255) / 0.7);
+  outline-offset: 2px;
+}
+/* Round controls get a ring that hugs their shape. */
+.s-swatch:focus-visible,
+.ob-swatch:focus-visible,
+.s-toggle:focus-visible,
+.kairo-capsule-icon:focus-visible {
+  outline-offset: 3px;
+  border-radius: inherit;
 }
 
 /* ---- Main window: the permission-recovery screen ---------------------------------------------
@@ -240,8 +268,8 @@ input {
   padding: 13px 20px;
   white-space: nowrap;
   transition:
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
 }
 
 .primary-button:hover:not(:disabled) {
@@ -896,7 +924,7 @@ input {
   margin-top: 14px;
   padding: 11px 12px;
   width: 100%;
-  transition: background-color 160ms ease, border-color 160ms ease;
+  transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
 
 .secondary-button:hover {

@@ -190,10 +190,10 @@
   font-weight: 640;
   padding: 10px 16px;
   transition:
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    background-color 160ms ease,
-    opacity 120ms ease;
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out),
+    background-color var(--dur-fast) ease,
+    opacity var(--dur-fast) ease;
 }
 .s-btn:disabled {
   opacity: 0.45;
@@ -286,7 +286,7 @@
   border-radius: 999px;
   background: rgb(11 13 18 / 0.18);
   position: relative;
-  transition: background 160ms ease;
+  transition: background var(--dur-fast) ease;
   flex-shrink: 0;
 }
 .s-toggle-on {
@@ -301,7 +301,7 @@
   border-radius: 50%;
   background: #ffffff;
   box-shadow: 0 1px 3px rgb(11 13 18 / 0.25);
-  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform var(--dur-fast) var(--ease-out);
 }
 .s-toggle-on .s-toggle-knob {
   transform: translateX(16px);
