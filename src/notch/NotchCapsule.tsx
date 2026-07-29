@@ -93,13 +93,23 @@ function ThinkingCube() {
 }
 
 /**
- * A quick character stream for coach copy: the previous sentence slides softly left while the next
- * one resolves character-by-character in under a second. Words remain normal wrapping units, so the
- * animation never harms the notch's measured layout.
+ * The coach caption: the previous sentence slides softly left while the next one resolves, word by
+ * word, out of a light blur.
+ *
+ * This used to animate every CHARACTER — for a 90-character line that is 90 mounted motion
+ * components with 90 individual transitions, on a WebView that is also running the pet's spring
+ * loop and the mic meter. Words are ~8 nodes for the same line, and the delay cap no longer
+ * flattens the tail of a long caption into a single beat.
+ *
+ * Words also happen to be the right unit to read: a word arriving whole is legible the instant it
+ * lands, where a word assembling letter by letter is not.
  */
+const WORD_STAGGER_S = 0.045;
+const WORD_STAGGER_CAP_S = 0.42;
+
 function FadingStreamText({ text }: { text: string }) {
   const reduce = useReducedMotion();
-  let characterIndex = 0;
+  const words = text.split(' ');
   return (
     <span className="kairo-capsule-caption" aria-label={text}>
       <AnimatePresence initial={false} mode="popLayout">
@@ -112,28 +122,21 @@ function FadingStreamText({ text }: { text: string }) {
           exit={reduce ? { opacity: 0 } : { opacity: 0, x: -8 }}
           transition={{ duration: reduce ? 0.01 : 0.14, ease: 'easeOut' }}
         >
-          {text.split(' ').map((word, wordIndex, words) => (
-            <span className="kairo-caption-word" key={`${wordIndex}-${word}`}>
-              {Array.from(word).map((character) => {
-                const index = characterIndex++;
-                return (
-                  <motion.span
-                    className="kairo-caption-character"
-                    key={`${index}-${character}`}
-                    initial={reduce ? false : { opacity: 0, x: 7 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{
-                      duration: reduce ? 0.01 : 0.18,
-                      delay: reduce ? 0 : Math.min(index * 0.009, 0.4),
-                      ease: [0.22, 1, 0.36, 1]
-                    }}
-                  >
-                    {character}
-                  </motion.span>
-                );
-              })}
-              {wordIndex < words.length - 1 ? ' ' : null}
-            </span>
+          {words.map((word, index) => (
+            <motion.span
+              className="kairo-caption-word"
+              key={`${index}-${word}`}
+              initial={reduce ? false : { opacity: 0, y: 4, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{
+                duration: reduce ? 0.01 : 0.26,
+                delay: reduce ? 0 : Math.min(index * WORD_STAGGER_S, WORD_STAGGER_CAP_S),
+                ease: [0.22, 1, 0.36, 1]
+              }}
+            >
+              {word}
+              {index < words.length - 1 ? ' ' : null}
+            </motion.span>
           ))}
         </motion.span>
       </AnimatePresence>

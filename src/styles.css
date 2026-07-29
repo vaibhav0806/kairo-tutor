@@ -1467,10 +1467,7 @@ input {
 .kairo-caption-word {
   display: inline-block;
   white-space: pre;
-}
-.kairo-caption-character {
-  display: inline-block;
-  will-change: transform, opacity;
+  will-change: transform, opacity, filter;
 }
 /* "Working" cube — a small rotating 3D cube in the USER'S accent (--accent-rgb, kept live by
    useNotchAccent). Shown while Kairo thinks / while the voice synthesizes. Replaces the old 3-dot
