@@ -33,6 +33,28 @@ export interface TtsTarget {
 export const TTS_TEXT_LIMIT = 3_000;
 
 /**
+ * The Sarvam request body, in ONE place.
+ *
+ * It used to be written out three times — here for streaming, again below for buffered, and a
+ * third time in the onboarding route — and they had drifted: onboarding asked for 44.1kHz with an
+ * explicit `pace`, everything else asked for 24kHz without one. Same speaker, same model, audibly
+ * different voice, which is exactly what a user reports as "the gate sounds like someone else".
+ *
+ * `codec` is the only legitimate difference: `linear16` for the streaming pipe, `wav` for a
+ * buffered clip. Nothing else may vary per caller.
+ */
+export function sarvamTtsBody(text: string, voiceId: string, codec: 'linear16' | 'wav', languageCode?: string) {
+  return {
+    text,
+    target_language_code: languageCode ?? SARVAM_TTS_LANGUAGE_CODE,
+    speaker: voiceId,
+    model: SARVAM_TTS_MODEL,
+    output_audio_codec: codec,
+    speech_sample_rate: TTS_SAMPLE_RATE,
+  };
+}
+
+/**
  * Streaming target. Both engines are asked for raw 24kHz PCM so the desktop's Web Audio scheduler
  * plays either one through the identical path — ElevenLabs is NOT a buffered-only fallback.
  */
@@ -47,14 +69,7 @@ export function streamTarget(text: string, target: TtsTarget): { providerId: str
   return {
     providerId: 'sarvam',
     path: '/text-to-speech/stream',
-    body: {
-      text,
-      target_language_code: target.languageCode ?? SARVAM_TTS_LANGUAGE_CODE,
-      speaker: target.voiceId,
-      model: SARVAM_TTS_MODEL,
-      output_audio_codec: SARVAM_OUTPUT_CODEC,
-      speech_sample_rate: TTS_SAMPLE_RATE,
-    },
+    body: sarvamTtsBody(text, target.voiceId, SARVAM_OUTPUT_CODEC, target.languageCode),
   };
 }
 
@@ -103,14 +118,11 @@ export async function synthesizeBuffered(text: string, target: TtsTarget): Promi
     };
   }
 
-  const { json } = await forwardJson('sarvam', '/text-to-speech', {
-    text,
-    target_language_code: target.languageCode ?? SARVAM_TTS_LANGUAGE_CODE,
-    speaker: target.voiceId,
-    model: SARVAM_TTS_MODEL,
-    output_audio_codec: 'wav',
-    speech_sample_rate: TTS_SAMPLE_RATE,
-  });
+  const { json } = await forwardJson(
+    'sarvam',
+    '/text-to-speech',
+    sarvamTtsBody(text, target.voiceId, 'wav', target.languageCode),
+  );
 
   const audios = (json as { audios?: unknown })?.audios;
   const first = Array.isArray(audios) ? audios[0] : undefined;

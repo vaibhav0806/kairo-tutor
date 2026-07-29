@@ -6,8 +6,7 @@ import { forwardJson } from '../proxy/forward';
 import { streamPassthrough } from '../proxy/stream';
 import { rateLimit } from '../lib/ratelimit';
 import { SARVAM_DEFAULT_VOICE_ID } from '../speech/catalog';
-import { SARVAM_TTS_LANGUAGE_CODE, SARVAM_TTS_MODEL } from '../speech/config';
-import { streamTarget, TTS_TEXT_LIMIT } from '../speech/synthesis';
+import { sarvamTtsBody, streamTarget, TTS_TEXT_LIMIT } from '../speech/synthesis';
 import { saveProfile } from './service';
 
 /** Onboarding always speaks in Kairo's default voice — the scripted lines are tuned to it. */
@@ -42,15 +41,14 @@ export async function onboardingRoutes(app: FastifyInstance) {
     if (!rateLimit(`tts:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
     if (!providers.sarvam.key) return reply.status(503).send({ error: 'tts_unavailable', code: 'provider_error' });
     const text = (req.body?.text ?? '').slice(0, 600);
-    const { json } = await forwardJson('sarvam', '/text-to-speech', {
-      text,
-      target_language_code: SARVAM_TTS_LANGUAGE_CODE,
-      speaker: ONBOARDING_VOICE_ID,
-      model: SARVAM_TTS_MODEL,
-      pace: 1.0, // natural, to match the cached lines
-      speech_sample_rate: 44100,
-      encoding: 'WAV',
-    });
+    // Identical body to the product's buffered synthesis — same speaker, model, sample rate and
+    // codec. This route used to ask for 44.1kHz with an explicit pace, which made the onboarding
+    // and gate lines audibly different from every answer the product speaks afterwards.
+    const { json } = await forwardJson(
+      'sarvam',
+      '/text-to-speech',
+      sarvamTtsBody(text, ONBOARDING_VOICE_ID, 'wav'),
+    );
     return json;
   });
 
