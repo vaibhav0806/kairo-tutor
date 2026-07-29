@@ -110,9 +110,9 @@ export function VoiceSettings({ bridge }: { bridge: NativeBridge }) {
 
   if (loading) {
     return (
-      <section className="s-section">
+      <section className="s-section" aria-busy="true">
         <div className="s-label">Voice</div>
-        <p className="settings-muted">Loading voices…</p>
+        <div className="k-skel" style={{ height: 34, width: '100%' }} />
       </section>
     );
   }

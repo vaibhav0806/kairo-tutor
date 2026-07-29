@@ -203,12 +203,35 @@ export function SettingsView() {
     setBusy(false);
   };
 
+  // Shape-matched skeletons, not the word "Loading…": the window used to flash an empty card and
+  // then pop nine sections in at once, which reads as a stall even when /v1/me answers in 400ms.
   if (loading) {
     return (
       <div className="settings-scrim">
         <div className="settings-window-titlebar" onPointerDown={startWindowDrag} />
-        <div className="settings-card">
-          <p className="settings-muted">Loading…</p>
+        <div className="settings-card" aria-busy="true" aria-label="Loading settings">
+          <div className="settings-head">
+            <KairoLockup className="settings-brand" />
+            <span className="settings-title">Settings</span>
+          </div>
+          <section className="s-section">
+            <div className="settings-row">
+              <div className="settings-account" style={{ flex: 1 }}>
+                <div className="k-skel" style={{ height: 15, width: '54%' }} />
+                <div className="k-skel" style={{ height: 12, width: '72%', marginTop: 6 }} />
+              </div>
+              <div className="k-skel" style={{ height: 28, width: 68 }} />
+            </div>
+          </section>
+          <section className="s-section">
+            <div className="k-skel" style={{ height: 11, width: 46 }} />
+            <div className="k-skel" style={{ height: 26, width: 168 }} />
+            <div className="k-skel" style={{ height: 34, width: '100%' }} />
+          </section>
+          <section className="s-section">
+            <div className="k-skel" style={{ height: 11, width: 62 }} />
+            <div className="k-skel" style={{ height: 40, width: '100%' }} />
+          </section>
         </div>
       </div>
     );

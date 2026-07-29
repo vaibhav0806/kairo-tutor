@@ -5,6 +5,7 @@ import { loadBrowserEnv } from '../config/env';
 import { klog, type LogFields, type LogLevel } from '../core/logger';
 import { playSound, playRecordingCue } from '../core/sound';
 import { pickThinkingVerb } from './thinkingVerbs';
+import { msUntilNextTier, thinkingLabel } from './thinkingStatus';
 import type { UserAnnotation, VisualTarget } from '../core/types';
 import {
   createNativeBridge,
@@ -1587,18 +1588,36 @@ export function NotchApp() {
   // (onboarding). Listening keeps its literal 'Listening'.
   const busy = capsuleMode === 'thinking' || (capsuleMode === 'coach' && !payload.detail);
   const [thinkingVerb, setThinkingVerb] = useState(pickThinkingVerb);
+  // How long the CURRENT spell has run. A held word for eight seconds reads as "hung", so once a
+  // turn outlives the playful gerund the label starts acknowledging the wait (thinkingStatus.ts).
+  const [thinkingElapsed, setThinkingElapsed] = useState(0);
   const wasBusyRef = useRef(false);
   useEffect(() => {
-    if (busy && !wasBusyRef.current) setThinkingVerb(pickThinkingVerb());
+    if (busy && !wasBusyRef.current) {
+      setThinkingVerb(pickThinkingVerb());
+      setThinkingElapsed(0);
+    }
     wasBusyRef.current = busy;
   }, [busy]);
+
+  // One timeout per tier rather than a 1s tick — most turns never leave the first tier at all.
+  useEffect(() => {
+    if (!busy) return;
+    const remaining = msUntilNextTier(thinkingElapsed);
+    if (remaining === null) return;
+    const timer = window.setTimeout(() => {
+      setThinkingElapsed(thinkingElapsed + remaining);
+      klog('notch', 'debug', 'thinking label escalated', { ms: thinkingElapsed + remaining });
+    }, remaining);
+    return () => window.clearTimeout(timer);
+  }, [busy, thinkingElapsed]);
 
   const statusLabel =
     capsuleMode === 'listening'
       ? 'Listening'
       : capsuleMode === 'speaking'
         ? 'Speaking'
-        : thinkingVerb;
+        : thinkingLabel(thinkingVerb, thinkingElapsed);
 
   return (
     <>

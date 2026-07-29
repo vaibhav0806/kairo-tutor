@@ -1874,3 +1874,22 @@ input {
 .kswitch-sm[data-checked]:active .kswitch-knob {
   transform: translateX(10px);
 }
+
+/* Skeletons. A shimmering placeholder shaped like the row it replaces, so a window that is still
+   fetching does not visibly jump when the data lands. */
+.k-skel {
+  background: linear-gradient(90deg, var(--surface-soft) 25%, #f2f4f9 50%, var(--surface-soft) 75%);
+  background-size: 200% 100%;
+  border-radius: 5px;
+  animation: k-skel 1.4s linear infinite;
+}
+@keyframes k-skel {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-skel {
+    animation: none;
+  }
+}
