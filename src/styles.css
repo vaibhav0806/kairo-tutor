@@ -386,8 +386,8 @@ input {
 .permission-item {
   align-items: center;
   display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr auto;
+  gap: 12px;
+  grid-template-columns: auto 1fr auto;
 }
 
 .permission-item div {
@@ -403,24 +403,49 @@ input {
   color: var(--ink-muted);
 }
 
+/* The checklist glyph: done / waiting on this one / not reached yet. */
+.permission-glyph {
+  font-size: 13px;
+  line-height: 1;
+  width: 14px;
+  text-align: center;
+  color: var(--ink-muted);
+}
+.permission-item[data-state='done'] .permission-glyph {
+  color: #527b09;
+}
+.permission-item[data-state='current'] .permission-glyph {
+  color: rgb(var(--kairo-accent-rgb, 102 92 255));
+}
+.permission-item[data-state='pending'] {
+  opacity: 0.55;
+}
+
 /* Pending = the site's --notice; granted = --verify. Both need a readable ink on a light chip,
    so the text is a darkened cut of the same hue. */
 .permission-state {
-  background: color-mix(in srgb, var(--notice) 26%, var(--canvas-raised));
-  border: 1px solid color-mix(in srgb, var(--notice) 55%, var(--hairline));
+  background: var(--surface-soft);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-button);
-  color: #6b4c00;
+  color: var(--ink-subtle);
   font-family: var(--font-mono);
   font-size: 0.78rem;
   padding: 5px 9px;
   white-space: nowrap;
 }
 
-.permission-state.granted {
+.permission-state[data-state='current'] {
+  background: color-mix(in srgb, var(--notice) 26%, var(--canvas-raised));
+  border-color: color-mix(in srgb, var(--notice) 55%, var(--hairline));
+  color: #6b4c00;
+}
+
+.permission-state[data-state='done'] {
   background: color-mix(in srgb, var(--verify) 26%, var(--canvas-raised));
   border-color: color-mix(in srgb, var(--verify) 55%, var(--hairline));
   color: #527b09;
 }
+
 
 /* The permission screen's "Restart Kairo" — full-width under the hint, so it reads as the
    fallback path rather than a second primary action. */

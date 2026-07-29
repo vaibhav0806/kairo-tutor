@@ -39,6 +39,17 @@ function permissionStateLabel(state: NativePermissionState) {
   return 'Checking';
 }
 
+// A checklist reads better than three identical status pills, because it shows SEQUENCE: what is
+// done, what Kairo is waiting on right now, and what has not been reached. Permissions are the
+// highest drop-off moment in the whole funnel, so the screen should only ever ask for one thing.
+type ChecklistState = 'done' | 'current' | 'pending';
+
+const CHECK_GLYPH: Record<ChecklistState, string> = {
+  done: '✓',
+  current: '◉',
+  pending: '○'
+};
+
 export function App() {
   const env = loadBrowserEnv();
   const nativeBridge = useMemo(() => createNativeBridge(), []);
@@ -168,23 +179,28 @@ export function App() {
             <h2>Enable Kairo permissions</h2>
           </div>
           <div className="permission-list">
-            {requiredPermissions.map((permission) => (
-              <div className="permission-item" key={permission.key}>
-                <div>
-                  <strong>{permission.label}</strong>
-                  <span>{permission.detail}</span>
+            {requiredPermissions.map((permission) => {
+              const granted = isPermissionGranted(permissions, permission.key);
+              const state: ChecklistState = granted
+                ? 'done'
+                : permission.key === missingPermissions[0]?.key
+                  ? 'current'
+                  : 'pending';
+              return (
+                <div className="permission-item" data-state={state} key={permission.key}>
+                  <span className="permission-glyph" aria-hidden>
+                    {CHECK_GLYPH[state]}
+                  </span>
+                  <div>
+                    <strong>{permission.label}</strong>
+                    <span>{permission.detail}</span>
+                  </div>
+                  <span className="permission-state" data-state={state}>
+                    {permissionStateLabel(permissions[permission.key])}
+                  </span>
                 </div>
-                <span
-                  className={
-                    isPermissionGranted(permissions, permission.key)
-                      ? 'permission-state granted'
-                      : 'permission-state'
-                  }
-                >
-                  {permissionStateLabel(permissions[permission.key])}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <KButton
             busy={isRequestingPermissions}

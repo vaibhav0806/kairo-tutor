@@ -12,6 +12,7 @@ import { klog } from '../core/logger';
 import { notify, notifySaving } from '../core/notify';
 import { KairoLockup } from '../components/KairoMark';
 import { KButton } from '../components/KButton';
+import { QuotaRing } from '../components/QuotaRing';
 import { VoiceSettings } from './VoiceSettings';
 import { SkillsDialog, type SkillInfo } from './SkillsDialog';
 import { UpdateSettings } from './UpdateSettings';
@@ -287,9 +288,7 @@ export function SettingsView() {
             {isPro ? (
               <span className="settings-plan-badge settings-plan-pro">Kairo Pro · unlimited</span>
             ) : (
-              <span className="settings-plan-badge">
-                Free · {me?.usage.used ?? 0} of {me?.usage.limit ?? 10} used
-              </span>
+              <QuotaRing used={me?.usage.used ?? 0} limit={me?.usage.limit ?? 10} />
             )}
           </div>
           {planNotice ? (
