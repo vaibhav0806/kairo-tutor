@@ -42,7 +42,9 @@ commit message with:
 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
 ## How to run things
-- Desktop → `npm run app` (see "Run / build" below).
+- **Whole local stack in one terminal → `npm run local`** (server + packaged app pointed at it).
+  `npm run local -- --reset` starts from a TRUE first run; `-- --check` runs typecheck/tests/cargo first.
+- Desktop → `npm run app` (see "Run / build" below). Defaults to the HOSTED backend.
 - Desktop against local backend → `npm run app:local`.
 - Desktop against hosted backend → `npm run app:hosted`.
 - Server → `npm run server:dev` (see [`server/AGENTS.md`](./server/AGENTS.md)).

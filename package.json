@@ -16,6 +16,7 @@
     "app": "bash scripts/rebuild-run.sh",
     "app:local": "KAIRO_BACKEND_TARGET=local bash scripts/rebuild-run.sh",
     "app:hosted": "KAIRO_BACKEND_TARGET=hosted bash scripts/rebuild-run.sh",
+    "local": "bash scripts/dev-local.sh",
     "dist": "bash scripts/build-dmg.sh",
     "release": "bash scripts/release.sh",
     "updater:keygen": "bash scripts/updater-keygen.sh",
