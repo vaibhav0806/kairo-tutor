@@ -8,6 +8,7 @@ import { createNativeBridge, type NativePermissionStatus, type NativePermissionK
 import { getAuthStatus, onAuthChanged, signOut, startGoogleAuth } from '../onboarding/authClient';
 import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
+import { notify, notifySaving } from '../core/notify';
 import { KairoLockup } from '../components/KairoMark';
 import { VoiceSettings } from './VoiceSettings';
 import { UpdateSettings } from './UpdateSettings';
@@ -42,7 +43,6 @@ export function SettingsView() {
   const [launchAtLogin, setLaunch] = useState(false);
   const [version, setVersion] = useState('');
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const [actionError, setActionError] = useState('');
   const [billingReturnStatus, setBillingReturnStatus] = useState<BillingReturnStatus>('unknown');
 
   const startWindowDrag = useCallback(() => {
@@ -161,26 +161,43 @@ export function SettingsView() {
   };
   const saveName = async () => {
     const trimmed = name.trim();
-    await bridge.setUserName(trimmed);
+    await notifySaving(bridge.setUserName(trimmed), {
+      pending: 'Saving…',
+      success: trimmed ? `Kairo will call you ${trimmed}` : 'Name cleared'
+    });
     setSavedName(trimmed);
   };
+  // Optimistic: flip the switch now, revert it if the native call fails. Both of these used to
+  // swallow the error (`.catch(() => {})`), which left the UI showing a state the app was not in.
   const toggleSkill = async (slug: string, enabled: boolean) => {
+    const revert = () => setSkills((prev) => prev.map((s) => (s.slug === slug ? { ...s, enabled: !enabled } : s)));
     setSkills((prev) => prev.map((s) => (s.slug === slug ? { ...s, enabled } : s)));
-    await invoke('set_skill_enabled', { slug, enabled }).catch(() => {});
+    try {
+      await invoke('set_skill_enabled', { slug, enabled });
+    } catch (error) {
+      klog('settings', 'warn', 'skill toggle failed', { slug, error: String(error) });
+      revert();
+      notify({ tone: 'error', message: "Couldn't change that skill", detail: String(error).replace(/^.*?:\s*/, '') });
+    }
   };
   const toggleLaunch = async (enabled: boolean) => {
     setLaunch(enabled);
-    await invoke('set_launch_at_login', { enabled }).catch(() => {});
+    try {
+      await invoke('set_launch_at_login', { enabled });
+    } catch (error) {
+      klog('settings', 'warn', 'launch-at-login toggle failed', { error: String(error) });
+      setLaunch(!enabled);
+      notify({ tone: 'error', message: "Couldn't change launch at login" });
+    }
   };
-  const withBusy = (fn: () => Promise<void>) => async () => {
-    setActionError('');
+  const withBusy = (fn: () => Promise<void>, failure: string) => async () => {
     setBusy(true);
     try {
       await fn();
     } catch (error) {
       const message = String(error).replace(/^.*?:\s*/, '');
-      setActionError(message);
       klog('settings', 'warn', 'settings action failed', { error: String(error) });
+      notify({ tone: 'error', message: failure, detail: message });
     }
     setBusy(false);
   };
@@ -231,7 +248,7 @@ export function SettingsView() {
             <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(async () => {
               await signOut();
               await refresh();
-            })}>
+            }, "Couldn't sign you out")}>
               Log out
             </button>
           </div>
@@ -263,7 +280,7 @@ export function SettingsView() {
             <p className="settings-muted">Payment needs attention · update it in subscription settings</p>
           ) : null}
           {canManageSubscription ? (
-            <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(() => bridge.openBillingPortal())}>
+            <button className="s-btn s-btn-ghost" disabled={busy} onClick={withBusy(() => bridge.openBillingPortal(), "Couldn't open subscription settings")}>
               {busy ? 'Opening…' : 'Manage subscription'}
             </button>
           ) : isPending ? (
@@ -271,17 +288,12 @@ export function SettingsView() {
               Waiting for payment confirmation…
             </button>
           ) : !isPro ? (
-            <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout())}>
+            <button className="s-btn s-btn-primary" disabled={busy} onClick={withBusy(() => bridge.startCheckout(), "Couldn't start checkout")}>
               {me?.status === 'failed' ? 'Try upgrading again — $10/mo' : 'Upgrade to Pro — $10/mo'}
             </button>
           ) : (
             <p className="settings-muted">Complimentary access · no subscription to manage</p>
           )}
-          {actionError ? (
-            <p className="s-action-error" role="alert">
-              {actionError}
-            </p>
-          ) : null}
         </section>
 
         {/* Display name */}

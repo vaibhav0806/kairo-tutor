@@ -129,6 +129,67 @@ input {
   border-radius: inherit;
 }
 
+/* ---- Toasts (components/KairoToaster.tsx) ----------------------------------------------------
+   Sonner supplies the behaviour; the look is entirely ours (it mounts `unstyled`). Same surface
+   language as the settings card so a toast reads as part of the app, not a web notification. */
+.k-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--canvas-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-inset);
+  box-shadow: 4px 4px 0 rgb(var(--kairo-accent-rgb, 102 92 255) / 16%);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.k-toast-title {
+  font-weight: 600;
+}
+.k-toast-desc {
+  margin-top: 2px;
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+.k-toast-action {
+  margin-left: auto;
+  align-self: center;
+  flex: none;
+  appearance: none;
+  cursor: pointer;
+  padding: 5px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--ink-subtle);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color var(--dur-fast) ease;
+}
+.k-toast-action:hover {
+  background: var(--surface-soft);
+}
+/* Tone lives on the left edge only — a full-bleed red toast would fight the editorial surface. */
+.k-toast-success {
+  border-left: 3px solid color-mix(in srgb, var(--verify) 80%, var(--ink-muted));
+}
+.k-toast-error {
+  border-left: 3px solid #c83c32;
+}
+.k-toast-loading {
+  border-left: 3px solid rgb(var(--kairo-accent-rgb, 102 92 255) / 0.6);
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-toast {
+    transition: none !important;
+  }
+}
+
 /* ---- Main window: the permission-recovery screen ---------------------------------------------
    Normally hidden — Rust only reveals it when TCC grants are still missing (once they're all
    granted this window renders SettingsView instead). Same language as every other surface. */

@@ -9,6 +9,7 @@ import { getAuthStatus, onAuthChanged } from './onboarding/authClient';
 import { syncUserName } from './onboarding/userName';
 import { SettingsView } from './settings/SettingsView';
 import { KairoLockup } from './components/KairoMark';
+import { KairoToaster } from './components/KairoToaster';
 
 // The main window is normally hidden. Rust only reveals it on first run when TCC
 // permissions still need granting (see lib.rs setup). So this component is purely
@@ -139,8 +140,14 @@ export function App() {
 
   // Permissions all granted → this window is the Settings page (opened from the tray).
   // Still-missing permissions → the first-run permission-recovery screen below.
+  // The toaster is mounted on BOTH so nothing this window does can fail silently.
   if (missingPermissions.length === 0) {
-    return <SettingsView />;
+    return (
+      <>
+        <SettingsView />
+        <KairoToaster />
+      </>
+    );
   }
 
   return (
@@ -210,6 +217,7 @@ export function App() {
           </p>
         </section>
       )}
+      <KairoToaster />
     </main>
   );
 }

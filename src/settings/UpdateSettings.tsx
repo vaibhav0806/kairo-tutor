@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import type { NativeBridge, NativeUpdateInfo } from '../native/nativeBridge';
 import { klog } from '../core/logger';
+import { notify } from '../core/notify';
 
 type State =
   | { kind: 'idle' }
@@ -30,6 +31,16 @@ export function UpdateSettings({ bridge, version }: { bridge: NativeBridge; vers
         // otherwise the button looks broken.
         klog('settings', 'warn', 'update check failed', { error: String(err), manual });
         setState(manual ? { kind: 'error', message: "Couldn't reach the update server." } : { kind: 'idle' });
+        // A manual check is an action the user just took, so it also announces itself — the row
+        // text alone is easy to miss when the window is tall.
+        if (manual) {
+          notify({
+            tone: 'error',
+            message: "Couldn't reach the update server",
+            detail: 'Check your connection and try again.',
+            action: { label: 'Retry', onClick: () => void check(true) }
+          });
+        }
       }
     },
     [bridge],
@@ -55,7 +66,9 @@ export function UpdateSettings({ bridge, version }: { bridge: NativeBridge; vers
       await bridge.installUpdate();
     } catch (err) {
       klog('settings', 'warn', 'update install failed', { error: String(err) });
-      setState({ kind: 'error', message: String(err).replace(/^.*?:\s*/, '') });
+      const message = String(err).replace(/^.*?:\s*/, '');
+      setState({ kind: 'error', message });
+      notify({ tone: 'error', message: "Couldn't install the update", detail: message });
     }
   };
 
