@@ -3,7 +3,11 @@
 //! onboarding WebView invokes.
 
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tauri::{LogicalPosition, LogicalSize, Manager};
+
+/// A rename is one small authenticated write; fail fast rather than hang the Save button.
+const DISPLAY_NAME_TIMEOUT: Duration = Duration::from_secs(12);
 
 fn onboarded_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     app.path()
@@ -62,6 +66,49 @@ pub(crate) fn set_user_name(app: tauri::AppHandle, name: String) {
     }
     let _ = std::fs::write(&path, trimmed.as_bytes());
     crate::klog!(app, info, name_len = trimmed.len(), "user name cached");
+}
+
+/// Rename the user for real: persist to the account, THEN update the local cache from what the
+/// server accepted.
+///
+/// `set_user_name` alone only writes the local marker, and `/v1/me` is what the desktop syncs
+/// from — so a rename that never reached the database was silently reverted by the next sync.
+/// The user renamed themselves, saw it save, and got the old name back on the next launch.
+#[tauri::command]
+pub(crate) async fn save_display_name(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<String, String> {
+    let trimmed = name.trim().to_string();
+    let mut body = serde_json::Map::new();
+    body.insert(
+        "display_name".into(),
+        serde_json::Value::String(trimmed.clone()),
+    );
+    let value = crate::proxy::proxy_patch_json(
+        &app,
+        "/v1/me",
+        &serde_json::Value::Object(body),
+        DISPLAY_NAME_TIMEOUT,
+    )
+    .await
+    .map_err(|error| error.describe())?;
+
+    // Trust the server's answer over the local draft: it clears an empty name back to the Google
+    // account name, and that is the value every later sync will return.
+    let saved = value
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    set_user_name(app.clone(), saved.clone());
+    crate::klog!(
+        app,
+        info,
+        name_len = saved.len(),
+        "display name saved to account"
+    );
+    Ok(saved)
 }
 
 /// The cached user display name (empty string if none / cleared).

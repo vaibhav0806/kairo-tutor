@@ -170,11 +170,22 @@ export function SettingsView() {
   };
   const saveName = async () => {
     const trimmed = name.trim();
-    await notifySaving(bridge.setUserName(trimmed), {
-      pending: 'Saving…',
-      success: trimmed ? `Kairo will call you ${trimmed}` : 'Name cleared'
-    });
-    setSavedName(trimmed);
+    // Save to the ACCOUNT, not just the local cache: /v1/me is what the app syncs from, so a
+    // local-only rename was overwritten by the next sync and the old name came back.
+    try {
+      const saved = await notifySaving(bridge.saveDisplayName(trimmed), {
+        pending: 'Saving…',
+        success: trimmed ? `Kairo will call you ${trimmed}` : 'Name cleared'
+      });
+      setName(saved);
+      setSavedName(saved);
+      await refresh();
+    } catch (error) {
+      klog('settings', 'warn', 'display name save failed', { error: String(error) });
+      // Put the field back to what is actually stored, so the UI never shows an unsaved rename
+      // as though it took.
+      setName(savedName);
+    }
   };
   // Optimistic: flip the switch now, revert it if the native call fails. Both of these used to
   // swallow the error (`.catch(() => {})`), which left the UI showing a state the app was not in.

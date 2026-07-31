@@ -204,6 +204,10 @@ export type NativeBridge = {
   getUserName(): Promise<string>;
   // Cache the user display name (persisted natively; '' clears it).
   setUserName(name: string): Promise<void>;
+  // Rename the user on the ACCOUNT, then refresh the native cache from what the server saved.
+  // Use this for a user-initiated rename — setUserName alone is overwritten by the next /v1/me
+  // sync. Returns the saved name ('' when cleared back to the Google account name).
+  saveDisplayName(name: string): Promise<string>;
   runTutorTurn(input: TutorTurnInput): Promise<string>;
   // Text-only "do I need to look at the screen?" gate. Returns raw JSON
   // { needsScreen: boolean, voiceText: string }.
@@ -683,6 +687,12 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
       } catch {
         // Browser previews have no native name cache.
       }
+    },
+
+    async saveDisplayName(name) {
+      // Deliberately NOT swallowed: a rename that silently fails is exactly the bug this
+      // replaced, so the caller must be able to tell the user it did not save.
+      return await invoke<string>('save_display_name', { name });
     },
 
     async runTutorTurn(input) {

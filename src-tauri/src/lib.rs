@@ -1148,6 +1148,7 @@ pub fn run() {
             onboarding::set_onboarding_click_through,
             start_ptt,
             onboarding::set_user_name,
+            onboarding::save_display_name,
             onboarding::get_user_name,
             accent::get_accent,
             accent::set_accent,
