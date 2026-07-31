@@ -184,6 +184,19 @@ impl Drop for Timer {
 /// `constants::LOG_TRANSCRIPTS` and rebuilds. Never enable full-text logging in a
 /// distributed build. Never log raw audio, screenshot pixels/base64, or secrets —
 /// pass byte/size counts instead.
+/// Format a provider error body for logging. Returns `off` unless a local developer explicitly
+/// enables `constants::LOG_PROVIDER_BODIES` and rebuilds; log the length separately, which is
+/// always safe. Never enable full bodies in a distributed build.
+pub(crate) fn provider_body_field(body: &str) -> String {
+    if crate::constants::LOG_PROVIDER_BODIES {
+        body.chars()
+            .take(crate::constants::PROVIDER_BODY_SNIPPET_CHARS)
+            .collect()
+    } else {
+        "off".to_string()
+    }
+}
+
 pub(crate) fn transcript_field(text: &str) -> String {
     if crate::constants::LOG_TRANSCRIPTS {
         text.to_string()
@@ -207,6 +220,16 @@ pub(crate) fn frontend(level: &str, webview: &str, sub: &str, message: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_body_field_redacts_upstream_text_by_default() {
+        let body = r#"{"error":{"message":"private prompt echoed back"}}"#;
+
+        let field = super::provider_body_field(body);
+
+        assert_eq!(field, "off");
+        assert!(!field.contains("private prompt"));
+    }
+
     #[test]
     fn transcript_field_redacts_text_by_default() {
         let transcript = "private spoken question";

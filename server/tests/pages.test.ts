@@ -53,10 +53,11 @@ describe('browser handoff pages', () => {
 
   it('keeps upstream provider content out of logs and client errors', () => {
     const secret = 'private transcript echoed by provider';
-    const error = new ProviderError(secret, {
+    const error = new ProviderError('Provider returned an error response.', {
       provider: 'openrouter',
       errorClass: 'http',
       status: 502,
+      bodySnippet: secret,
     });
 
     expect(providerErrorLogFields(error, '/v1/llm/chat?prompt=private')).toEqual({
@@ -64,6 +65,9 @@ describe('browser handoff pages', () => {
       errorClass: 'http',
       status: 502,
       path: '/v1/llm/chat',
+      // The length is always safe — it says the upstream spoke without repeating it.
+      bodyChars: secret.length,
+      body: undefined,
     });
     expect(JSON.stringify(providerErrorLogFields(error))).not.toContain(secret);
     expect(SAFE_PROVIDER_ERROR_MESSAGE).not.toContain(secret);

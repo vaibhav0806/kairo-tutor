@@ -1,7 +1,7 @@
 import { request } from 'undici';
 import { agent } from '../lib/http';
 import { providers } from '../config/providers';
-import { ProviderError } from '../plugins/error-handler';
+import { PROVIDER_BODY_SNIPPET_CHARS, ProviderError } from '../plugins/error-handler';
 
 /** Forward a JSON POST to `${provider}${path}` injecting the real key. Returns the parsed JSON. */
 export async function forwardJson(
@@ -41,6 +41,7 @@ export async function forwardJson(
       provider: providerId,
       errorClass: 'http',
       status: res.statusCode,
+      bodySnippet: text.slice(0, PROVIDER_BODY_SNIPPET_CHARS),
     });
   }
   try {
@@ -50,6 +51,7 @@ export async function forwardJson(
       provider: providerId,
       errorClass: 'decode',
       status: res.statusCode,
+      bodySnippet: text.slice(0, PROVIDER_BODY_SNIPPET_CHARS),
     });
   }
 }

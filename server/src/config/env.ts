@@ -12,6 +12,12 @@ const Env = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  // Include the truncated upstream provider body in server logs. Off by default because those
+  // bodies can echo request content; turn it on temporarily when diagnosing a provider failure.
+  KAIRO_LOG_PROVIDER_BODIES: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   PORT: z.coerce.number().default(8787),
   PUBLIC_BASE_URL: z.string().url(),
   DATABASE_URL: z.string().min(1),

@@ -108,7 +108,11 @@ pub(crate) async fn anthropic_vision_chat(
         };
         let status = response.status();
         if !status.is_success() {
-            crate::klog!(grounding, warn, status = %status, model = %model, "vision chat failed");
+            // Status alone cannot separate an exhausted quota from a rotated key from a retired
+            // model id — they all arrive as one 4xx. Keep the length always, the text only when a
+            // developer opts in (see constants::LOG_PROVIDER_BODIES).
+            let body = response.text().await.unwrap_or_default();
+            crate::klog!(grounding, warn, status = %status, model = %model, error_class = "http", body_chars = body.chars().count(), body = %crate::klog::provider_body_field(&body), "vision chat failed");
             return VisionOutcome::Failed;
         }
         match response.json::<Value>().await {
@@ -234,7 +238,8 @@ pub(crate) async fn openai_vision_chat(
         };
         let status = response.status();
         if !status.is_success() {
-            crate::klog!(tutor, warn, provider = "openai", status = %status, model = %model, "openai vision failed");
+            let body = response.text().await.unwrap_or_default();
+            crate::klog!(tutor, warn, provider = "openai", status = %status, model = %model, error_class = "http", body_chars = body.chars().count(), body = %crate::klog::provider_body_field(&body), "openai vision failed");
             return VisionOutcome::Failed;
         }
         match response.json::<Value>().await {

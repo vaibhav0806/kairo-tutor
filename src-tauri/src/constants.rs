@@ -187,6 +187,11 @@ pub(crate) const SHOW_IN_CAPTURE: bool = match option_env!("KAIRO_SHOW_IN_CAPTUR
 // by default for shipped builds; a local developer may temporarily opt in by changing
 // this to `true` and rebuilding. Never enable it in a distributed build.
 pub(crate) const LOG_TRANSCRIPTS: bool = false;
+// Log the truncated provider error body alongside its length. Off by default because those bodies
+// can echo request content; a local developer may set this to `true` and rebuild while diagnosing
+// a provider failure. Never enable it in a distributed build.
+pub(crate) const LOG_PROVIDER_BODIES: bool = false;
+pub(crate) const PROVIDER_BODY_SNIPPET_CHARS: usize = 500;
 pub(crate) const LOG_TO_STDERR: bool = false;
 // Default verbosity filter (tracing EnvFilter syntax). KAIRO_LOG still overrides.
 pub(crate) const LOG_FILTER: &str = "info,kairo=debug";
