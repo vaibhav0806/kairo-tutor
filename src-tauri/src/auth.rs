@@ -21,7 +21,10 @@ pub(crate) struct AuthCallback {
 }
 
 fn session_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|d| d.join("session.token"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|d| d.join("session.token"))
 }
 
 fn pending_auth_path(app: &AppHandle) -> Option<PathBuf> {
@@ -121,11 +124,7 @@ pub(crate) fn consume_pending_auth_state(path: &std::path::Path, returned: &str)
     consume_pending_auth_state_at(path, returned, now.as_secs())
 }
 
-fn consume_pending_auth_state_at(
-    path: &std::path::Path,
-    returned: &str,
-    now_secs: u64,
-) -> bool {
+fn consume_pending_auth_state_at(path: &std::path::Path, returned: &str, now_secs: u64) -> bool {
     let Ok(pending) = std::fs::read_to_string(path) else {
         return false;
     };
@@ -217,7 +216,12 @@ pub(crate) async fn exchange_code(app: &AppHandle, code: &str) {
             },
             Err(e) => klog!(auth, error, "exchange parse failed: {e}"),
         },
-        Ok(r) => klog!(auth, error, status = r.status().as_u16(), "code exchange failed"),
+        Ok(r) => klog!(
+            auth,
+            error,
+            status = r.status().as_u16(),
+            "code exchange failed"
+        ),
         Err(e) => klog!(auth, error, "exchange request failed: {e}"),
     }
 }

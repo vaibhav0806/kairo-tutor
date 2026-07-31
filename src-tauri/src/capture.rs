@@ -4,7 +4,11 @@
 use crate::platform::{get_active_app, is_sensitive_app};
 use crate::types::{CaptureImageGeometry, DisplayBounds, ScreenCaptureResult};
 #[cfg(target_os = "macos")]
+use std::ffi::OsString;
+#[cfg(target_os = "macos")]
 use std::fs;
+#[cfg(target_os = "macos")]
+use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 #[cfg(target_os = "macos")]
@@ -28,6 +32,46 @@ use objc2_app_kit::{NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
 use objc2_foundation::{NSNotification, NSNotificationCenter};
 
 #[cfg(target_os = "macos")]
+fn screencapture_arguments(output_path: &Path) -> Vec<OsString> {
+    ["-x", "-m", "-t", "png"]
+        .into_iter()
+        .map(OsString::from)
+        .chain(std::iter::once(output_path.as_os_str().to_owned()))
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+struct TemporaryCaptureFile {
+    path: PathBuf,
+}
+
+#[cfg(target_os = "macos")]
+impl TemporaryCaptureFile {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for TemporaryCaptureFile {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_file(&self.path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                crate::klog!(
+                    screen,
+                    warn,
+                    "failed to remove temporary screenshot: {error}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
     // Unique path per capture so concurrent activations don't clobber the same
     // temp file (which could hang or corrupt a capture).
@@ -39,12 +83,10 @@ fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
         std::process::id(),
         seq
     ));
+    let capture_file = TemporaryCaptureFile::new(output_path);
 
     let output = Command::new("screencapture")
-        .arg("-x")
-        .arg("-t")
-        .arg("png")
-        .arg(&output_path)
+        .args(screencapture_arguments(capture_file.path()))
         .output()
         .map_err(|error| format!("Failed to run macOS screencapture: {error}"))?;
 
@@ -57,9 +99,8 @@ fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
         });
     }
 
-    let bytes = fs::read(&output_path)
+    let bytes = fs::read(capture_file.path())
         .map_err(|error| format!("Failed to read captured screenshot: {error}"))?;
-    let _ = fs::remove_file(output_path);
     Ok(bytes)
 }
 
@@ -511,6 +552,34 @@ mod tests {
         }
 
         assert!(observer.observed_activation());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn screencapture_arguments_limit_capture_to_main_display() {
+        let output_path = std::path::Path::new("/tmp/kairo-capture.png");
+
+        assert_eq!(
+            screencapture_arguments(output_path),
+            vec!["-x", "-m", "-t", "png", "/tmp/kairo-capture.png"]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn temporary_capture_file_removes_output_when_dropped() {
+        let output_path = std::env::temp_dir().join(format!(
+            "kairo-capture-cleanup-test-{}-{}.png",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&output_path, b"private screenshot bytes").unwrap();
+
+        {
+            let _capture_file = TemporaryCaptureFile::new(output_path.clone());
+        }
+
+        assert!(!output_path.exists());
     }
 
     #[test]

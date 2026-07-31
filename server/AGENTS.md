@@ -11,8 +11,9 @@ Secrets never reach the browser or the desktop bundle.
 ## Run / dev
 
 - `npm run server:dev` (from repo root) → `tsx watch`, port **8787**.
-- `npm run db:generate` / `npm run db:migrate` (Drizzle Kit against Neon).
-- Env from `server/.env` (gitignored) — **keys only**. Non-secret config lives in `src/config/`.
+- `npm run db:generate` / `npm run db:migrate` (Drizzle Kit against the configured guarded database target).
+- Env from `server/.env` (gitignored). Copy `server/.env.example`; runtime policy is enforced in
+  `src/config/`.
 - Google OAuth redirect URI (dev): `http://localhost:8787/api/auth/callback/google`.
 
 ## Fastify conventions
@@ -24,13 +25,13 @@ Secrets never reach the browser or the desktop bundle.
 - Structured **pino** logs. **NEVER log secrets/tokens/auth headers/PII/raw media** — metadata
   only (same discipline as the desktop `klog`).
 
-## Neon + migrations
+## Postgres + migrations
 
-- **Drizzle** ORM, `pg` (node-postgres) `Pool` on the **pooled** Neon URL.
-- Environment mapping is fixed in `src/config/targets.ts`: `local` = Neon `dev` + Dodo test mode;
-  `hosted` = Neon `production` + Dodo live mode. Docker Compose sets the hosted selector; local
-  commands default to local. Startup and migrations verify Neon's actual endpoint and fail closed
-  on any cross-environment mix. Do not bypass this guard.
+- **Drizzle** ORM with a `pg` (node-postgres) pool. Contributors use literal-loopback PostgreSQL;
+  maintainers and hosted deployments use pooled Neon.
+- `KAIRO_DATABASE_TARGET=local-postgres` is allowed only with the local server target and rejects
+  DNS/remote hosts and connection-string overrides. `neon` mode keeps the exact dev/production
+  endpoint verification in `src/config/targets.ts`. Do not bypass either guard.
 - Migrations are **forward-only**, checked into `server/drizzle/`, reviewed in-PR, dry-run on a
   Neon branch first. **Never** auto-apply on boot; run `src/db/migrate.ts` as a deploy step.
   Never hand-edit an already-applied migration.
@@ -55,20 +56,23 @@ Secrets never reach the browser or the desktop bundle.
   migrations, verifies `DODO_ENV=test_mode`, and runs Dodo's signed CLI relay to
   `http://localhost:8787/webhooks/dodo`. Never bypass signature checks for local testing.
 - Never point test-mode Dodo at the hosted API. Test checkouts, webhook relays, account resets, and
-  simulated lifecycle events belong only to the local server and Neon `dev` branch.
+  simulated lifecycle events belong only to the local server using local PostgreSQL or the Neon
+  `dev` branch.
 - A Hetzner live cutover requires explicit user approval in the current request and the preflight
   in root `AGENTS.md`. Change only the environment selector after preflight; never copy live values
   into a command, repo file, local env, test, or log. Do not generate a live checkout as an agent.
 
 ## Verify gate (before "done")
 
-- `npm run typecheck -w @kairo/server` + `npm run test -w @kairo/server` + a migration dry-run.
+- Start the loopback PostgreSQL 17 `kairo_test` database documented in `README.md`, then run
+  `npm run typecheck -w @kairo/server` + `npm run test -w @kairo/server` + a migration dry-run.
+  The test harness applies its own migrations, injects fake credentials, and refuses remote DBs.
 
 ## Deploying backend changes
 
 Changes under `server/` are NOT live until deployed to the prod box (Hetzner). After ANY
 backend change, **OFFER to deploy — but ASK the user and get explicit confirmation BEFORE
 deploying. Never auto-deploy.** The deploy runs `server/deploy.sh` on the box (build →
-forward-only migrate → restart → `/readyz` gate). CI (typecheck + build) runs automatically on
+forward-only migrate → restart → `/readyz` gate). CI (typecheck + build + isolated PostgreSQL tests) runs automatically on
 push via `.github/workflows/server-ci.yml`; the deploy itself is manual + confirmed. (Box host +
 SSH details live in the agent's local memory, not this public repo.)

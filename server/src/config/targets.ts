@@ -17,6 +17,7 @@ export type ServerTarget = keyof typeof SERVER_TARGETS;
 
 type StaticEnvironment = {
   KAIRO_SERVER_TARGET: ServerTarget;
+  KAIRO_DATABASE_TARGET: 'neon' | 'local-postgres';
   PUBLIC_BASE_URL: string;
   DODO_ENV: 'test_mode' | 'live_mode';
 };
@@ -35,6 +36,9 @@ export function assertStaticEnvironment(env: StaticEnvironment) {
     throw new Error(
       `KAIRO_SERVER_TARGET=${env.KAIRO_SERVER_TARGET} requires DODO_ENV=${expected.dodoEnvironment}`,
     );
+  }
+  if (env.KAIRO_SERVER_TARGET === 'hosted' && env.KAIRO_DATABASE_TARGET === 'local-postgres') {
+    throw new Error('KAIRO_SERVER_TARGET=hosted cannot use KAIRO_DATABASE_TARGET=local-postgres');
   }
 
   return expected;

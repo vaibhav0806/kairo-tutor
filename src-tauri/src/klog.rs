@@ -52,7 +52,8 @@ pub(crate) fn init() {
     let directives = crate::env::provider_env("KAIRO_LOG", crate::constants::LOG_FILTER);
     // Never fail on a bad directive — fall back to the default filter.
     let make_filter = || {
-        EnvFilter::try_new(&directives).unwrap_or_else(|_| EnvFilter::new(crate::constants::LOG_FILTER))
+        EnvFilter::try_new(&directives)
+            .unwrap_or_else(|_| EnvFilter::new(crate::constants::LOG_FILTER))
     };
 
     let dir = log_dir();

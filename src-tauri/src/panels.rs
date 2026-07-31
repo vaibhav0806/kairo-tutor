@@ -516,7 +516,12 @@ pub(crate) fn spawn_onboarding_hit_tracker(app: &tauri::AppHandle) {
             };
             let _ = window.set_ignore_cursor_events(!want_clickable);
             if last_logged != Some(want_clickable) {
-                crate::klog!(app, debug, clickable = want_clickable, "onboarding hit state");
+                crate::klog!(
+                    app,
+                    debug,
+                    clickable = want_clickable,
+                    "onboarding hit state"
+                );
                 last_logged = Some(want_clickable);
             }
         }
@@ -750,20 +755,35 @@ mod notch_hit_tests {
     // highlighted target under its frame (e.g. Figma's Design button at 1129,147).
     #[test]
     fn no_capsule_rect_is_click_through() {
-        assert!(!notch_hit_wants_clickable(None, (1129.0, 147.0), (475.0, 12.0), 1.0));
+        assert!(!notch_hit_wants_clickable(
+            None,
+            (1129.0, 147.0),
+            (475.0, 12.0),
+            1.0
+        ));
     }
 
     #[test]
     fn cursor_inside_capsule_traps_the_click() {
         // Capsule at window-local (330,10) size 100x40; window at (475,12); scale 1.
         let rect = Some((330.0, 10.0, 100.0, 40.0));
-        assert!(notch_hit_wants_clickable(rect, (855.0, 30.0), (475.0, 12.0), 1.0));
+        assert!(notch_hit_wants_clickable(
+            rect,
+            (855.0, 30.0),
+            (475.0, 12.0),
+            1.0
+        ));
     }
 
     #[test]
     fn cursor_outside_capsule_is_click_through() {
         let rect = Some((330.0, 10.0, 100.0, 40.0));
         // The Design target at (1129,147) is far outside the small capsule → pass through.
-        assert!(!notch_hit_wants_clickable(rect, (1129.0, 147.0), (475.0, 12.0), 1.0));
+        assert!(!notch_hit_wants_clickable(
+            rect,
+            (1129.0, 147.0),
+            (475.0, 12.0),
+            1.0
+        ));
     }
 }

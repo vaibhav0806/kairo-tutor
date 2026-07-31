@@ -2,12 +2,12 @@
 //! (with parallel visual grounding), and the lightweight "do I need the screen?"
 //! gate. Also owns the shared pooled HTTP client.
 
+use crate::constants;
 use crate::env::{provider_env, provider_env_optional, provider_timeout_ms};
 use crate::grounding::{
     anthropic_vision_chat, apply_step_targets, clean_model_json, detect_click_point_openai,
     ground_visual_targets, inject_primary_box, openai_vision_chat, VisionOutcome,
 };
-use crate::constants;
 use crate::prompts::{ack_system_prompt, build_tutor_system_prompt, gate_system_prompt};
 use crate::types::{AckInput, GateInput, TutorTurnInput};
 use serde_json::{json, Value};
@@ -38,7 +38,11 @@ fn build_tutor_user_prompt(input: &TutorTurnInput) -> Result<String, String> {
     });
     // Recent conversation for continuity (a follow-up may refer to an earlier step or
     // an interrupted walkthrough). Absent on the first turn.
-    if let Some(recent) = input.recent_context.as_ref().filter(|s| !s.trim().is_empty()) {
+    if let Some(recent) = input
+        .recent_context
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+    {
         if let Some(object) = context.as_object_mut() {
             object.insert("recentContext".to_string(), json!(recent));
         }
@@ -267,22 +271,27 @@ async fn send_openrouter_chat_request(
     }
 
     let response = request.json(&body).send().await.map_err(|error| {
-        OpenRouterChatError::new(format!("OpenRouter request failed: {error}"), false)
+        OpenRouterChatError::new(
+            format!(
+                "OpenRouter request failed ({})",
+                crate::proxy::request_error_class(&error)
+            ),
+            false,
+        )
     })?;
     let status = response.status();
-    let payload = response.json::<Value>().await.map_err(|error| {
-        OpenRouterChatError::new(format!("OpenRouter response was not JSON: {error}"), false)
-    })?;
-
     if !status.is_success() {
-        let message = payload
-            .get("error")
-            .and_then(|error| error.get("message"))
-            .and_then(Value::as_str)
-            .or_else(|| payload.get("message").and_then(Value::as_str))
-            .unwrap_or("OpenRouter request failed");
-        return Err(OpenRouterChatError::new(message.to_string(), true));
+        return Err(OpenRouterChatError::new(
+            format!("OpenRouter request failed with HTTP {}.", status.as_u16()),
+            true,
+        ));
     }
+    let payload = response.json::<Value>().await.map_err(|_| {
+        OpenRouterChatError::new(
+            "OpenRouter returned an invalid response.".to_string(),
+            false,
+        )
+    })?;
 
     payload
         .get("choices")
@@ -348,7 +357,7 @@ pub(crate) async fn run_tutor_turn(
         info,
         skill = %input.skill_slug,
         app = %input.active_app.active_app,
-        title = %input.active_app.window_title.as_deref().unwrap_or(""),
+        title_chars = input.active_app.window_title.as_deref().unwrap_or("").chars().count(),
         "tutor turn skill resolved"
     );
     let provider = provider_env("KAIRO_AI_PROVIDER", constants::AI_PROVIDER);
@@ -405,9 +414,11 @@ pub(crate) async fn run_tutor_turn(
             // (OpenAI Responses), otherwise Anthropic Fable. Both return the SAME
             // { steps:[{say, box?}] } JSON, so the clean/ground/return below is
             // IDENTICAL for both — only the model call differs.
-            let tutor_provider =
-                provider_env("KAIRO_TUTOR_VISION_PROVIDER", constants::TUTOR_VISION_PROVIDER)
-                    .to_lowercase();
+            let tutor_provider = provider_env(
+                "KAIRO_TUTOR_VISION_PROVIDER",
+                constants::TUTOR_VISION_PROVIDER,
+            )
+            .to_lowercase();
             let system_prompt = build_tutor_system_prompt(&input);
             log_prompt_skill_presence(&system_prompt, &input.skill_slug, "vision");
             let user_text = build_tutor_user_prompt(&input)?;
@@ -419,8 +430,7 @@ pub(crate) async fn run_tutor_turn(
             let outcome = if tutor_provider == "openai" {
                 let openai_model =
                     provider_env("OPENAI_TUTOR_MODEL", constants::OPENAI_TUTOR_MODEL);
-                let effort =
-                    provider_env("OPENAI_VISION_EFFORT", constants::OPENAI_VISION_EFFORT);
+                let effort = provider_env("OPENAI_VISION_EFFORT", constants::OPENAI_VISION_EFFORT);
                 crate::klog!(tutor, info, provider = "openai", model = %openai_model, effort = %effort, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
                 openai_vision_chat(
                     &app,
@@ -462,23 +472,39 @@ pub(crate) async fn run_tutor_turn(
                     // question logged above (always shown; constants::LOG_TRANSCRIPTS).
                     if let Ok(value) = serde_json::from_str::<Value>(&grounded) {
                         let answer = value.get("voiceText").and_then(Value::as_str).unwrap_or("");
-                        let steps = value.get("steps").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0);
+                        let steps = value
+                            .get("steps")
+                            .and_then(Value::as_array)
+                            .map(|a| a.len())
+                            .unwrap_or(0);
                         let mode = value.get("mode").and_then(Value::as_str).unwrap_or("");
                         crate::klog!(tutor, info, mode = mode, steps = steps, answer = %crate::klog::transcript_field(answer), "single-call answer");
                     }
                     return Ok(grounded);
                 }
                 VisionOutcome::QuotaExceeded => {
-                    crate::klog!(tutor, info, "free request limit reached; returning upgrade prompt");
+                    crate::klog!(
+                        tutor,
+                        info,
+                        "free request limit reached; returning upgrade prompt"
+                    );
                     return Ok(quota_exceeded_turn());
                 }
                 VisionOutcome::Failed => {
-                    crate::klog!(tutor, warn, "vision turn empty; falling back to OpenRouter answer");
+                    crate::klog!(
+                        tutor,
+                        warn,
+                        "vision turn empty; falling back to OpenRouter answer"
+                    );
                     // fall through to the legacy path below.
                 }
             }
         } else {
-            crate::klog!(tutor, warn, "single-call vision turn missing display bounds; falling back to OpenRouter answer");
+            crate::klog!(
+                tutor,
+                warn,
+                "single-call vision turn missing display bounds; falling back to OpenRouter answer"
+            );
             // fall through to the legacy path below.
         }
     }
@@ -492,7 +518,13 @@ pub(crate) async fn run_tutor_turn(
             build_openrouter_request_body(&input, &request_model, include_screenshot)?
         };
         let first = send_openrouter_chat_request(
-            client, &endpoint, &api_key, &app_title, site_url_ref, timeout, request_body,
+            client,
+            &endpoint,
+            &api_key,
+            &app_title,
+            site_url_ref,
+            timeout,
+            request_body,
         )
         .await;
         match first {
@@ -502,9 +534,19 @@ pub(crate) async fn run_tutor_turn(
                     && input.screen.captured
                     && input.screen.image_base64.is_some() =>
             {
-                crate::klog!(tutor, warn, "screenshot request failed; retrying text-only: {}", error.message);
+                crate::klog!(
+                    tutor,
+                    warn,
+                    "screenshot request failed; retrying text-only: {}",
+                    error.message
+                );
                 send_openrouter_chat_request(
-                    client, &endpoint, &api_key, &app_title, site_url_ref, timeout,
+                    client,
+                    &endpoint,
+                    &api_key,
+                    &app_title,
+                    site_url_ref,
+                    timeout,
                     build_openrouter_request_body(&input, &model, false)?,
                 )
                 .await
@@ -541,22 +583,37 @@ pub(crate) async fn run_tutor_turn(
             let grounded_json = match openai_point {
                 Some(nb) => inject_primary_box(&cleaned, nb),
                 None => {
-                    crate::klog!(tutor, warn, "openai pointing returned no point; using narration boxes");
+                    crate::klog!(
+                        tutor,
+                        warn,
+                        "openai pointing returned no point; using narration boxes"
+                    );
                     cleaned
                 }
             };
             let grounded = apply_step_targets(&grounded_json, image_ref, bounds);
             if let Ok(value) = serde_json::from_str::<Value>(&grounded) {
                 let answer = value.get("voiceText").and_then(Value::as_str).unwrap_or("");
-                let steps = value.get("steps").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0);
+                let steps = value
+                    .get("steps")
+                    .and_then(Value::as_array)
+                    .map(|a| a.len())
+                    .unwrap_or(0);
                 crate::klog!(tutor, info, pointing = "openai", grounded_point = had_point, steps = steps, answer = %crate::klog::transcript_field(answer), "openai-pointing answer");
             }
             return Ok(grounded);
         }
-        crate::klog!(tutor, warn, "openai pointing missing display bounds; using OpenRouter grounding");
+        crate::klog!(
+            tutor,
+            warn,
+            "openai pointing missing display bounds; using OpenRouter grounding"
+        );
     }
 
-    Ok(ground_visual_targets(content, input.screen.display_bounds.as_ref()))
+    Ok(ground_visual_targets(
+        content,
+        input.screen.display_bounds.as_ref(),
+    ))
 }
 
 /// One-shot OpenRouter text completion (system + user) → the assistant message
@@ -659,11 +716,24 @@ fn repair_gate_skill(content: &str, app: &str, bundle: &str, title: &str) -> Str
         gate_picked = %picked,
         after_guardrail = %clean,
         app = %app,
-        title = %title,
+        title_chars = title.chars().count(),
         "gate skill routing"
     );
     parsed["skillSlug"] = json!(clean);
     parsed.to_string()
+}
+
+fn gate_result_log_metadata(content: &str) -> (bool, Option<bool>, usize) {
+    let Ok(parsed) = serde_json::from_str::<Value>(content) else {
+        return (false, None, 0);
+    };
+    let needs_screen = parsed.get("needsScreen").and_then(Value::as_bool);
+    let voice_chars = parsed
+        .get("voiceText")
+        .and_then(Value::as_str)
+        .map(|text| text.chars().count())
+        .unwrap_or(0);
+    (true, needs_screen, voice_chars)
 }
 
 #[tauri::command]
@@ -735,7 +805,7 @@ pub(crate) async fn run_gate_turn(
         info,
         model = %model,
         app = %app,
-        title = %title,
+        title_chars = title.chars().count(),
         question = %crate::klog::transcript_field(&input.user_query),
         "gate turn"
     );
@@ -757,17 +827,24 @@ pub(crate) async fn run_gate_turn(
     // Out of free requests → answer ANY ask with the upgrade prompt (no gate answer, no
     // filler, no vision). Checked in parallel with the gate so it adds no latency.
     if paywalled {
-        crate::klog!(gate, info, "over free limit; upgrade prompt (no answer/vision)");
+        crate::klog!(
+            gate,
+            info,
+            "over free limit; upgrade prompt (no answer/vision)"
+        );
         return Ok(quota_gate_response());
     }
     match gate_result {
         Ok(content) => {
             let repaired = repair_gate_skill(&content, &app, &bundle, &title);
+            let (valid_json, needs_screen, voice_chars) = gate_result_log_metadata(&repaired);
             crate::klog!(
                 gate,
                 debug,
-                "gate result: {}",
-                repaired.chars().take(200).collect::<String>()
+                valid_json = valid_json,
+                needs_screen = ?needs_screen,
+                voice_chars = voice_chars,
+                "gate result"
             );
             Ok(repaired)
         }
@@ -791,9 +868,16 @@ pub(crate) async fn run_ack_turn(
     let user = format!("Completed action: {}", input.completed_step);
     let timeout = Duration::from_millis(constants::ACK_TIMEOUT_MS);
     // Plain sentence → no json_object. `.unwrap_or_default()` → "" on any failure.
-    let text = openrouter_text_chat(&app_handle, &system, &user, constants::ACK_MODEL, timeout, false)
-        .await
-        .unwrap_or_default();
+    let text = openrouter_text_chat(
+        &app_handle,
+        &system,
+        &user,
+        constants::ACK_MODEL,
+        timeout,
+        false,
+    )
+    .await
+    .unwrap_or_default();
     let text = text.trim().to_string();
     crate::klog!(follow, info, len = text.len(), "ack ready");
     Ok(text)
@@ -801,6 +885,24 @@ pub(crate) async fn run_ack_turn(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gate_result_log_metadata_excludes_response_text() {
+        let private_answer = "A private answer that must not reach the log";
+        let content = serde_json::json!({
+            "needsScreen": false,
+            "voiceText": private_answer,
+            "skillSlug": ""
+        })
+        .to_string();
+
+        let metadata = super::gate_result_log_metadata(&content);
+
+        assert_eq!(
+            metadata,
+            (true, Some(false), private_answer.chars().count())
+        );
+    }
+
     #[test]
     fn repair_gate_skill_drops_wrong_app_and_fills_match() {
         // Model picked the Figma pack but frontmost app is Blender → dropped.

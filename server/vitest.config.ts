@@ -4,7 +4,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    // Tests share one Neon DB (they seed/clean the same rows) — run files sequentially.
+    globalSetup: ['./tests/setup.ts'],
+    setupFiles: ['./tests/setup.ts'],
+    // Integration tests share one local Postgres database and seed/clean the same rows.
     fileParallelism: false,
   },
 });

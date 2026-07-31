@@ -1,8 +1,7 @@
 name: server-ci
 
-# Verify the backend on every change to server/ (typecheck + build). Zero secrets, no DB:
-# the full test suite needs a Postgres (shared Neon in dev). To add it in CI, wire a Neon
-# CI-branch DATABASE_URL secret (+ run migrations first) — see server/AGENTS.md.
+# Verify the backend on every change to server/. Tests use an isolated local Postgres service;
+# no repository secrets, Neon branch, or external provider credentials are available to the job.
 # DEPLOY is intentionally NOT here — it stays manual + user-confirmed (server/AGENTS.md).
 on:
   push:
@@ -17,10 +16,30 @@ on:
     paths:
       - 'server/**'
       - 'packages/shared/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/server-ci.yml'
+
+permissions:
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: kairo_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kairo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,3 +52,5 @@ jobs:
         run: npm run typecheck -w @kairo/server
       - name: Build (server)
         run: npm run build -w @kairo/server
+      - name: Test (server)
+        run: npm run test -w @kairo/server

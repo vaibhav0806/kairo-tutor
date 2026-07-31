@@ -63,14 +63,14 @@ mod panels;
 use panels::{
     configure_overlay_window, cursor_window, emit_overlay_payload, ensure_cursor_panel,
     ensure_notch_panel, ensure_overlay_panel, overlay_window, show_notch_with_payload,
-    spawn_mouse_tracker, spawn_notch_hit_tracker, spawn_onboarding_hit_tracker, store_notch_payload,
-    store_overlay_payload,
+    spawn_mouse_tracker, spawn_notch_hit_tracker, spawn_onboarding_hit_tracker,
+    store_notch_payload, store_overlay_payload,
 };
 
-mod input;
-mod auth;
-mod onboarding;
 mod accent;
+mod auth;
+mod input;
+mod onboarding;
 mod proxy;
 use input::{spawn_context_input_tap, spawn_context_poll, spawn_ptt, start_ptt, FollowClickWatch};
 
@@ -516,7 +516,13 @@ fn activate_frontmost(app: &tauri::AppHandle) {
             let _ = win.show();
             let _ = win.set_focus();
         }
-        crate::klog!(app, info, activated = activated, is_active = is_active, "activate frontmost");
+        crate::klog!(
+            app,
+            info,
+            activated = activated,
+            is_active = is_active,
+            "activate frontmost"
+        );
     });
 }
 
@@ -533,7 +539,10 @@ fn screen_recording_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf>
 /// on a reset so we heads-up once and re-arm on the next grant).
 fn detect_screen_recording_reset(app: &tauri::AppHandle) -> bool {
     let status = permissions::get_permission_status();
-    let granted = matches!(status.screen_recording, crate::types::PermissionState::Granted);
+    let granted = matches!(
+        status.screen_recording,
+        crate::types::PermissionState::Granted
+    );
     let Some(marker) = screen_recording_marker(app) else {
         return false;
     };
@@ -599,7 +608,11 @@ fn get_launch_at_login(app: tauri::AppHandle) -> bool {
 fn set_launch_at_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     let manager = app.autolaunch();
-    let result = if enabled { manager.enable() } else { manager.disable() };
+    let result = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
     result.map_err(|error| error.to_string())
 }
 
@@ -608,7 +621,8 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::tray::TrayIconBuilder;
 
     let settings_item = MenuItem::with_id(app, "tray_settings", "Settings…", true, None::<&str>)?;
-    let upgrade_item = MenuItem::with_id(app, "tray_upgrade", "Upgrade to Pro", true, None::<&str>)?;
+    let upgrade_item =
+        MenuItem::with_id(app, "tray_upgrade", "Upgrade to Pro", true, None::<&str>)?;
     let replay_item =
         MenuItem::with_id(app, "tray_replay_intro", "Replay intro", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "tray_quit", "Quit Kairo", true, None::<&str>)?;
@@ -616,7 +630,13 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
     // Initial menu = free layout (Upgrade shown). refresh_tray rebuilds it to hide Upgrade once Pro.
     let menu = Menu::with_items(
         app,
-        &[&settings_item, &upgrade_item, &replay_item, &separator, &quit_item],
+        &[
+            &settings_item,
+            &upgrade_item,
+            &replay_item,
+            &separator,
+            &quit_item,
+        ],
     )?;
 
     let mut builder = TrayIconBuilder::with_id("kairo-menu-bar")
@@ -679,10 +699,20 @@ fn create_menu_bar_tray(app: &tauri::App) -> tauri::Result<()> {
             let (width, height) = rgba.dimensions();
             let icon = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
             builder = builder.icon(icon).icon_as_template(true);
-            klog!(app, debug, w = width, h = height, "tray template icon loaded");
+            klog!(
+                app,
+                debug,
+                w = width,
+                h = height,
+                "tray template icon loaded"
+            );
         }
         Err(error) => {
-            klog!(app, warn, "tray template decode failed: {error}; using the app icon");
+            klog!(
+                app,
+                warn,
+                "tray template decode failed: {error}; using the app icon"
+            );
             if let Some(icon) = app.default_window_icon().cloned() {
                 builder = builder.icon(icon);
             }
@@ -820,7 +850,12 @@ pub fn run() {
             // Diagnostic: Input Monitoring raw access at launch (0=granted 1=denied 2=unknown). A
             // stale 1 (denied) means a prior "Deny" that `tccutil reset` didn't clear.
             #[cfg(target_os = "macos")]
-            klog!(app, info, hid = crate::permissions::input_monitoring_raw(), "startup IM raw access");
+            klog!(
+                app,
+                info,
+                hid = crate::permissions::input_monitoring_raw(),
+                "startup IM raw access"
+            );
             // Kairo is now a Regular app ALWAYS: Dock icon + app menu + ⌘-Tab presence, even though it
             // stays visually quiet (windows closed by default; the notch is the ambient tool). We used to
             // flip to `Accessory` on a normal launch to avoid macOS yanking the user off a full-screen
@@ -830,7 +865,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-                klog!(app, info, setup = show_setup, onboarding = need_onboarding, policy = "regular", "activation policy: regular (always)");
+                klog!(
+                    app,
+                    info,
+                    setup = show_setup,
+                    onboarding = need_onboarding,
+                    policy = "regular",
+                    "activation policy: regular (always)"
+                );
             }
             if let Some(window) = app.get_webview_window("main") {
                 log_window_startup(&window);
@@ -848,7 +890,12 @@ pub fn run() {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = hide_target.hide();
-                        crate::klog!(app, info, window = "main", "close requested → hidden (app stays alive)");
+                        crate::klog!(
+                            app,
+                            info,
+                            window = "main",
+                            "close requested → hidden (app stays alive)"
+                        );
                     }
                 });
                 if show_setup && !need_onboarding {
@@ -965,7 +1012,11 @@ pub fn run() {
             if crate::onboarding::is_onboarded(app.handle())
                 && detect_screen_recording_reset(app.handle())
             {
-                klog!(app, warn, "screen recording was reset by macOS since last run");
+                klog!(
+                    app,
+                    warn,
+                    "screen recording was reset by macOS since last run"
+                );
                 let _ = app.handle().emit("permissions:screen-recording-reset", ());
             }
             // Deep link: after Google sign-in the browser redirects to
@@ -984,7 +1035,12 @@ pub fn run() {
                     // never fired" (a routing bug) from "it fired but we failed to front" (an activation
                     // race — the `focus onboarding: …` / `activated Kairo …` lines below then tell which).
                     let urls = event.urls();
-                    crate::klog!(auth, info, count = urls.len(), "deep link on_open_url fired");
+                    crate::klog!(
+                        auth,
+                        info,
+                        count = urls.len(),
+                        "deep link on_open_url fired"
+                    );
                     for url in urls {
                         if url.scheme() != "kairo" {
                             continue;
@@ -1114,8 +1170,16 @@ pub fn run() {
                 // menu-bar "Show Notch" item, never by focusing the app. So this is intentionally a
                 // no-op (log only).
                 #[cfg(target_os = "macos")]
-                tauri::RunEvent::Reopen { has_visible_windows, .. } => {
-                    crate::klog!(app, debug, has_visible_windows = has_visible_windows, "dock reopen → ignored (no auto-notch)");
+                tauri::RunEvent::Reopen {
+                    has_visible_windows,
+                    ..
+                } => {
+                    crate::klog!(
+                        app,
+                        debug,
+                        has_visible_windows = has_visible_windows,
+                        "dock reopen → ignored (no auto-notch)"
+                    );
                 }
                 _ => {}
             }
@@ -1133,8 +1197,8 @@ mod tests {
         build_openrouter_messages, build_openrouter_request_body, select_openrouter_request_model,
     };
     use crate::types::{
-        OverlayDisplayBounds, SynthesizeSpeechInput, TranscribeAudioInput, TutorActiveAppContext,
-        TutorScreenInput, TutorTurnInput,
+        OverlayDisplayBounds, TranscribeAudioInput, TutorActiveAppContext, TutorScreenInput,
+        TutorTurnInput,
     };
     use serde_json::json;
 

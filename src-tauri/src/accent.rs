@@ -3,8 +3,8 @@
 //! process-global cache so leaf utilities (color.rs) can read it with no plumbing. `set_accent`
 //! also emits the app-global `accent:changed { hex }` event so every webview recolors live.
 
-use std::sync::RwLock;
 use serde::Serialize;
+use std::sync::RwLock;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::constants;
@@ -15,9 +15,7 @@ static CURRENT_ACCENT: RwLock<Option<String>> = RwLock::new(None);
 /// True for a `#rrggbb` string (leading `#`, exactly 6 hex digits). Everything else is rejected.
 pub(crate) fn valid_hex(hex: &str) -> bool {
     let bytes = hex.as_bytes();
-    bytes.len() == 7
-        && bytes[0] == b'#'
-        && bytes[1..].iter().all(|b| b.is_ascii_hexdigit())
+    bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(|b| b.is_ascii_hexdigit())
 }
 
 fn accent_path(app: &AppHandle) -> Option<std::path::PathBuf> {
@@ -27,7 +25,11 @@ fn accent_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 fn read_stored(app: &AppHandle) -> Option<String> {
     let raw = std::fs::read_to_string(accent_path(app)?).ok()?;
     let hex = raw.trim().to_string();
-    if valid_hex(&hex) { Some(hex) } else { None }
+    if valid_hex(&hex) {
+        Some(hex)
+    } else {
+        None
+    }
 }
 
 fn set_cache(hex: &str) {

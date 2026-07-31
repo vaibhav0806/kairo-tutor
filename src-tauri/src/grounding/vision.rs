@@ -34,7 +34,7 @@ async fn proxy_vision_payload(
         Ok(payload) => Ok(payload),
         Err(crate::proxy::ProxyError::QuotaExceeded) => Err(VisionOutcome::QuotaExceeded),
         Err(error) => {
-            crate::klog!(grounding, warn, provider = provider_hint, model = %model, "vision via proxy failed: {}", error.describe());
+            crate::klog!(grounding, warn, provider = provider_hint, model = %model, error_class = error.class(), status = ?error.status(), "vision via proxy failed");
             Err(VisionOutcome::Failed)
         }
     }
@@ -102,20 +102,19 @@ pub(crate) async fn anthropic_vision_chat(
         {
             Ok(response) => response,
             Err(error) => {
-                crate::klog!(grounding, warn, model = %model, "vision chat request failed: {error}");
+                crate::klog!(grounding, warn, model = %model, error_class = crate::proxy::request_error_class(&error), "vision chat request failed");
                 return VisionOutcome::Failed;
             }
         };
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            crate::klog!(grounding, warn, status = %status, model = %model, "vision chat failed: {}", body.chars().take(220).collect::<String>());
+            crate::klog!(grounding, warn, status = %status, model = %model, "vision chat failed");
             return VisionOutcome::Failed;
         }
         match response.json::<Value>().await {
             Ok(payload) => payload,
-            Err(error) => {
-                crate::klog!(grounding, warn, model = %model, "vision chat parse failed: {error}");
+            Err(_) => {
+                crate::klog!(grounding, warn, model = %model, error_class = "decode", "vision chat parse failed");
                 return VisionOutcome::Failed;
             }
         }
@@ -209,7 +208,12 @@ pub(crate) async fn openai_vision_chat(
         let Some(api_key) =
             provider_env_optional("OPENAI_API_KEY").filter(|key| !key.trim().is_empty())
         else {
-            crate::klog!(tutor, warn, provider = "openai", "vision chat: OPENAI_API_KEY empty");
+            crate::klog!(
+                tutor,
+                warn,
+                provider = "openai",
+                "vision chat: OPENAI_API_KEY empty"
+            );
             return VisionOutcome::Failed;
         };
         let base_url = provider_env("OPENAI_BASE_URL", constants::OPENAI_BASE_URL);
@@ -224,20 +228,19 @@ pub(crate) async fn openai_vision_chat(
         {
             Ok(response) => response,
             Err(error) => {
-                crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision request failed: {error}");
+                crate::klog!(tutor, warn, provider = "openai", model = %model, error_class = crate::proxy::request_error_class(&error), "openai vision request failed");
                 return VisionOutcome::Failed;
             }
         };
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            crate::klog!(tutor, warn, provider = "openai", status = %status, model = %model, "openai vision failed: {}", body.chars().take(240).collect::<String>());
+            crate::klog!(tutor, warn, provider = "openai", status = %status, model = %model, "openai vision failed");
             return VisionOutcome::Failed;
         }
         match response.json::<Value>().await {
             Ok(payload) => payload,
-            Err(error) => {
-                crate::klog!(tutor, warn, provider = "openai", model = %model, "openai vision parse failed: {error}");
+            Err(_) => {
+                crate::klog!(tutor, warn, provider = "openai", model = %model, error_class = "decode", "openai vision parse failed");
                 return VisionOutcome::Failed;
             }
         }
@@ -310,10 +313,18 @@ pub(crate) async fn detect_click_point_openai(
     let _t = crate::klog::timer("grounding", "openai_point");
     let api_key = provider_env_optional("OPENAI_API_KEY")?;
     if api_key.trim().is_empty() {
-        crate::klog!(grounding, warn, provider = "openai", "OPENAI_API_KEY empty; no OpenAI pointing");
+        crate::klog!(
+            grounding,
+            warn,
+            provider = "openai",
+            "OPENAI_API_KEY empty; no OpenAI pointing"
+        );
         return None;
     }
-    let model = provider_env("OPENAI_COMPUTER_USE_MODEL", constants::OPENAI_COMPUTER_USE_MODEL);
+    let model = provider_env(
+        "OPENAI_COMPUTER_USE_MODEL",
+        constants::OPENAI_COMPUTER_USE_MODEL,
+    );
     let base_url = provider_env("OPENAI_BASE_URL", constants::OPENAI_BASE_URL);
     // Same reasoning effort as the Claude path (defaults to ANTHROPIC_VISION_EFFORT).
     let effort = provider_env("OPENAI_VISION_EFFORT", constants::OPENAI_VISION_EFFORT);
@@ -327,11 +338,22 @@ pub(crate) async fn detect_click_point_openai(
     // click coords in THIS resized pixel space; we normalize by (rw, rh).
     use base64::Engine;
     let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(image_base64) else {
-        crate::klog!(grounding, warn, provider = "openai", "failed to decode screenshot base64");
+        crate::klog!(
+            grounding,
+            warn,
+            provider = "openai",
+            "failed to decode screenshot base64"
+        );
         return None;
     };
     let Ok(image) = image::load_from_memory(&bytes) else {
-        crate::klog!(grounding, warn, provider = "openai", bytes = bytes.len(), "failed to load screenshot image");
+        crate::klog!(
+            grounding,
+            warn,
+            provider = "openai",
+            bytes = bytes.len(),
+            "failed to load screenshot image"
+        );
         return None;
     };
     let (ow, oh) = (image.width(), image.height());
@@ -404,14 +426,13 @@ pub(crate) async fn detect_click_point_openai(
     {
         Ok(response) => response,
         Err(error) => {
-            crate::klog!(grounding, warn, provider = "openai", model = %model, "computer-use request failed: {error}");
+            crate::klog!(grounding, warn, provider = "openai", model = %model, error_class = crate::proxy::request_error_class(&error), "computer-use request failed");
             return None;
         }
     };
     let status = response.status();
     if !status.is_success() {
-        let text = response.text().await.unwrap_or_default();
-        crate::klog!(grounding, warn, provider = "openai", status = %status, model = %model, "computer-use failed: {}", text.chars().take(240).collect::<String>());
+        crate::klog!(grounding, warn, provider = "openai", status = %status, model = %model, "computer-use failed");
         return None;
     }
     let payload = response.json::<Value>().await.ok()?;
@@ -432,7 +453,12 @@ pub(crate) async fn detect_click_point_openai(
     let nx2 = (ncx + half_nx).clamp(0.0, 1.0);
     let ny2 = (ncy + half_ny).clamp(0.0, 1.0);
     if nx2 <= nx1 || ny2 <= ny1 {
-        crate::klog!(grounding, warn, provider = "openai", "degenerate box around click point");
+        crate::klog!(
+            grounding,
+            warn,
+            provider = "openai",
+            "degenerate box around click point"
+        );
         return None;
     }
     crate::klog!(

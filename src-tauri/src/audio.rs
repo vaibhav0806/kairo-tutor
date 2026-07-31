@@ -327,7 +327,11 @@ pub(crate) fn spawn_audio_capture(
                             }
                             Err(err) => {
                                 capturing_worker.store(false, Ordering::SeqCst);
-                                crate::klog!(mic, error, "failed to resume mic stream: {err}; dropping to rebuild");
+                                crate::klog!(
+                                    mic,
+                                    error,
+                                    "failed to resume mic stream: {err}; dropping to rebuild"
+                                );
                                 stream = None;
                             }
                         }
@@ -341,7 +345,11 @@ pub(crate) fn spawn_audio_capture(
                     level_worker.store(0, Ordering::SeqCst);
                     if let Some(s) = stream.as_ref() {
                         if let Err(err) = s.pause() {
-                            crate::klog!(mic, error, "failed to pause mic stream: {err}; dropping to rebuild");
+                            crate::klog!(
+                                mic,
+                                error,
+                                "failed to pause mic stream: {err}; dropping to rebuild"
+                            );
                             stream = None;
                         }
                     }
@@ -404,7 +412,11 @@ pub(crate) fn spawn_audio_capture(
                     level_worker.store(0, Ordering::SeqCst);
                     if let Some(s) = stream.as_ref() {
                         if let Err(err) = s.pause() {
-                            crate::klog!(mic, error, "failed to pause mic stream on cancel: {err}; dropping to rebuild");
+                            crate::klog!(
+                                mic,
+                                error,
+                                "failed to pause mic stream on cancel: {err}; dropping to rebuild"
+                            );
                             stream = None;
                         }
                     }

@@ -11,7 +11,12 @@ export async function forwardJson(
   extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; json: unknown }> {
   const p = providers[providerId];
-  if (!p?.key) throw new ProviderError(`no key configured for ${providerId}`);
+  if (!p?.key) {
+    throw new ProviderError('Provider configuration is unavailable.', {
+      provider: providerId,
+      errorClass: 'configuration',
+    });
+  }
 
   let res;
   try {
@@ -23,17 +28,28 @@ export async function forwardJson(
       headers: { 'content-type': 'application/json', ...p.authHeader(p.key), ...extraHeaders },
       body: JSON.stringify(body),
     });
-  } catch (e) {
-    // Network / timeout / connection failure — wrap so it's a typed, logged 502 (not an
-    // opaque 500) and carries the real cause.
-    throw new ProviderError(`${providerId} ${path} request failed: ${e instanceof Error ? e.message : String(e)}`);
+  } catch {
+    throw new ProviderError('Provider network request failed.', {
+      provider: providerId,
+      errorClass: 'network',
+    });
   }
 
   const text = await res.body.text();
-  if (res.statusCode >= 400) throw new ProviderError(`${providerId} ${res.statusCode}: ${text.slice(0, 500)}`);
+  if (res.statusCode >= 400) {
+    throw new ProviderError('Provider returned an error response.', {
+      provider: providerId,
+      errorClass: 'http',
+      status: res.statusCode,
+    });
+  }
   try {
     return { status: res.statusCode, json: text ? JSON.parse(text) : null };
   } catch {
-    throw new ProviderError(`${providerId} ${res.statusCode} returned non-JSON: ${text.slice(0, 300)}`);
+    throw new ProviderError('Provider returned an invalid response.', {
+      provider: providerId,
+      errorClass: 'decode',
+      status: res.statusCode,
+    });
   }
 }

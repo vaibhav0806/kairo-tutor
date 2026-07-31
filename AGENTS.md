@@ -28,12 +28,13 @@ NEVER paste a live key into code, logs, tests, or committed config. Provider key
 
 ## Backend data environments
 
-- The pairing is fixed: local server → Neon `dev` + Dodo test mode; Hetzner server → Neon
-  `production` + Dodo live mode.
-- `server/src/config/targets.ts` is the single committed environment map. Server startup and every
-  migration verify the actual Neon endpoint and refuse mismatched combinations.
+- The local server uses Dodo test mode with either literal-loopback PostgreSQL for contributors or
+  Kairo's guarded Neon `dev` endpoint for maintainers. Hetzner uses Neon `production` + Dodo live.
+- `server/src/config/targets.ts` is the committed hosted/maintainer map. Local-Postgres URLs are
+  parsed into explicit connection fields; Neon startup and migrations verify the actual endpoint.
 - Never use the hosted API for test-mode checkout, webhook, account-reset, or lifecycle simulation.
-  Run the local server plus `npm run billing:test:listen`; all such data belongs in Neon `dev`.
+  Run the local server plus `npm run billing:test:listen`; maintainer billing data belongs only in
+  Neon `dev`.
 
 ## Commit discipline
 Work on `main` (no branches unless the user says so). Commit each change as you go — small,
@@ -80,11 +81,14 @@ npm run app             # quit → build+sign → verify signature → launch
 npm run app -- --check  # same, but run typecheck + tests + cargo check first
 npm run app:local       # same packaged workflow, every request → http://localhost:8787
 npm run app:hosted      # same packaged workflow, every request → https://api.meetkairo.xyz
+npm run app:build:unsigned # contributor build when the private signing identity is unavailable
 ```
 
-Signing is automatic (`tauri.conf.json` → `bundle.macOS.signingIdentity =
+Maintainer signing is automatic (`tauri.conf.json` → `bundle.macOS.signingIdentity =
 "Kairo Tutor Local Dev"`); `npm run app` additionally verifies the signature so a
-broken sign fails loudly, not at launch. It wraps (see `scripts/rebuild-run.sh`):
+broken sign fails loudly, not at launch. Contributors should use the unsigned command
+and expect macOS permission grants to reset between builds. The signed workflow wraps
+(see `scripts/rebuild-run.sh`):
 
 ```bash
 osascript -e 'quit app "Kairo Tutor"'                        # quit old instance
@@ -202,7 +206,7 @@ Non-secret config is centralized — **`.env` holds ONLY API keys.**
   solely in `constants.rs` (the desktop bundle never needs them). Keep the provider
   selection + follow/wait defaults in sync with `constants.rs`.
 - **`.env`** (per-person, git-ignored) holds ONLY the API keys: `OPENROUTER_API_KEY`,
-  `ANTHROPIC_API_KEY`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY`, `DASHSCOPE_API_KEY`
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY`
   (see `.env.example`). A fresh clone runs with just these five keys — no other env
   vars needed.
 - The model/URL/provider constants stay env-overridable at runtime (default = the
@@ -337,7 +341,7 @@ Before considering native or provider work done, run:
 npm run typecheck
 npm run test
 cargo check --manifest-path src-tauri/Cargo.toml
-npm run tauri:build -- --bundles app     # the real target
+npm run app:build:unsigned               # packaged contributor target
 npm run smoke:providers                  # when touching providers
 ```
 
@@ -356,14 +360,16 @@ npm run smoke:providers                  # when touching providers
 - When i say i wanna discuss, never make code changes. analyze the issue/spec that we wanna address, and then lets discuss things in detail. 
 - Always explain things in a simple manner please, never complicate things. there is no need to complicate anything, we aren't working on rocket science here.
 
-Command to kill kairo app, rebuild and relaunch:
+Maintainer command to kill Kairo, rebuild with the local identity, and relaunch:
 ```
 osascript -e 'tell application "Kairo Tutor" to quit'; npm run tauri:build -- --bundles app && open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
 ```
-Use the above after every single change that requires it please, don't wait for the user to tell u to do this.
+Contributors without that identity should replace the build command with
+`npm run app:build:unsigned`. Use the appropriate packaged build after every change that requires
+it; don't wait for the user to ask.
 Notes:
 - .env changes (provider keys, KAIRO_*) → no rebuild needed, just relaunch (env read at launch).
-- Rust or frontend code changes → rebuild (command 1).
+- Rust or frontend code changes → rebuild the signed maintainer or unsigned contributor target.
 - First build after a cargo change is slow (~minutes); later ones are faster.
 - Watch logs: tail -F ~/Library/Logs/Kairo/kairo-latest.log
 

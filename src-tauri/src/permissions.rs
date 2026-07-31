@@ -217,7 +217,11 @@ pub(crate) fn request_screen_recording(app: tauri::AppHandle) -> PermissionState
         let _ = app.run_on_main_thread(|| {
             let _ = unsafe { CGRequestScreenCaptureAccess() };
         });
-        crate::klog!(app, info, "act3: requested screen recording (fire-and-forget)");
+        crate::klog!(
+            app,
+            info,
+            "act3: requested screen recording (fire-and-forget)"
+        );
         return PermissionState::NotDetermined;
     }
     #[cfg(not(target_os = "macos"))]
@@ -303,7 +307,11 @@ pub(crate) fn request_input_monitoring(app: tauri::AppHandle) {
         // list stays "No Items" and the user can't grant it. (Mic already dispatches to main, which
         // is why the mic prompt worked but this one didn't.)
         let _ = app.run_on_main_thread(ensure_input_monitoring_access);
-        crate::klog!(ptt, info, "onboarding input-monitoring primer (main thread)");
+        crate::klog!(
+            ptt,
+            info,
+            "onboarding input-monitoring primer (main thread)"
+        );
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -344,7 +352,7 @@ pub(crate) fn get_input_monitoring_status() -> String {
 pub(crate) fn ensure_input_monitoring_access() {
     unsafe {
         let hid_access = IOHIDCheckAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT); // 0=granted 1=denied 2=unknown
-        // Request unconditionally unless already granted — this is what registers Kairo in the list.
+                                                                              // Request unconditionally unless already granted — this is what registers Kairo in the list.
         let hid_requested = if hid_access == 0 {
             true
         } else {

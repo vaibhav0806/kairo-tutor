@@ -245,7 +245,6 @@ fn parse_norm_box(value: Option<&Value>) -> Option<[f64; 4]> {
     Some([x1, y1, x2, y2])
 }
 
-
 // Decode the screenshot once so per-step accent sampling doesn't re-decode the JPEG.
 fn decode_rgb(image_base64: &str) -> Option<image::RgbImage> {
     use base64::Engine;
@@ -260,7 +259,13 @@ fn sample_accent(rgb: &Option<image::RgbImage>, [nx1, ny1, nx2, ny2]: [f64; 4]) 
     let accent = crate::accent::current();
     let Some(rgb) = rgb else {
         // 3:1 = WCAG AA floor for large text / UI components (a stroke/box/pointer).
-        return crate::color::ensure_contrast(&vibrant_accent(&accent, 90.0, 90.0, 90.0), 90.0, 90.0, 90.0, 3.0);
+        return crate::color::ensure_contrast(
+            &vibrant_accent(&accent, 90.0, 90.0, 90.0),
+            90.0,
+            90.0,
+            90.0,
+            3.0,
+        );
     };
     let (w, h) = (rgb.width() as f64, rgb.height() as f64);
     let (ar, ag, ab) = sample_background(
@@ -278,7 +283,11 @@ fn sample_accent(rgb: &Option<image::RgbImage>, [nx1, ny1, nx2, ny2]: [f64; 4]) 
 // One normalized box → a pointer (companion cursor at the raw center) + a padded
 // highlight rectangle, both in display points. Used per step so the cursor+box
 // move through a walkthrough one step at a time.
-fn map_box_to_targets(b: &DetectedBox, bounds: &OverlayDisplayBounds, step_index: usize) -> Vec<Value> {
+fn map_box_to_targets(
+    b: &DetectedBox,
+    bounds: &OverlayDisplayBounds,
+    step_index: usize,
+) -> Vec<Value> {
     let (min_x, min_y, max_x, max_y) = display_point_bounds(bounds);
     let x1 = (bounds.x + b.norm_x1 * bounds.width).clamp(min_x, max_x);
     let y1 = (bounds.y + b.norm_y1 * bounds.height).clamp(min_y, max_y);
@@ -287,7 +296,12 @@ fn map_box_to_targets(b: &DetectedBox, bounds: &OverlayDisplayBounds, step_index
     let (rx, ry, rw, rh) = (x1, y1, (x2 - x1).max(0.0), (y2 - y1).max(0.0));
     let (center_x, center_y) = (rx + rw / 2.0, ry + rh / 2.0);
     let marker_px = 44.0;
-    let raw_region = ScreenRegion { x: rx, y: ry, width: rw, height: rh };
+    let raw_region = ScreenRegion {
+        x: rx,
+        y: ry,
+        width: rw,
+        height: rh,
+    };
     let (pad_x_pct, pad_y_pct, pad_x_max, pad_y_max) = highlight_padding(&raw_region);
     let min_px = env_f64("KAIRO_BOX_PAD_MIN_PX", 6.0);
     let pad_x = (pad_x_pct * rw).max(min_px).min(pad_x_max);
@@ -362,7 +376,11 @@ pub(crate) fn apply_step_targets(
     let rgb = decode_rgb(image_base64);
     let mut out_steps: Vec<Value> = Vec::new();
     let mut says: Vec<String> = Vec::new();
-    for (i, step) in raw_steps.iter().take(constants::MAX_TUTOR_STEPS).enumerate() {
+    for (i, step) in raw_steps
+        .iter()
+        .take(constants::MAX_TUTOR_STEPS)
+        .enumerate()
+    {
         let say = step
             .get("say")
             .or_else(|| step.get("voiceText"))
@@ -384,7 +402,14 @@ pub(crate) fn apply_step_targets(
             }
             None => Vec::new(),
         };
-        crate::klog!(grounding, debug, step = i, has_box = !targets.is_empty(), say_len = say.len(), "tutor step");
+        crate::klog!(
+            grounding,
+            debug,
+            step = i,
+            has_box = !targets.is_empty(),
+            say_len = say.len(),
+            "tutor step"
+        );
         if !say.is_empty() {
             says.push(say.clone());
         }
@@ -485,7 +510,6 @@ pub(crate) fn apply_step_targets(
     .to_string()
 }
 
-
 #[cfg(test)]
 mod keep_boxes_tests {
     use super::apply_step_targets;
@@ -493,7 +517,13 @@ mod keep_boxes_tests {
     use serde_json::Value;
 
     fn bounds() -> OverlayDisplayBounds {
-        OverlayDisplayBounds { x: 0.0, y: 0.0, width: 1000.0, height: 800.0, scale_factor: 1.0 }
+        OverlayDisplayBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 1000.0,
+            height: 800.0,
+            scale_factor: 1.0,
+        }
     }
 
     fn shape(raw: &str) -> Value {
@@ -529,13 +559,16 @@ mod keep_boxes_tests {
     fn keep_boxes_is_forced_false_when_the_steps_carry_no_boxes() {
         // Seen in a real run: keep_boxes=true on a batched step where the model shipped
         // box:null for every step — nothing to accumulate, so don't claim otherwise.
-        let out = shape(r#"{"steps":[{"say":"a","box":null},{"say":"b","box":null}],"keep_boxes":true}"#);
+        let out =
+            shape(r#"{"steps":[{"say":"a","box":null},{"say":"b","box":null}],"keep_boxes":true}"#);
         assert_eq!(out["keepBoxes"], Value::Bool(false));
     }
 
     #[test]
     fn absent_keep_boxes_defaults_false() {
-        let out = shape(r#"{"steps":[{"say":"a","box":[0.1,0.1,0.2,0.2]},{"say":"b","box":[0.3,0.3,0.4,0.4]}]}"#);
+        let out = shape(
+            r#"{"steps":[{"say":"a","box":[0.1,0.1,0.2,0.2]},{"say":"b","box":[0.3,0.3,0.4,0.4]}]}"#,
+        );
         assert_eq!(out["keepBoxes"], Value::Bool(false));
     }
 }
@@ -595,7 +628,10 @@ mod step_targets_tests {
     fn out_of_range_box_yields_no_targets() {
         let content = r#"{ "steps":[ { "say":"x", "box":[0.9,0.2,0.1,0.4] } ] }"#;
         let v: Value = serde_json::from_str(&apply_step_targets(content, "", &bounds())).unwrap();
-        assert!(v["steps"][0]["visualTargets"].as_array().unwrap().is_empty());
+        assert!(v["steps"][0]["visualTargets"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -634,7 +670,10 @@ mod step_targets_tests {
         let ac = &v["awaitClick"];
         assert!(!ac.is_null(), "awaitClick must be present");
         assert_eq!(ac["wait"], "page-load");
-        assert_eq!(ac["button"], "right", "await_click.button MUST survive the reshape");
+        assert_eq!(
+            ac["button"], "right",
+            "await_click.button MUST survive the reshape"
+        );
         let targets = ac["visualTargets"].as_array().unwrap();
         let highlight = targets
             .iter()
@@ -718,6 +757,9 @@ mod inject_tests {
 
     #[test]
     fn inject_returns_input_on_parse_failure() {
-        assert_eq!(inject_primary_box("not json", [0.1, 0.2, 0.3, 0.4]), "not json");
+        assert_eq!(
+            inject_primary_box("not json", [0.1, 0.2, 0.3, 0.4]),
+            "not json"
+        );
     }
 }

@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { authCallbackDeepLink, callbackPage, isDesktopAuthState } from '../src/auth/routes';
 import { renderBillingReturnPage } from '../src/billing/return-page';
 import { requestPath } from '../src/logging';
+import {
+  ProviderError,
+  SAFE_PROVIDER_ERROR_MESSAGE,
+  providerErrorLogFields,
+} from '../src/plugins/error-handler';
 
 describe('browser handoff pages', () => {
   it('centers the billing card and treats Dodo active as success', () => {
@@ -38,5 +43,23 @@ describe('browser handoff pages', () => {
     expect(requestPath('/billing/return?status=active&email=private@example.com')).toBe('/billing/return');
     expect(requestPath('/api/auth/callback/google?code=secret&state=secret')).toBe('/api/auth/callback/google');
     expect(requestPath('/readyz')).toBe('/readyz');
+  });
+
+  it('keeps upstream provider content out of logs and client errors', () => {
+    const secret = 'private transcript echoed by provider';
+    const error = new ProviderError(secret, {
+      provider: 'openrouter',
+      errorClass: 'http',
+      status: 502,
+    });
+
+    expect(providerErrorLogFields(error, '/v1/llm/chat?prompt=private')).toEqual({
+      provider: 'openrouter',
+      errorClass: 'http',
+      status: 502,
+      path: '/v1/llm/chat',
+    });
+    expect(JSON.stringify(providerErrorLogFields(error))).not.toContain(secret);
+    expect(SAFE_PROVIDER_ERROR_MESSAGE).not.toContain(secret);
   });
 });

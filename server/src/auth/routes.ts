@@ -100,11 +100,8 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
     // Closed alpha: no invite, no session. The Better Auth user row stays — when they are invited
     // later, the next sign-in just works with no re-signup.
     if (!(await isInvited(session.user.email))) {
-      // Name the email and the environment. On a fresh Neon `dev` branch the invite table starts
-      // EMPTY, so a developer testing locally hits this and reads it as "sign-in is broken" — it is
-      // not, it is the closed-alpha gate doing its job against a list nobody has been added to yet.
       req.log.warn(
-        { email: session.user.email, target: env.KAIRO_SERVER_TARGET },
+        { target: env.KAIRO_SERVER_TARGET },
         'sign-in refused: email not on the alpha invite list — add it with `npm run invite -- add <email>`',
       );
       return page().status(403).send(callbackPage(null, 'waitlist', env.KAIRO_SERVER_TARGET === 'local'));

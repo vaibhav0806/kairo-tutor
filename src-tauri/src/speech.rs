@@ -41,39 +41,19 @@ pub(crate) fn decode_audio_base64(input: &TranscribeAudioInput) -> Result<Vec<u8
         .map_err(|error| format!("Voice recording was not valid base64 audio: {error}"))
 }
 
-fn parse_provider_json_error(payload: &Value, fallback: &str) -> String {
-    payload
-        .get("error")
-        .and_then(|error| error.get("message"))
-        .and_then(Value::as_str)
-        .or_else(|| {
-            payload
-                .get("detail")
-                .and_then(|detail| detail.get("message"))
-                .and_then(Value::as_str)
-        })
-        .or_else(|| payload.get("message").and_then(Value::as_str))
-        .unwrap_or(fallback)
-        .to_string()
-}
-
 async fn parse_transcription_response(
     response: reqwest::Response,
     transcript_keys: &[&str],
     missing_message: &str,
 ) -> Result<String, String> {
     let status = response.status();
+    if !status.is_success() {
+        return Err(format!("STT request failed with HTTP {}.", status.as_u16()));
+    }
     let payload = response
         .json::<Value>()
         .await
-        .map_err(|error| format!("STT response was not JSON: {error}"))?;
-
-    if !status.is_success() {
-        return Err(parse_provider_json_error(
-            &payload,
-            &format!("STT request failed with {status}"),
-        ));
-    }
+        .map_err(|_| "STT returned an invalid response.".to_string())?;
 
     transcript_keys
         .iter()
@@ -86,17 +66,16 @@ async fn parse_transcription_response(
 
 async fn parse_sarvam_tts_response(response: reqwest::Response) -> Result<String, String> {
     let status = response.status();
+    if !status.is_success() {
+        return Err(format!(
+            "Sarvam TTS request failed with HTTP {}.",
+            status.as_u16()
+        ));
+    }
     let payload = response
         .json::<Value>()
         .await
-        .map_err(|error| format!("Sarvam TTS response was not JSON: {error}"))?;
-
-    if !status.is_success() {
-        return Err(parse_provider_json_error(
-            &payload,
-            &format!("Sarvam TTS request failed with {status}"),
-        ));
-    }
+        .map_err(|_| "Sarvam TTS returned an invalid response.".to_string())?;
 
     payload
         .get("audios")
@@ -126,17 +105,13 @@ async fn parse_binary_audio_response(
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("{provider_name} TTS response could not be read: {error}"))?;
+        .map_err(|_| format!("{provider_name} TTS response could not be read."))?;
 
     if !status.is_success() {
-        if let Ok(payload) = serde_json::from_slice::<Value>(&bytes) {
-            return Err(parse_provider_json_error(
-                &payload,
-                &format!("{provider_name} TTS request failed with {status}"),
-            ));
-        }
-
-        return Err(format!("{provider_name} TTS request failed with {status}"));
+        return Err(format!(
+            "{provider_name} TTS request failed with HTTP {}.",
+            status.as_u16()
+        ));
     }
 
     if bytes.is_empty() {
@@ -185,11 +160,20 @@ pub(crate) async fn transcribe_audio(
         // form fields too (the backend forwards them), so behaviour matches direct.
         let form = reqwest::multipart::Form::new()
             .part("file", part)
-            .text("model", provider_env("SARVAM_STT_MODEL", constants::SARVAM_STT_MODEL))
-            .text("mode", provider_env("SARVAM_STT_MODE", constants::SARVAM_STT_MODE))
+            .text(
+                "model",
+                provider_env("SARVAM_STT_MODEL", constants::SARVAM_STT_MODEL),
+            )
+            .text(
+                "mode",
+                provider_env("SARVAM_STT_MODE", constants::SARVAM_STT_MODE),
+            )
             .text(
                 "language_code",
-                provider_env("SARVAM_STT_LANGUAGE_CODE", constants::SARVAM_STT_LANGUAGE_CODE),
+                provider_env(
+                    "SARVAM_STT_LANGUAGE_CODE",
+                    constants::SARVAM_STT_LANGUAGE_CODE,
+                ),
             );
 
         let value: Value = if crate::proxy::proxy_enabled() {
@@ -202,8 +186,9 @@ pub(crate) async fn transcribe_audio(
             .await
             .map_err(|error| format!("Sarvam STT via proxy failed: {}", error.describe()))?
         } else {
-            let api_key = provider_env_optional("SARVAM_API_KEY")
-                .ok_or_else(|| "SARVAM_API_KEY is required for Sarvam transcription.".to_string())?;
+            let api_key = provider_env_optional("SARVAM_API_KEY").ok_or_else(|| {
+                "SARVAM_API_KEY is required for Sarvam transcription.".to_string()
+            })?;
             let base_url = provider_env("SARVAM_BASE_URL", constants::SARVAM_BASE_URL);
             let response = client
                 .post(format!("{}/speech-to-text", base_url.trim_end_matches('/')))
@@ -211,22 +196,21 @@ pub(crate) async fn transcribe_audio(
                 .multipart(form)
                 .send()
                 .await
-                .map_err(|error| format!("Sarvam STT request failed: {error}"))?;
+                .map_err(|error| {
+                    format!(
+                        "Sarvam STT request failed ({}).",
+                        crate::proxy::request_error_class(&error)
+                    )
+                })?;
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            // Error bodies are small JSON (status + message), never media — safe to log a
-            // truncated snippet so we can see WHY Sarvam rejected the request.
-            let body_snippet: String = body.chars().take(500).collect();
             if !status.is_success() {
-                crate::klog!(stt, error, provider = %provider, status = %status, body = %body_snippet, "sarvam STT request failed");
-                let msg = serde_json::from_str::<Value>(&body)
-                    .map(|v| parse_provider_json_error(&v, &format!("Sarvam STT failed with {status}")))
-                    .unwrap_or_else(|_| format!("Sarvam STT failed with {status}"));
-                return Err(msg);
+                crate::klog!(stt, error, provider = %provider, status = status.as_u16(), body_chars = body.chars().count(), error_class = "http", "sarvam STT request failed");
+                return Err(format!("Sarvam STT failed with HTTP {}.", status.as_u16()));
             }
-            serde_json::from_str(&body).map_err(|error| {
-                crate::klog!(stt, error, provider = %provider, status = %status, body = %body_snippet, "sarvam STT response was not JSON");
-                format!("Sarvam STT response was not JSON: {error}")
+            serde_json::from_str(&body).map_err(|_| {
+                crate::klog!(stt, error, provider = %provider, status = status.as_u16(), body_chars = body.chars().count(), error_class = "decode", "sarvam STT response was not JSON");
+                "Sarvam STT returned an invalid response.".to_string()
             })?
         };
 
@@ -244,7 +228,10 @@ pub(crate) async fn transcribe_audio(
 
         // With language_code="unknown", saaras returns the detected language + a
         // confidence — log both so we can see WHAT it heard (and catch mis-detects).
-        let detected_lang = value.get("language_code").and_then(Value::as_str).unwrap_or("?");
+        let detected_lang = value
+            .get("language_code")
+            .and_then(Value::as_str)
+            .unwrap_or("?");
         let lang_prob = value
             .get("language_probability")
             .and_then(Value::as_f64)
@@ -280,7 +267,12 @@ pub(crate) async fn transcribe_audio(
                 .multipart(form)
                 .send()
                 .await
-                .map_err(|error| format!("ElevenLabs STT request failed: {error}"))?,
+                .map_err(|error| {
+                    format!(
+                        "ElevenLabs STT request failed ({}).",
+                        crate::proxy::request_error_class(&error)
+                    )
+                })?,
             &["text"],
             "ElevenLabs STT response did not include transcript text.",
         )
@@ -377,7 +369,12 @@ pub(crate) async fn synthesize_speech(
                 }))
                 .send()
                 .await
-                .map_err(|error| format!("Sarvam TTS request failed: {error}"))?,
+                .map_err(|error| {
+                    format!(
+                        "Sarvam TTS request failed ({}).",
+                        crate::proxy::request_error_class(&error)
+                    )
+                })?,
         )
         .await?;
 
@@ -410,7 +407,12 @@ pub(crate) async fn synthesize_speech(
                 }))
                 .send()
                 .await
-                .map_err(|error| format!("ElevenLabs TTS request failed: {error}"))?,
+                .map_err(|error| {
+                    format!(
+                        "ElevenLabs TTS request failed ({}).",
+                        crate::proxy::request_error_class(&error)
+                    )
+                })?,
             "ElevenLabs",
             "audio/mpeg",
         )
@@ -495,7 +497,8 @@ pub(crate) async fn synthesize_speech_stream(
     // Proxy path: the backend pipes the vendor stream straight through, so the chunk loop
     // below reads it exactly as it reads the vendor stream.
     let response = if proxied {
-        match crate::proxy::proxy_stream_request(&app, "/v1/tts/stream", &stream_body, timeout).await
+        match crate::proxy::proxy_stream_request(&app, "/v1/tts/stream", &stream_body, timeout)
+            .await
         {
             Ok(response) => response,
             Err(error) => {
@@ -524,7 +527,15 @@ pub(crate) async fn synthesize_speech_stream(
         {
             Ok(response) => response,
             Err(error) => {
-                let message = format!("Sarvam TTS stream request failed: {error}");
+                let error_class = crate::proxy::request_error_class(&error);
+                crate::klog!(
+                    tts,
+                    error,
+                    provider = "sarvam",
+                    error_class = error_class,
+                    "tts stream request failed"
+                );
+                let message = format!("Sarvam TTS stream request failed ({error_class}).");
                 let _ = on_chunk.send(TtsStreamMsg::Error {
                     message: message.clone(),
                 });
@@ -535,11 +546,8 @@ pub(crate) async fn synthesize_speech_stream(
 
     let status = response.status();
     if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        let message = format!(
-            "TTS stream HTTP {status}: {}",
-            body.chars().take(200).collect::<String>()
-        );
+        crate::klog!(tts, error, provider = %provider, status = status.as_u16(), error_class = "http", "tts stream request failed");
+        let message = format!("TTS stream failed with HTTP {}.", status.as_u16());
         let _ = on_chunk.send(TtsStreamMsg::Error {
             message: message.clone(),
         });
@@ -566,13 +574,19 @@ pub(crate) async fn synthesize_speech_stream(
                 let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
                 if on_chunk.send(TtsStreamMsg::Chunk { data }).is_err() {
                     // Frontend dropped the channel (barge-in / navigation) → stop early.
-                    crate::klog!(tts, debug, chunks = chunks, "tts stream channel closed; stopping");
+                    crate::klog!(
+                        tts,
+                        debug,
+                        chunks = chunks,
+                        "tts stream channel closed; stopping"
+                    );
                     return Ok(());
                 }
             }
             Ok(None) => break,
-            Err(error) => {
-                let message = format!("TTS stream read failed: {error}");
+            Err(_) => {
+                crate::klog!(tts, error, provider = %provider, error_class = "stream_read", "tts stream read failed");
+                let message = "TTS stream could not be read.".to_string();
                 let _ = on_chunk.send(TtsStreamMsg::Error {
                     message: message.clone(),
                 });
@@ -617,7 +631,10 @@ pub(crate) async fn list_voices(
     let value = crate::proxy::proxy_get_json(&app, &path, VOICE_TIMEOUT)
         .await
         .map_err(|error| error.describe())?;
-    let count = value.get("voices").and_then(Value::as_array).map_or(0, Vec::len);
+    let count = value
+        .get("voices")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
     crate::klog!(tts, debug, provider = %provider.unwrap_or_default(), count = count, "voice catalog loaded");
     Ok(value)
 }
@@ -644,9 +661,14 @@ pub(crate) async fn set_speech_preferences(
     if let Some(voice) = tts_voice_id.as_deref().filter(|v| !v.is_empty()) {
         body.insert("ttsVoiceId".into(), Value::String(voice.to_string()));
     }
-    let value = crate::proxy::proxy_patch_json(&app, "/v1/preferences", &Value::Object(body), VOICE_TIMEOUT)
-        .await
-        .map_err(|error| error.describe())?;
+    let value = crate::proxy::proxy_patch_json(
+        &app,
+        "/v1/preferences",
+        &Value::Object(body),
+        VOICE_TIMEOUT,
+    )
+    .await
+    .map_err(|error| error.describe())?;
     crate::klog!(
         tts,
         info,
@@ -667,9 +689,10 @@ pub(crate) async fn preview_voice(
 ) -> Result<SpeechSynthesisResult, String> {
     let _t = crate::klog::timer("tts", "preview_voice");
     let body = json!({ "provider": provider, "voiceId": voice_id });
-    let value = crate::proxy::proxy_post_json(&app, "/v1/voices/preview", &body, None, VOICE_TIMEOUT)
-        .await
-        .map_err(|error| format!("Voice preview failed: {}", error.describe()))?;
+    let value =
+        crate::proxy::proxy_post_json(&app, "/v1/voices/preview", &body, None, VOICE_TIMEOUT)
+            .await
+            .map_err(|error| format!("Voice preview failed: {}", error.describe()))?;
 
     let audio_base64 = value
         .get("audio_base64")

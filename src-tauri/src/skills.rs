@@ -77,14 +77,22 @@ static DISABLED: RwLock<Option<HashSet<String>>> = RwLock::new(None);
 
 fn disabled_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     use tauri::Manager;
-    app.path().app_config_dir().ok().map(|d| d.join("skills_disabled"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|d| d.join("skills_disabled"))
 }
 
 /// Load the persisted disabled set into the cache. Call once from setup.
 pub(crate) fn load_disabled(app: &tauri::AppHandle) {
     let set: HashSet<String> = disabled_path(app)
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|raw| raw.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .map(|raw| {
+            raw.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
     if let Ok(mut guard) = DISABLED.write() {
         *guard = Some(set);
@@ -250,7 +258,9 @@ pub(crate) fn metadata_block() -> String {
 }
 
 pub(crate) fn get(slug: &str) -> Option<&'static Skill> {
-    registry().iter().find(|s| s.slug == slug && is_enabled(&s.slug))
+    registry()
+        .iter()
+        .find(|s| s.slug == slug && is_enabled(&s.slug))
 }
 
 /// Deterministic guardrail: does this pack belong to the frontmost app?
@@ -306,9 +316,11 @@ pub(crate) fn is_browser(bundle_id: &str, active_app: &str) -> bool {
         return true;
     }
     let app = active_app.to_lowercase();
-    ["chrome", "brave", "safari", "firefox", "edge", "arc", "vivaldi", "opera", "browser"]
-        .iter()
-        .any(|term| app.contains(term))
+    [
+        "chrome", "brave", "safari", "firefox", "edge", "arc", "vivaldi", "opera", "browser",
+    ]
+    .iter()
+    .any(|term| app.contains(term))
 }
 
 /// Resolve the slug to inject. `incoming` = the gate's pick or the cached slug (may be
@@ -326,7 +338,10 @@ pub(crate) fn resolve_slug(
         if matches_app(skill, active_app, bundle_id, window_title) {
             (skill.slug.clone(), "pick matches app identity")
         } else if is_browser(bundle_id, active_app) {
-            (skill.slug.clone(), "pick trusted (browser can host any web app)")
+            (
+                skill.slug.clone(),
+                "pick trusted (browser can host any web app)",
+            )
         } else {
             // picked a pack that clearly doesn't fit a native app → drop
             (String::new(), "pick DROPPED (native app mismatch)")
@@ -338,7 +353,10 @@ pub(crate) fn resolve_slug(
         }
     } else {
         match fallback_for_app(active_app, bundle_id, window_title) {
-            Some(slug) => (slug.to_string(), "unknown slug; app-identity fallback matched"),
+            Some(slug) => (
+                slug.to_string(),
+                "unknown slug; app-identity fallback matched",
+            ),
             None => (String::new(), "unknown slug; no app-identity match"),
         }
     };
@@ -349,7 +367,7 @@ pub(crate) fn resolve_slug(
         resolved = %resolved,
         app = %active_app,
         bundle = %bundle_id,
-        title = %window_title,
+        title_chars = window_title.chars().count(),
         reason = reason,
         "skill slug resolved"
     );
@@ -411,22 +429,47 @@ mod tests {
     #[test]
     fn matches_app_by_bundle_and_title() {
         let s = get("first-figma-motion-tutorial").unwrap();
-        assert!(matches_app(s, "Figma", "com.figma.Desktop", "Untitled – Figma"));
+        assert!(matches_app(
+            s,
+            "Figma",
+            "com.figma.Desktop",
+            "Untitled – Figma"
+        ));
         // Figma in a browser: bundle is the browser, title carries "Figma".
-        assert!(matches_app(s, "Google Chrome", "com.google.Chrome", "Cover – Figma"));
-        assert!(!matches_app(s, "Blender", "org.blenderfoundation.blender", "Blender"));
+        assert!(matches_app(
+            s,
+            "Google Chrome",
+            "com.google.Chrome",
+            "Cover – Figma"
+        ));
+        assert!(!matches_app(
+            s,
+            "Blender",
+            "org.blenderfoundation.blender",
+            "Blender"
+        ));
     }
 
     #[test]
     fn resolve_slug_keeps_valid_drops_mismatch_and_falls_back() {
         // Valid gate pick on the matching app → kept.
         assert_eq!(
-            resolve_slug("first-figma-motion-tutorial", "Figma", "com.figma.Desktop", "x – Figma"),
+            resolve_slug(
+                "first-figma-motion-tutorial",
+                "Figma",
+                "com.figma.Desktop",
+                "x – Figma"
+            ),
             "first-figma-motion-tutorial"
         );
         // Gate pick on a non-matching NATIVE app → dropped.
         assert_eq!(
-            resolve_slug("first-figma-motion-tutorial", "Blender", "org.blender", "Blender"),
+            resolve_slug(
+                "first-figma-motion-tutorial",
+                "Blender",
+                "org.blender",
+                "Blender"
+            ),
             ""
         );
         // Empty pick but app matches → fallback fills it.
@@ -443,11 +486,19 @@ mod tests {
         // Figma in Brave: bundle can't confirm and the title lacks "figma", but the gate
         // (or cached slug) picked it → trust it. This is the browser-hosted bug fix.
         assert_eq!(
-            resolve_slug("first-figma-motion-tutorial", "Brave Browser", "com.brave.Browser", "Recents"),
+            resolve_slug(
+                "first-figma-motion-tutorial",
+                "Brave Browser",
+                "com.brave.Browser",
+                "Recents"
+            ),
             "first-figma-motion-tutorial"
         );
         // No explicit pick in a browser → must NOT blindly fire without a title/URL signal.
-        assert_eq!(resolve_slug("", "Brave Browser", "com.brave.Browser", "YouTube"), "");
+        assert_eq!(
+            resolve_slug("", "Brave Browser", "com.brave.Browser", "YouTube"),
+            ""
+        );
         // No explicit pick but the browser title carries "Figma" → fallback fills it.
         assert_eq!(
             resolve_slug("", "Brave Browser", "com.brave.Browser", "Untitled – Figma"),

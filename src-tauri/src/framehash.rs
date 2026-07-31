@@ -66,7 +66,9 @@ fn pack_stride_rows(
         return None; // stride can't be narrower than the visible row
     }
     // Last row starts at (height-1)*stride and needs row_len bytes present.
-    let needed = (height - 1).checked_mul(bytes_per_row)?.checked_add(row_len)?;
+    let needed = (height - 1)
+        .checked_mul(bytes_per_row)?
+        .checked_add(row_len)?;
     if bytes.len() < needed {
         return None;
     }
@@ -116,7 +118,13 @@ fn capture_display_dhash_fast() -> Option<[u32; HASH_U32S]> {
     let bpp = cg_image.bits_per_pixel();
     let bpc = cg_image.bits_per_component();
     if bpp != 32 || bpc != 8 {
-        crate::klog!(follow, warn, bpp = bpp, bpc = bpc, "unexpected display bitmap layout; skipping fast path");
+        crate::klog!(
+            follow,
+            warn,
+            bpp = bpp,
+            bpc = bpc,
+            "unexpected display bitmap layout; skipping fast path"
+        );
         return None;
     }
 
@@ -148,11 +156,21 @@ pub(crate) fn capture_frame_hash() -> Result<crate::types::FrameHash, String> {
                 hash: hash.to_vec(),
             });
         }
-        crate::klog!(follow, warn, "fast capture failed; falling back to screencapture");
+        crate::klog!(
+            follow,
+            warn,
+            "fast capture failed; falling back to screencapture"
+        );
     }
     let png = crate::capture::capture_screen_png_bytes()?;
     let hash = dhash_from_bytes(&png)?;
-    crate::klog!(follow, debug, path = "png", bytes = png.len(), "captured frame hash");
+    crate::klog!(
+        follow,
+        debug,
+        path = "png",
+        bytes = png.len(),
+        "captured frame hash"
+    );
     Ok(crate::types::FrameHash {
         hash: hash.to_vec(),
     })
@@ -188,7 +206,10 @@ mod tests {
             *px = image::Rgb([v, v, v]);
         }
         let grad = dhash(&DynamicImage::ImageRgb8(grad));
-        assert!(hamming(&flat, &grad) > 20, "gradient should be clearly different");
+        assert!(
+            hamming(&flat, &grad) > 20,
+            "gradient should be clearly different"
+        );
     }
 
     #[test]

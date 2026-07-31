@@ -61,6 +61,7 @@ pub(crate) const OPENROUTER_APP_TITLE: &str = "Kairo Tutor";
 // ---------------------------------------------------------------- Anthropic
 pub(crate) const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 pub(crate) const TUTOR_VISION_MODEL: &str = "claude-opus-4-8"; // single-call answer + box
+
 // Output cap for the Anthropic single-call answer+box vision turn. On Opus 4.8 we send NO
 // `thinking` field, which means thinking is OFF (unlike Opus 5 / Fable, where omitting it
 // runs adaptive) — so this budget is all answer, and 3000 is ample for a 5–7 step

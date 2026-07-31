@@ -5,6 +5,7 @@ import { assertStaticEnvironment } from './targets';
 
 const Env = z.object({
   KAIRO_SERVER_TARGET: z.enum(['local', 'hosted']).default('local'),
+  KAIRO_DATABASE_TARGET: z.enum(['neon', 'local-postgres']).default('neon'),
   PORT: z.coerce.number().default(8787),
   PUBLIC_BASE_URL: z.string().url(),
   DATABASE_URL: z.string().min(1),

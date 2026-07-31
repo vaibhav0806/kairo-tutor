@@ -1,6 +1,6 @@
 # Kairo Server
 
-Fastify + Neon Postgres + Better Auth (Google-only) + AI proxy. Holds all provider keys; the
+Fastify + Postgres + Better Auth (Google-only) + AI proxy. Holds all provider keys; the
 desktop app talks only to this service. See [`../AGENTS.md`](../AGENTS.md) (shared rules) and
 [`./AGENTS.md`](./AGENTS.md) (backend rules).
 
@@ -14,26 +14,37 @@ npm run server:dev            # from repo root — tsx watch on :8787
 
 The environment pairing is deliberate and guarded:
 
-| Server target | Base URL | Neon branch | Dodo |
+| Server target | Database target | Base URL | Dodo |
 | --- | --- | --- | --- |
-| `local` (default) | `http://localhost:8787` | `dev` | test mode |
-| `hosted` (set by Docker Compose) | `https://api.meetkairo.xyz` | `production` | live mode |
+| `local` (contributor) | literal-loopback PostgreSQL | `http://localhost:8787` | test mode |
+| `local` (maintainer) | guarded Neon `dev` | `http://localhost:8787` | test mode |
+| `hosted` | guarded Neon `production` | `https://api.meetkairo.xyz` | live mode |
 
-Both startup and migration read Neon's real endpoint metadata and refuse to run if the connection
-does not match the selected target. This makes switching a connection string alone insufficient to
-accidentally run local tests against production.
+Contributor mode parses the local URL into explicit connection fields and rejects DNS names,
+remote hosts, query overrides, and hosted mode. Neon modes read runtime endpoint metadata and
+refuse any endpoint other than Kairo's mapped development or production branch.
 
 `.env` must have (see `.env.example`):
-- `DATABASE_URL` — the Neon **pooled** connection string (host contains `-pooler`).
+- `KAIRO_DATABASE_TARGET=local-postgres` and the local `kairo_local` URL from `.env.example`.
 - `BETTER_AUTH_SECRET` — `openssl rand -base64 32`.
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — a Google **Web** OAuth client whose authorized
   redirect URI is `http://localhost:8787/api/auth/callback/google`.
 - Provider keys (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `SARVAM_API_KEY`,
-  `ELEVENLABS_API_KEY`) and the **test-mode** `DODO_PAYMENTS_API_KEY`.
+  `ELEVENLABS_API_KEY`) and, when testing billing, the `DODO_KAIRO_TEST_*` values.
+
+Start the contributor database before migrating:
+
+```bash
+docker run --name kairo-local-db -e POSTGRES_DB=kairo_local -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:5432:5432 -d postgres:17-alpine
+```
+
+Kairo maintainers can set `KAIRO_DATABASE_TARGET=neon` with the pooled guarded `dev` URL instead.
 
 ## Endpoints
 
-- Auth: `GET /auth/start` → Google; `GET /auth/callback` → `kairo://auth-callback?code=…`;
+- Auth: `GET /auth/start` → Google; `GET /auth/callback` → correlated
+  `kairo://auth-callback?code=…&state=…`;
   `POST /auth/exchange {code}` → `{ sessionToken, expiresAt }`; `POST /api/auth/token` (bearer =
   sessionToken) → short-lived JWT; `GET /api/auth/jwks`.
 - `GET /v1/me` (JWT) → `{ plan, status, usage, renews_at, paywalled }`.
@@ -44,9 +55,20 @@ accidentally run local tests against production.
 ## Test
 
 ```bash
-npm run test -w @kairo/server        # vitest against the Neon dev branch
+docker run --name kairo-test-db \
+  -e POSTGRES_DB=kairo_test \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 127.0.0.1:5432:5432 \
+  -d postgres:17-alpine
+npm run test -w @kairo/server
 npm run typecheck -w @kairo/server
 ```
+
+Tests use only this loopback `kairo_test` database, run migrations automatically, and replace
+auth/provider settings with deterministic fake values. They refuse remote database hosts and do
+not use the Neon URL or provider credentials from `server/.env`. See the root README for a custom
+loopback port configuration.
 
 ## Deploy (Hetzner)
 
@@ -60,7 +82,7 @@ First-time setup (done — kept for the record / a fresh box):
 1. Clone this repo on the box (public). Compose v2 lives user-local at `~/.docker/cli-plugins/`.
 2. `server/.env` on the box holds prod secrets (**keys only**, never committed): prod-branch
    **pooled** `DATABASE_URL`, `PUBLIC_BASE_URL=https://api.meetkairo.xyz`, a fresh
-   `BETTER_AUTH_SECRET`, Google client, provider keys, Dodo (test until live keys land).
+   `BETTER_AUTH_SECRET`, Google client, provider keys, and live-mode Dodo credentials.
 3. Add the prod redirect URI `https://api.meetkairo.xyz/api/auth/callback/google` to the Google
    web client.
 4. Add a vhost to the box's shared Caddyfile, then graceful `caddy reload`:
