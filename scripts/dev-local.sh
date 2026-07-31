@@ -4,7 +4,7 @@
 #
 #   npm run local              # server (watch) + packaged .app pointed at it
 #   npm run local -- --check   # …after typecheck + tests + cargo check
-#   npm run local -- --reset   # …from a TRUE first run (TCC grants + markers wiped)
+#   npm run local -- --reset   # …with app-scoped TCC grants + markers wiped
 #
 # The app half is exactly `npm run app:local` — the same packaged, signed bundle,
 # never a dev server (see AGENTS.md). The only thing this adds is starting the
@@ -32,25 +32,20 @@ for arg in "$@"; do
   esac
 done
 
-# --- optional: a genuine first run -------------------------------------------
-# Full reset per AGENTS.md — the TCC grants AND the on-disk markers. A
-# markers-only wipe makes Act 2/3 behave like a returning user (permissions
-# already granted → primers never fire), which is not a first run and hides bugs.
+# --- optional: reset app state and app-scoped permissions --------------------
 if [[ -n "$RESET" ]]; then
-  echo "▸ Resetting to a true first run (TCC grants + markers)…"
+  echo "▸ Resetting app state and app-scoped TCC grants…"
   osascript -e 'tell application "Kairo Tutor" to quit' 2>/dev/null || true
   sleep 1
   tccutil reset ScreenCapture com.kairo.tutor || true
   tccutil reset Accessibility com.kairo.tutor || true
   tccutil reset Microphone com.kairo.tutor || true
-  # Input Monitoring is keyed to the EXECUTABLE, not the bundle id, so a
-  # bundle-scoped reset does not clear it. Resetting it for all apps is the only
-  # reliable way — you may have to re-grant Input Monitoring elsewhere once.
-  tccutil reset ListenEvent || true
   CFG="$HOME/Library/Application Support/com.kairo.tutor"
   rm -f "$CFG/onboarded" "$CFG/onboarding_step" "$CFG/user_name" "$CFG/accent" \
         "$CFG/screen_recording_granted" "$CFG/session.token"
-  echo "  ✓ signed out, unonboarded, no grants"
+  echo "  ✓ signed out, unonboarded, app-scoped grants reset"
+  echo "  ! Input Monitoring was left unchanged; revoke Kairo manually in System Settings"
+  echo "    before launch when testing its first-run permission prompt."
 fi
 
 # --- 1. server ---------------------------------------------------------------

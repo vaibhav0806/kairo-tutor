@@ -12,11 +12,13 @@
 #
 # There is no admin HTTP endpoint for this on purpose — an allowlist that can be edited over the
 # internet is a much bigger target than one that needs SSH.
+#
+# Required environment: KAIRO_RELEASE_HOST and KAIRO_RELEASE_SSH_KEY.
 
 set -euo pipefail
 
-HOST="${KAIRO_RELEASE_HOST:-era@178.105.44.3}"
-SSH_KEY="${KAIRO_RELEASE_SSH_KEY:-$HOME/.ssh/id_ed25519_2}"
+HOST="${KAIRO_RELEASE_HOST:-}"
+SSH_KEY="${KAIRO_RELEASE_SSH_KEY:-}"
 CONTAINER="${KAIRO_CONTAINER:-kairo-server}"
 
 COMMAND="${1:-list}"
@@ -42,6 +44,23 @@ fi
 
 if [[ ! "${CONTAINER}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
   echo "✗ Invalid container name." >&2
+  exit 1
+fi
+
+if [[ -z "${HOST}" ]]; then
+  echo "✗ KAIRO_RELEASE_HOST is required (SSH destination, for example user@host)." >&2
+  exit 1
+fi
+if [[ ! "${HOST}" =~ ^[a-zA-Z0-9._-]+(@[a-zA-Z0-9._:-]+)?$ ]]; then
+  echo "✗ KAIRO_RELEASE_HOST is not a valid SSH destination." >&2
+  exit 1
+fi
+if [[ -z "${SSH_KEY}" ]]; then
+  echo "✗ KAIRO_RELEASE_SSH_KEY is required (path to the SSH private key)." >&2
+  exit 1
+fi
+if [[ ! -r "${SSH_KEY}" ]]; then
+  echo "✗ KAIRO_RELEASE_SSH_KEY is not a readable file: ${SSH_KEY}" >&2
   exit 1
 fi
 

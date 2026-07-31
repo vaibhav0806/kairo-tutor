@@ -19,7 +19,7 @@ services:
       KAIRO_RELEASES_DIR: /srv/kairo-releases
     volumes:
       # Host path is user-owned (no sudo in the release script); container path is fixed.
-      - /home/era/kairo-releases:/srv/kairo-releases:ro
+      - ${KAIRO_RELEASE_DIR:?Set KAIRO_RELEASE_DIR to the host release directory}:/srv/kairo-releases:ro
     # Cap container logs (shared box) — 3 x 10MB rolling, never fills the disk.
     logging:
       driver: json-file

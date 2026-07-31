@@ -1,420 +1,117 @@
-# Kairo Tutor — monorepo agent rules
+# Kairo Tutor contributor instructions
 
-Two packages in this repo:
-- **root = the desktop app** (Tauri: `src-tauri/` Rust + `src/` React) — the rules below the
-  "Desktop app rules" heading are the DESKTOP rules.
-- **`server/` = the Fastify backend** (auth + AI proxy + billing) — see [`server/AGENTS.md`](./server/AGENTS.md).
+This file is the shared, tool-neutral source of truth for work in this repository.
+`CLAUDE.md` imports it. Backend-specific rules live in
+[`server/AGENTS.md`](./server/AGENTS.md).
 
-`AGENTS.md` is the source of truth; each `CLAUDE.md` is a one-line `@AGENTS.md` stub so
-Claude Code loads the same rules.
+## Repository map
 
-## Open-source secret hygiene
-The whole repo is public. `.env` (gitignored) holds ONLY API keys. NEVER commit secrets/tokens.
-NEVER paste a live key into code, logs, tests, or committed config. Provider keys live in
-`server/.env` (dev) / the Hetzner env (prod) — never in the desktop bundle.
+- `src/`: React 19 frontend. `main.tsx` routes the main/settings, onboarding, notch,
+  overlay, and cursor WebViews.
+- `src-tauri/`: Tauri v2 and Rust code for audio, screen capture, global input,
+  native panels, provider calls, and application state.
+- `server/`: Fastify backend for Google authentication, provider proxying, usage,
+  preferences, and billing.
+- `tests/`: desktop frontend and orchestration tests.
+- `docs/`: product and engineering documentation.
 
-## Dodo environments
+Kairo is macOS-first. Keep portable code cross-platform where practical and guard
+macOS-specific Rust with `#[cfg(target_os = "macos")]`.
 
-- Local development and every automated/simulated billing test are **test mode only**.
-- Live keys live only in the Hetzner environment—never in the repo, a desktop bundle, a dev
-  machine, logs, command output, or chat.
-- An agent may switch Hetzner to live mode only when the user explicitly authorizes that cutover
-  in the current request and the complete signed test-mode lifecycle has already passed.
-- Before a live cutover, verify without printing values that the live key authenticates, the live
-  product exists and is recurring, the live webhook secret is present, and an enabled live webhook
-  targets `https://api.meetkairo.xyz/webhooks/dodo` with the required billing events.
-- Never create or simulate a live transaction. After switching, use read-only provider checks plus
-  `/readyz`; the founder performs the first real checkout.
+## Contributor workflow
 
-## Backend data environments
-
-- The local server uses Dodo test mode with either literal-loopback PostgreSQL for contributors or
-  Kairo's guarded Neon `dev` endpoint for maintainers. Hetzner uses Neon `production` + Dodo live.
-- `server/src/config/targets.ts` is the committed hosted/maintainer map. Local-Postgres URLs are
-  parsed into explicit connection fields; Neon startup and migrations verify the actual endpoint.
-- Never use the hosted API for test-mode checkout, webhook, account-reset, or lifecycle simulation.
-  Run the local server plus `npm run billing:test:listen`; maintainer billing data belongs only in
-  Neon `dev`.
-
-## Commit discipline
-Work on `main` (no branches unless the user says so). Commit each change as you go — small,
-revertible commits, not one big batch. No unrelated refactors in a feature change. End every
-commit message with:
-`Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
-
-## How to run things
-- **Whole local stack in one terminal → `npm run local`** (server + packaged app pointed at it).
-  `npm run local -- --reset` starts from a TRUE first run; `-- --check` runs typecheck/tests/cargo first.
-- Desktop → `npm run app` (see "Run / build" below). Defaults to the HOSTED backend.
-- Desktop against local backend → `npm run app:local`.
-- Desktop against hosted backend → `npm run app:hosted`.
-- Server → `npm run server:dev` (see [`server/AGENTS.md`](./server/AGENTS.md)).
-
----
-
-# Desktop app rules (Tauri: Rust + React)
-
-> **Source of truth:** product vision → [FEATURE.md](./FEATURE.md); implementation
-> architecture, setup, provider choices, engineering rules → [README.md](./README.md).
-> This file is the quick operating map + the **mandatory logging rules**. If this
-> file conflicts with README/FEATURE on product/architecture facts, those win —
-> update this file.
-
-## What Kairo is
-
-Mac-first, **screen-native AI tutor** for practical software labs. It listens to a
-spoken question, looks at the current screen, and guides the user one step at a time
-with voice + on-screen visual cues. Principle: **the AI points, the user acts.** The
-app stays visually quiet until the user activates voice or on-screen guidance.
-
-## Run / build (THE workflow — read this)
-
-**Never run a dev server for real testing.** Always build and run the packaged
-`.app` — that is the environment users get and the one where native permissions,
-panels, and logging behave correctly.
-
-**One command does it all** — quit the running app, rebuild, sign, verify the
-signature, and relaunch:
+Requirements and local setup are documented in [`README.md`](./README.md). Use Node
+22, the stable Rust toolchain, and Xcode or its Command Line Tools.
 
 ```bash
-npm run app             # quit → build+sign → verify signature → launch
-npm run app -- --check  # same, but run typecheck + tests + cargo check first
-npm run app:local       # same packaged workflow, every request → http://localhost:8787
-npm run app:hosted      # same packaged workflow, every request → https://api.meetkairo.xyz
-npm run app:build:unsigned # contributor build when the private signing identity is unavailable
+npm ci
+npm run typecheck
+npm test
+cargo check --manifest-path src-tauri/Cargo.toml
+npm run app:build:unsigned
+open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
 ```
 
-Maintainer signing is automatic (`tauri.conf.json` → `bundle.macOS.signingIdentity =
-"Kairo Tutor Local Dev"`); `npm run app` additionally verifies the signature so a
-broken sign fails loudly, not at launch. Contributors should use the unsigned command
-and expect macOS permission grants to reset between builds. The signed workflow wraps
-(see `scripts/rebuild-run.sh`):
+Contributor builds are unsigned and may need macOS permissions granted again after
+rebuilding. Do not change the committed signing configuration to make a local build
+work. Build the local-backend variant with:
 
 ```bash
-osascript -e 'quit app "Kairo Tutor"'                        # quit old instance
-npm run tauri:build -- --bundles app                         # build + sign
-codesign --verify --deep --strict "…/Kairo Tutor.app"        # verify sign
-open "src-tauri/target/release/bundle/macos/Kairo Tutor.app" # launch
+KAIRO_BACKEND_TARGET=local npm run app:build:unsigned
 ```
 
-- App identifier: `com.kairo.tutor`. Product name: `Kairo Tutor`. Dev Vite port: `5273`.
-- Signed with a stable self-signed cert (`Kairo Tutor Local Dev`) so macOS TCC grants
-  (Screen Recording, Accessibility, Input Monitoring) persist across rebuilds.
-- Secrets: the native process reads `OPENROUTER_*`, `KAIRO_*`, etc. from the process
-  env first, then from `.env.local` / `.env` walking up from the executable and CWD.
-  Change env → relaunch (no rebuild needed).
+Do not commit `.env` files, credentials, tokens, raw provider payloads, or generated
+build artifacts. Provider keys belong in `server/.env` for backend development; they
+must never be embedded in the desktop bundle.
 
-## Reading the logs
+## Desktop architecture
 
-Every subsystem (Rust + all WebViews) logs to one persistent file:
+- `src-tauri/src/lib.rs` owns Tauri setup, managed state, and command registration.
+  Keep `main.rs` as the thin entry point.
+- Register every new `#[tauri::command]` in `tauri::generate_handler!` and expose it
+  through the typed wrapper in `src/native/nativeBridge.ts`.
+- Tauri v2 capabilities live in `src-tauri/capabilities/`. Add only the permissions a
+  feature needs.
+- Keep frontend orchestration in `src/core/` and native/macOS behavior in focused
+  Rust modules. Follow existing module boundaries instead of adding parallel paths.
+- The notch is non-activating, while the interactive overlay must be able to become
+  key. The cursor is a separate click-through panel.
+- Backend selection is owned by native code. Do not introduce a second frontend
+  backend URL setting.
+- The shipped path proxies provider requests through `server/`. Direct provider
+  access exists only for local debugging.
 
-```bash
-tail -F ~/Library/Logs/Kairo/kairo-latest.log        # stable symlink to today's file
-# or the dated file directly:
-tail -F ~/Library/Logs/Kairo/kairo.$(date -u +%F).log
-```
+When adding a macOS capability, update the relevant Info.plist entries,
+entitlements, and Tauri capability definitions together. Document any permission a
+user will be asked to grant.
 
-Control verbosity per run (read from env/.env, no rebuild). Our subsystems log
-under `kairo::<subsystem>` targets, so:
+## Privacy and logging
 
-- Default is `info,kairo=debug` — dependencies quiet at INFO, all Kairo steps at DEBUG.
-- `KAIRO_LOG=kairo=trace` — max detail from our code (deps still quiet).
-- `KAIRO_LOG=debug` — everything, including dependency internals (hyper/wry/reqwest).
-- Per-subsystem: `KAIRO_LOG=info,kairo::vision=trace,kairo::mic=warn`.
-- `KAIRO_LOG_STDERR=true` — also mirror to stderr (default off; useful when running in a terminal).
-- Full transcript text is off by default. For temporary local debugging, set
-  `LOG_TRANSCRIPTS` in `src-tauri/src/constants.rs` to `true` and rebuild; never ship that setting.
+Kairo handles microphone recordings, screenshots, transcripts, and model responses.
+Read [`PRIVACY.md`](./PRIVACY.md) before changing capture or provider flows.
 
-Design + rationale: [docs/superpowers/specs/2026-07-03-universal-logger-and-claude-md-design.md](./docs/superpowers/specs/2026-07-03-universal-logger-and-claude-md-design.md).
+- Never log secrets, authorization data, PII, raw audio, screenshot data, window
+  titles, transcripts, questions, answers, or raw provider bodies.
+- Log metadata such as byte counts, dimensions, duration, status, and text length.
+- Full-text logging must remain disabled in distributable builds
+  (`src-tauri/src/constants.rs::LOG_TRANSCRIPTS`).
+- Preserve the sensitive-application capture check and the frontmost-application
+  recheck around screen capture.
+- Minimize data sent to external providers and update `PRIVACY.md` when that data flow
+  changes.
 
-## Repo layout
+Rust uses the non-blocking `klog!` logger; frontend code uses `klog()` from
+`src/core/logger.ts`. Do not add `println!`, `eprintln!`, or `console.*` logging.
+Log meaningful state transitions, provider timings, and error paths without placing
+blocking work on audio callbacks, event taps, or UI threads.
 
-```text
-src/                         Frontend (React 19 + Vite). One entry (main.tsx) routes
-                             by URL hash into four WebViews:
-  main.tsx                   entry: installs global error logging, routes by #hash
-  App.tsx                    main/setup window
-  notch/                     the notch panel UI (voice PTT, typing, tutor loop)
-  overlay/                   full-screen annotation + visual-target overlay
-  cursor/                    companion pet cursor (own click-through panel, #/cursor)
-  activation/                activation state machine
-  core/                      orchestrator, runtimePlanner, tutorPlanner, skills, types, logger.ts
-                             (provider proxying is the separate `server/` package, not src/)
-  native/nativeBridge.ts     typed wrapper over Tauri `invoke` (+ browser fallbacks)
-  config/env.ts              KAIRO_* public env parsing (zod)
+## Code and test conventions
 
-src-tauri/src/               Native macOS (Rust). Split into focused modules:
-  lib.rs                     Tauri setup, managed state, all #[tauri::command]s, run()
-  klog.rs                    the universal non-blocking logger (see below)
-  audio.rs                   cpal mic capture (push-to-talk), WAV encode
-  input.rs                   CGEventTaps: PTT ⌥⌃ chord + scroll/click context reset
-  capture.rs                 screen capture + display bounds
-  grounding.rs               vision element-box detection (Anthropic / OpenRouter / Qwen)
-  ocr.rs, color.rs           Set-of-Mark OCR fallback + color helpers
-  tutor.rs                   run_tutor_turn + run_gate_turn (OpenRouter)
-  speech.rs                  transcribe_audio (STT) + synthesize_speech (TTS)
-  panels.rs                  NSPanel creation (notch/overlay/cursor) + mouse tracker
-  permissions.rs, platform.rs, capture.rs, prompts.rs, env.rs, types.rs
+- Read the surrounding implementation and match its style before editing.
+- Prefer small, focused changes. Do not combine unrelated refactors with feature or
+  security work.
+- Add or update tests for behavior changes. Frontend tests run in a Node environment,
+  so guard browser globals such as `window`.
+- Use owned arguments for async Tauri commands and return serializable results and
+  errors across the IPC boundary.
+- Keep secrets and raw sensitive content out of fixtures and snapshots.
+- Do not weaken authentication, webhook verification, database-target guards, CSP,
+  capture protections, or Tauri capabilities to make a test pass.
 
-tests/                       vitest unit tests (node env; no DOM libs installed)
-docs/superpowers/            specs/ and plans/
-scripts/smoke-providers.mjs  provider smoke test
-```
-
-Subsystems worth knowing: notch = **non-activating** NSPanel; the annotation overlay
-must be a **can-become-key** NSPanel (a borderless window drops clicks); the companion
-cursor lives in its own click-through panel. Shortcuts: ⌥⌃ = **hold to talk / tap to
-type** (one universal key, driven by a single-owner PTT state-machine controller in
-`input.rs`), pen = ⌥⇧P. (⌘⇧Space was removed — typing is a quick ⌥⌃ tap.)
-
-## Providers & env
-
-Provider selection defaults live in `src-tauri/src/constants.rs` (`AI_PROVIDER`,
-`STT_PROVIDER`, `TTS_PROVIDER`, `GROUNDING_PROVIDER`); the same-named env vars still
-override at runtime but you never need to set them. Grounding is swappable:
-`anthropic` (Opus, default), `openrouter` (Qwen, cheaper), or `qwen` (direct
-DashScope). No Sonnet for grounding.
-
-**Speech is the exception — the server owns it.** `STT_PROVIDER` / `TTS_PROVIDER` in
-`constants.rs` apply ONLY to the direct-key dev path (`KAIRO_USE_BACKEND_PROXY=false`).
-Every shipped build proxies, and on that path the desktop sends `{ text }` and nothing
-else: `server/src/speech/` picks the engine, the voice, the model, the codec and the
-language. Consequences to respect:
-
-- Never add a vendor field to a speech request body in `speech.rs`'s proxy branch — it
-  will be ignored at best and will fight the server's choice at worst.
-- Flipping engines in production is `KAIRO_TTS_PROVIDER` / `KAIRO_TTS_PROVIDERS_ENABLED`
-  on Hetzner plus a restart. It must never require a new DMG.
-- A user's engine + voice live in the `user_preference` table, not on disk, so a
-  reinstall keeps them.
-- Sarvam publishes **no voice-list API**. Its shortlist is curated in
-  `server/src/speech/catalog.ts`; ElevenLabs is fetched live from `GET /v2/voices`.
-  Both are normalized, so the desktop cannot tell them apart.
-- Any new TTS engine must stream raw 24kHz PCM before it becomes selectable. Buffered-only
-  turns first-audio from ~200-400ms into a whole-clip wait, which reads to users as "the
-  app got slow", not "I changed voice".
-
-## Configuration
-
-Non-secret config is centralized — **`.env` holds ONLY API keys.**
-
-- **Native** config lives in `src-tauri/src/constants.rs` (committed, shared):
-  providers, models, base URLs, timeouts, tuning, toggles, logging flags. Edit that
-  file, not env. To change a model or timeout, edit `constants.rs` and rebuild.
-- **Frontend** config lives in the zod defaults in `src/config/env.ts` — provider
-  *selection* + follow-along/wait tuning ONLY. Model names / base URLs / keys live
-  solely in `constants.rs` (the desktop bundle never needs them). Keep the provider
-  selection + follow/wait defaults in sync with `constants.rs`.
-- **`.env`** (per-person, git-ignored) holds ONLY the API keys: `OPENROUTER_API_KEY`,
-  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `SARVAM_API_KEY`, `ELEVENLABS_API_KEY`
-  (see `.env.example`). A fresh clone runs with just these five keys — no other env
-  vars needed.
-- The model/URL/provider constants stay env-overridable at runtime (default = the
-  constant); timeouts, toggles, and logging flags are read directly from the constant.
-- Transcript + answer logging is **off by default** (`constants::LOG_TRANSCRIPTS = false`),
-  so logs contain character counts only. A local developer may temporarily enable it and rebuild;
-  never distribute a build with full-text logging enabled.
-- Backend selection is centralized in native code. Use `npm run app:local` or
-  `npm run app:hosted`; every WebView asks native for that same URL. Do not add a
-  frontend URL mirror or put `KAIRO_BACKEND_URL` in `.env`.
-
-## Local Dodo subscription testing
-
-Use Dodo's official CLI listener for genuine signed test-mode webhooks without exposing
-localhost or weakening signature verification.
-
-```bash
-# Terminal 1
-npm run server:dev
-
-# One-time / when the CLI login expires: choose TEST MODE in the browser flow
-npm run billing:test:login
-
-# Terminal 2: applies migrations, refuses non-test Dodo config, then forwards to localhost
-npm run billing:test:listen
-
-# Terminal 3: packaged app, consistently pointed at the same local backend
-npm run app:local
-```
-
-Rehearse: Free → checkout → webhook grants Pro → Manage subscription → schedule/cancel
-in the portal → webhook updates/revokes Pro. Watch the Fastify output and
-`~/Library/Logs/Kairo/kairo-latest.log`. Never use `dodo wh trigger` for an end-to-end
-proof: generated events are unsigned. Never disable webhook signature verification.
-`CLAUDE.md` is an `@AGENTS.md` stub, so these instructions apply there automatically.
-
-## Logging is MANDATORY
-
-Kairo has one universal, non-blocking logger. **Every change you make must log its
-steps through it.** This is not optional — it is how we debug the packaged app.
-
-**Rust** — use the `klog!` macro (never `println!`/`eprintln!`):
-
-```rust
-klog!(vision, info, count = boxes.len(), ms = elapsed, "detected element boxes");
-klog!(mic, error, "failed to build mic stream: {err}");
-let _t = crate::klog::timer("gate", "gate_turn"); // auto-logs `ms=` on drop
-```
-
-- First arg = **subsystem tag** (the log target): `mic` `audio` `ptt` `vision`
-  `grounding` `gate` `tutor` `stt` `tts` `screen` `cursor` `overlay` `notch`
-  `input` `activation` `app`. Add new ones as needed — keep them short + lowercase.
-- Second arg = level: `error` `warn` `info` `debug` `trace`.
-- **Fields first, message literal last** (tracing grammar): `klog!(sub, info, k = v, "msg")`.
-
-**Frontend** — use `klog()` from `src/core/logger.ts` (never `console.*`):
-
-```ts
-import { klog } from '../core/logger';
-klog('notch', 'info', 'ptt released', { ms: elapsed });
-```
-
-Lines are batched and flushed to the same file. Uncaught errors/rejections are
-captured automatically (installed once in `main.tsx`).
-
-**Rules for what you log:**
-
-- Log every meaningful step, state transition, provider round-trip (with `ms=`), and
-  **every error path**. Prefer structured `key = value` fields over prose.
-- **Never log secrets or raw media.** No API keys/auth headers, no raw audio samples,
-  no screenshot pixels/base64, no full transcripts. Log metadata only:
-  `audio_bytes=48000`, `screenshot=1280x800 jpeg bytes=63210`, `transcript=len=214`.
-  Use `crate::klog::transcript_field(&text)` (Rust) for transcripts.
-- The logger is non-blocking by design; it drops lines under load rather than stall a
-  hot thread. **Never** do blocking I/O or heavy formatting on the audio callback,
-  event-tap runloop, or UI thread — just `klog!` and move on.
-
-## Closed alpha access
-
-Kairo is invite-only. One list (`access_invite`) gates BOTH sign-in and the download, keyed on
-email — the same emails the waitlist already collects.
-
-```bash
-npm run invite:prod -- list                    # who is in, and who has actually signed in
-npm run invite:prod -- add someone@example.com # let them in
-npm run invite:prod -- remove someone@example.com
-```
-
-- Sign-in is gated at session-issue time (`/auth/callback` + `/auth/exchange`), not per request.
-  An uninvited person completes Google sign-in but never receives a token.
-- The DMG has **no public URL**. `POST /v1/download/request` checks the email and returns a
-  15-minute HMAC token; `GET /v1/download/dmg` serves the file from the box. Never publish a DMG
-  to the public R2 bucket — that silently reopens the gate.
-- Updater artifacts DO stay public on R2. They are fetched by already-installed apps, so gating
-  them would only break updates for people who are already in.
-- Removing an invite blocks future sign-ins; existing session tokens live up to 30 days. To cut
-  someone off now, delete their `session` rows too.
-- Uninvited download attempts land in `download_request` — that is the list to pick the next
-  batch from.
-
-## Shipping a release (alpha)
-
-```bash
-npm run updater:keygen              # ONCE, on the release machine — never in CI, never committed
-npm run release                     # build + sign + stage dist/release/ (dry run)
-npm run release -- --publish        # …and upload to R2
-npm run release -- --universal      # Apple silicon + Intel in one artifact (slower)
-```
-
-Three facts that will bite if forgotten:
-
-1. **Releases must be built on the machine holding the `Kairo Tutor Local Dev` cert.**
-   macOS ties TCC grants (Screen Recording, Accessibility, Input Monitoring) to the
-   signing identity. A build signed under a different identity looks like a different
-   app: every alpha user silently loses their grants and the app appears broken. Export
-   the cert as a password-protected `.p12` into the password manager — today it exists
-   only in one login keychain, and losing it forces every user to re-grant.
-2. **The updater's minisign private key is unrecoverable.** Installed apps verify against
-   the public key baked into their bundle, so a regenerated keypair can never reach them.
-   Back it up before the first public build.
-3. **First install needs `xattr`; updates do not.** We sign with our own cert rather than
-   a paid Apple Developer ID, so macOS quarantines the download and (since macOS 15)
-   right-click → Open no longer bypasses it. Updater-installed bundles are not
-   quarantined, so the cost is one-time. Notarizing with a Developer ID removes it
-   entirely and is the right move before pushing volume.
-
-## Testing / verification
-
-Before considering native or provider work done, run:
+Run the checks that match the changed area before declaring work complete:
 
 ```bash
 npm run typecheck
-npm run test
-cargo check --manifest-path src-tauri/Cargo.toml
-npm run app:build:unsigned               # packaged contributor target
-npm run smoke:providers                  # when touching providers
+npm test
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+cargo check --manifest-path src-tauri/Cargo.toml --locked
+cargo test --manifest-path src-tauri/Cargo.toml --locked
+npm run typecheck -w @kairo/server
+npm run test -w @kairo/server
+npm run build -w @kairo/server
 ```
 
-## Conventions
-
-- **Keep cross-platform in mind.** macOS is the only shipping target today, but
-  Windows is a planned future platform — gate macOS-only code behind `#[cfg(...)]`.
-- Before UI work for any new macOS native capability: update `Info.plist`, add
-  entitlements, document TCC reset/test notes, and verify the signed app with
-  `codesign -d --entitlements :- "…/Kairo Tutor.app"`.
-- Follow existing module boundaries. Don't do unrelated refactors in a feature change.
-- Add tests in `tests/` (node env — no DOM libs; guard `window` usage).
-
-### Random Rules and Stuff:
-
-- When i say i wanna discuss, never make code changes. analyze the issue/spec that we wanna address, and then lets discuss things in detail. 
-- Always explain things in a simple manner please, never complicate things. there is no need to complicate anything, we aren't working on rocket science here.
-
-Maintainer command to kill Kairo, rebuild with the local identity, and relaunch:
-```
-osascript -e 'tell application "Kairo Tutor" to quit'; npm run tauri:build -- --bundles app && open "src-tauri/target/release/bundle/macos/Kairo Tutor.app"
-```
-Contributors without that identity should replace the build command with
-`npm run app:build:unsigned`. Use the appropriate packaged build after every change that requires
-it; don't wait for the user to ask.
-Notes:
-- .env changes (provider keys, KAIRO_*) → no rebuild needed, just relaunch (env read at launch).
-- Rust or frontend code changes → rebuild the signed maintainer or unsigned contributor target.
-- First build after a cargo change is slow (~minutes); later ones are faster.
-- Watch logs: tail -F ~/Library/Logs/Kairo/kairo-latest.log
-
-Also - don't create branches unless i explicity tell u to, work on main branch only.
-
-## Fresh onboarding test — reset script
-
-> **ALWAYS reset permissions too — never a markers-only shortcut.** When the user asks for a reset /
-> fresh test, run the FULL script below (the `tccutil` grants **and** the on-disk markers). Do NOT skip
-> the `tccutil` lines to "save re-granting" — a markers-only reset makes Act 2/3 behave like a returning
-> user (permissions already granted → primers/prompts don't fire), so it is NOT a true first-run and
-> hides real bugs. Founder directive 2026-07-23.
-
-To rehearse a TRUE first-run (see the OS permission prompts + the full 6-act onboarding from the
-top), reset all TCC grants + the app's on-disk markers BEFORE launching. Run this, then rebuild +
-launch:
-
-```bash
-osascript -e 'tell application "Kairo Tutor" to quit'; sleep 1
-# TCC grants (re-prompted on next launch): screen recording, accessibility, mic, input monitoring
-tccutil reset ScreenCapture com.kairo.tutor
-tccutil reset Accessibility com.kairo.tutor
-tccutil reset Microphone com.kairo.tutor
-# Input Monitoring (ListenEvent) is keyed by the EXECUTABLE (`kairo-tutor`), NOT the bundle id — so
-# a bundle-scoped `tccutil reset ListenEvent com.kairo.tutor` does NOT clear it and the grant sticks
-# (Act 2's mic/keystroke primer then behaves like a returning user). Reset it for ALL apps to be sure
-# it's actually cleared (dev machine — you may have to re-grant other apps' Input Monitoring once):
-tccutil reset ListenEvent
-# App state markers (all live in the app config dir):
-CFG="$HOME/Library/Application Support/com.kairo.tutor"
-rm -f "$CFG/onboarded" "$CFG/onboarding_step" "$CFG/user_name" "$CFG/accent" \
-      "$CFG/screen_recording_granted" "$CFG/session.token"
-```
-
-Marker meanings (all under `$HOME/Library/Application Support/com.kairo.tutor/`):
-- `onboarded` — first-run done marker (delete → onboarding shows again).
-- `onboarding_step` — resume marker for the Screen-Recording quit+reopen (`act3` / a legacy step id).
-- `user_name` — cached display name injected into prompts (§12).
-- `accent` — chosen accent hex (delete → back to brand default `#7c3aed`).
-- `screen_recording_granted` — "was ever granted" marker for the Sequoia reset heads-up.
-- `session.token` — auth session (delete → signed out; needed to test the pre-sign-in / paywall path).
-
-Notes:
-- `tccutil` needs the app QUIT to take effect cleanly; quit first (the script does).
-- To test the **paywall exemption** (pre-sign-in Act 4 turns), also set `KAIRO_USE_BACKEND_PROXY=1`
-  in the repo-root `.env` and keep `session.token` deleted (signed out).
-- The backend must be running for the full walk (`npm run server:dev`) — auth, `/v1/me`,
-  onboarding chat/stt/tts all hit it.
+The server test suite requires the loopback PostgreSQL 17 test database described in
+the README. Provider smoke tests (`npm run smoke:providers`) require local credentials
+and should run only when provider integrations change.

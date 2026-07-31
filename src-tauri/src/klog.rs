@@ -1,6 +1,6 @@
 //! Universal, non-blocking logger for Kairo (developer-facing; debugging + telemetry).
 //!
-//! Design goals (see docs/superpowers/specs/2026-07-03-universal-logger-and-claude-md-design.md):
+//! Design goals:
 //! - Zero impact on hot threads. A log call only formats + hands the line to an
 //!   in-memory channel; a dedicated background thread does the file I/O. If the
 //!   channel is full the line is DROPPED (lossy), never blocking the caller.

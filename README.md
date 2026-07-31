@@ -320,4 +320,7 @@ help channels. Report vulnerabilities privately as described in
 
 ## License
 
-Kairo Tutor is available under the [MIT License](./LICENSE).
+Kairo Tutor's original code is available under the [MIT License](./LICENSE). See
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for shipped third-party material and
+[the asset-provenance ledger](./docs/asset-provenance.md) for known binary-asset evidence and
+unresolved clearance work.

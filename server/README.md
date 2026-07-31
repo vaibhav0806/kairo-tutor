@@ -80,9 +80,10 @@ See `Dockerfile` + `docker-compose.yml` here.
 First-time setup (done — kept for the record / a fresh box):
 
 1. Clone this repo on the box (public). Compose v2 lives user-local at `~/.docker/cli-plugins/`.
-2. `server/.env` on the box holds prod secrets (**keys only**, never committed): prod-branch
-   **pooled** `DATABASE_URL`, `PUBLIC_BASE_URL=https://api.meetkairo.xyz`, a fresh
-   `BETTER_AUTH_SECRET`, Google client, provider keys, and live-mode Dodo credentials.
+2. `server/.env` on the box holds production secrets and runtime configuration (never committed):
+   the prod-branch **pooled** `DATABASE_URL`, `PUBLIC_BASE_URL=https://api.meetkairo.xyz`, a fresh
+   `BETTER_AUTH_SECRET`, Google client, provider keys, live-mode Dodo credentials, and an absolute
+   `KAIRO_RELEASE_DIR` host path for the private download volume.
 3. Add the prod redirect URI `https://api.meetkairo.xyz/api/auth/callback/google` to the Google
    web client.
 4. Add a vhost to the box's shared Caddyfile, then graceful `caddy reload`:
@@ -96,7 +97,8 @@ First-time setup (done — kept for the record / a fresh box):
 Redeploy (build → forward-only migrate → restart → `/readyz` gate):
 
 ```bash
-ssh era@<box> 'cd ~/kairo && git pull --ff-only && bash server/deploy.sh'
+ssh -i "$KAIRO_RELEASE_SSH_KEY" "$KAIRO_RELEASE_HOST" \
+  'cd /path/to/kairo && git pull --ff-only && bash server/deploy.sh'
 ```
 
 Live keys live **only** in the box `.env`. `deploy.sh` runs migrations as a release step (never
