@@ -14,8 +14,11 @@ export function isDesktopAuthState(value: unknown): value is string {
   return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
 }
 
-export function authCallbackDeepLink(code: string, state: string): string {
-  return `kairo://auth-callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+export function authCallbackDeepLink(code: string, state: string | null): string {
+  const base = `kairo://auth-callback?code=${encodeURIComponent(code)}`;
+  // A legacy build has no pending state to compare against and ignores unknown query pairs, so the
+  // correlated parameter is omitted rather than faked. Drop this branch with the transition shim.
+  return state ? `${base}&state=${encodeURIComponent(state)}` : base;
 }
 
 function desktopAuthStateCookie(state: string): string {
@@ -55,16 +58,26 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
   // Opened in the system browser by the desktop app. We must forward Better Auth's Set-Cookie
   // (the OAuth `state`) to the browser, or the Google callback fails with `state_mismatch`.
   app.get<{ Querystring: { desktop_state?: unknown } }>('/auth/start', async (req, reply) => {
-    if (!isDesktopAuthState(req.query.desktop_state)) {
-      req.log.warn('auth start refused without valid desktop correlation state');
-      return reply.status(400).send({ error: 'bad_desktop_state', code: 'bad_request' });
+    const desktopState = isDesktopAuthState(req.query.desktop_state) ? req.query.desktop_state : null;
+    // TRANSITION (remove once the correlated desktop build has rolled out): every already-installed
+    // build opens `/auth/start` with no query string, so refusing here locks them out of sign-in
+    // entirely — and they cannot update past it, because the updater needs a working session. The
+    // browser retry link on the callback failure page is bare too. Serve those un-correlated, count
+    // them, and flip KAIRO_REQUIRE_DESKTOP_AUTH_STATE once the legacy warn stops appearing.
+    if (!desktopState) {
+      if (env.KAIRO_REQUIRE_DESKTOP_AUTH_STATE) {
+        req.log.warn('auth start refused without valid desktop correlation state');
+        return reply.status(400).send({ error: 'bad_desktop_state', code: 'bad_request' });
+      }
+      req.log.warn('legacy desktop sign-in without correlation state');
     }
     const res = await auth.api.signInSocial({
       body: { provider: 'google', callbackURL: `${env.PUBLIC_BASE_URL}/auth/callback` },
       asResponse: true,
     });
     const cookies = res.headers.getSetCookie?.() ?? [];
-    reply.header('set-cookie', [...cookies, desktopAuthStateCookie(req.query.desktop_state)]);
+    const outgoing = desktopState ? [...cookies, desktopAuthStateCookie(desktopState)] : cookies;
+    if (outgoing.length) reply.header('set-cookie', outgoing);
 
     const location = res.headers.get('location');
     if (location) return reply.redirect(location);
@@ -88,10 +101,13 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
           "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         )
         .type('text/html; charset=utf-8');
-    if (!desktopState) {
+    // TRANSITION (see `/auth/start`): a legacy build never got the correlation cookie, so requiring
+    // it here would fail the handoff for exactly the users the shim above is keeping alive.
+    if (!desktopState && env.KAIRO_REQUIRE_DESKTOP_AUTH_STATE) {
       req.log.warn('auth callback opened without desktop correlation state');
       return page().status(400).send(callbackPage(null));
     }
+    if (!desktopState) req.log.warn('legacy desktop auth callback without correlation state');
     if (!session?.user) {
       req.log.warn('auth callback opened without a valid session');
       return page().status(401).send(callbackPage(null));

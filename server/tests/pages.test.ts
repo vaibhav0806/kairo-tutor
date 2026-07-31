@@ -39,6 +39,12 @@ describe('browser handoff pages', () => {
     expect(isDesktopAuthState(['0123456789abcdef0123456789abcdef'])).toBe(false);
   });
 
+  it('omits the correlated parameter for a legacy build instead of faking one', () => {
+    expect(authCallbackDeepLink('one-time-code', null)).toBe(
+      'kairo://auth-callback?code=one-time-code',
+    );
+  });
+
   it('removes every query string from automatic request logs', () => {
     expect(requestPath('/billing/return?status=active&email=private@example.com')).toBe('/billing/return');
     expect(requestPath('/api/auth/callback/google?code=secret&state=secret')).toBe('/api/auth/callback/google');
