@@ -5,6 +5,10 @@
 #   npm run local              # server (watch) + packaged .app pointed at it
 #   npm run local -- --check   # …after typecheck + tests + cargo check
 #   npm run local -- --reset   # …with app-scoped TCC grants + markers wiped
+#   npm run local -- --reset-input-monitoring
+#                              # …and clear Input Monitoring too (GLOBAL: other
+#                              #   apps must be re-granted). Required for a TRUE
+#                              #   first run — see the reset block below.
 #
 # The app half is exactly `npm run app:local` — the same packaged, signed bundle,
 # never a dev server (see AGENTS.md). The only thing this adds is starting the
@@ -23,11 +27,13 @@ HEALTH="http://localhost:${PORT}/healthz"
 LOG="$HOME/Library/Logs/Kairo/kairo-latest.log"
 CHECK=""
 RESET=""
+RESET_INPUT_MONITORING=""
 
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK="--check" ;;
     --reset) RESET="1" ;;
+    --reset-input-monitoring) RESET="1"; RESET_INPUT_MONITORING="1" ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
@@ -42,10 +48,20 @@ if [[ -n "$RESET" ]]; then
   tccutil reset Microphone com.kairo.tutor || true
   CFG="$HOME/Library/Application Support/com.kairo.tutor"
   rm -f "$CFG/onboarded" "$CFG/onboarding_step" "$CFG/user_name" "$CFG/accent" \
-        "$CFG/screen_recording_granted" "$CFG/session.token"
+        "$CFG/screen_recording_granted" "$CFG/session.token" "$CFG/pending-auth.state"
   echo "  ✓ signed out, unonboarded, app-scoped grants reset"
-  echo "  ! Input Monitoring was left unchanged; revoke Kairo manually in System Settings"
-  echo "    before launch when testing its first-run permission prompt."
+  # Input Monitoring is keyed to the EXECUTABLE, not the bundle id, so no bundle-scoped reset can
+  # clear it — only a global one can. That also clears OTHER apps' grants, which is why it is not
+  # part of --reset. Without it this is NOT a true first run: the grant survives, so Act 2's
+  # mic/keystroke primer never fires and onboarding behaves like a returning user's.
+  if [[ -n "$RESET_INPUT_MONITORING" ]]; then
+    echo "  ▸ Resetting Input Monitoring for ALL apps (global; re-grant others once)…"
+    tccutil reset ListenEvent || true
+    echo "  ✓ Input Monitoring cleared — this is a true first run"
+  else
+    echo "  ! Input Monitoring left intact, so this is NOT a true first run."
+    echo "    Use --reset-input-monitoring to clear it (global: affects other apps too)."
+  fi
 fi
 
 # --- 1. server ---------------------------------------------------------------
