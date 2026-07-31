@@ -754,7 +754,7 @@ pub(crate) async fn run_gate_turn(
     if !crate::proxy::proxy_enabled() && provider_env_optional("OPENROUTER_API_KEY").is_none() {
         return Ok(look());
     }
-    let model = provider_env("OPENROUTER_MODEL", constants::OPENROUTER_MODEL);
+    let model = provider_env("GATE_MODEL", constants::GATE_MODEL);
     let timeout = Duration::from_millis(constants::GATE_TIMEOUT_MS);
 
     let app = input.active_app.unwrap_or_else(|| "unknown".to_string());
