@@ -4,6 +4,7 @@ import { createTutorOrchestrator } from '../core/orchestrator';
 import { createRuntimeTutorPlanner, type RuntimeTutorProvider } from '../core/runtimePlanner';
 import { createTutorRuntimeErrorResponse } from '../core/tutorErrors';
 import { klog } from '../core/logger';
+import { shouldSuppressVisualTargets } from '../core/captureContext';
 import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
 import type {
   NativeBridge,
@@ -122,7 +123,27 @@ export async function askTutorFromNotch({
     // whole batch (all four corner radii, both paddings) while filling it in. Without the
     // flag a single box glides from target to target, exactly as before.
     const shownBoxes: TutorStep['visualTargets'] = [];
+
+    // A step is revealed seconds after the screenshot it was computed from. If the user moved to
+    // another app in that gap, the coordinates now describe a window that is not in front, so the
+    // box would confidently point at the wrong thing. Drop the visuals, keep the spoken answer.
+    const targetsWouldMiss = async (): Promise<boolean> => {
+      const current = await nativeBridge.getActiveApp().catch(() => null);
+      const suppress = shouldSuppressVisualTargets(activeApp, current);
+      if (suppress) {
+        klog('tutor', 'info', 'visual target suppressed: frontmost app changed since capture', {
+          capturedBundleId: activeApp.bundleId ?? '',
+          currentBundleId: current?.bundleId ?? ''
+        });
+      }
+      return suppress;
+    };
+
     const revealStep = async (step: TutorStep, transition: RevealTransition = 'draw') => {
+      if (await targetsWouldMiss()) {
+        await nativeBridge.hideOverlay();
+        return;
+      }
       if (step.visualTargets.length > 0 && displayBounds && response.keepBoxes) {
         const newBox = step.visualTargets.find((t) => t.kind === 'highlight_box');
         const pointer = step.visualTargets.find((t) => t.kind !== 'highlight_box');
@@ -153,6 +174,10 @@ export async function askTutorFromNotch({
     const revealVisuals = async () => {
       if (steps.length > 0) {
         await revealStep(steps[0]);
+        return;
+      }
+      if (await targetsWouldMiss()) {
+        await nativeBridge.hideOverlay();
         return;
       }
       if (response.visualTargets.length > 0 && displayBounds) {
