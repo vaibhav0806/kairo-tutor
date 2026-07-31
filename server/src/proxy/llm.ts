@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireAuth } from '../plugins/auth-verify';
 import { requireCredits } from '../plugins/require-credits';
 import { forwardJson } from './forward';
+import { streamPassthrough } from './stream';
 import { reserve, refund, isOnboarding, reserveOnboarding, refundOnboarding } from '../usage/service';
 import { QuotaExceededError } from '../plugins/error-handler';
 
@@ -14,6 +15,17 @@ function stripMeta(body: unknown): unknown {
     return clone;
   }
   return body;
+}
+
+/** The same body, asking the provider to stream. Both OpenAI Responses and Anthropic use `stream`. */
+export function streamingBody(body: unknown): unknown {
+  const stripped = stripMeta(body);
+  return stripped && typeof stripped === 'object' ? { ...(stripped as object), stream: true } : stripped;
+}
+
+function providerFor(body: unknown): { provider: 'anthropic' | 'openai'; path: string } {
+  const provider = (body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
+  return { provider, path: provider === 'anthropic' ? '/v1/messages' : '/v1/responses' };
 }
 
 export async function llmRoutes(app: FastifyInstance) {
@@ -55,6 +67,41 @@ export async function llmRoutes(app: FastifyInstance) {
       await refund(req.userId!, askId); // don't burn a free credit on our/provider failure
       throw e;
     }
+  });
+
+  /**
+   * The same answer + box turn, streamed. Kept as a SEPARATE route rather than a flag on the
+   * buffered one: that route stays byte-for-byte the fallback, so a client whose stream dies
+   * mid-response — or any build that predates this — keeps working untouched.
+   *
+   * Metering is identical to the buffered route, with one extra case that only exists here. Once
+   * a byte is on the wire the reply is hijacked and no error envelope can follow, so a stream that
+   * dies halfway is refunded on the outcome rather than on a thrown error. The user must not be
+   * charged for an answer they never heard.
+   */
+  app.post('/v1/vision/tutor/stream', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
+    const askId = randomUUID();
+    const { provider, path } = providerFor(req.body);
+    const body = streamingBody(req.body);
+
+    if (await isOnboarding(req.userId!)) {
+      if (!(await reserveOnboarding(req.userId!))) throw new QuotaExceededError('tutorial limit reached');
+      const outcome = await streamPassthrough(provider, path, body, reply).catch(() => null);
+      if (!outcome?.completed) {
+        await refundOnboarding(req.userId!);
+        req.log.warn({ started: outcome?.started ?? false }, 'streamed tutorial turn did not complete');
+      }
+      return reply;
+    }
+
+    const allowed = await reserve(req.userId!, askId);
+    if (!allowed) throw new QuotaExceededError('free limit reached');
+    const outcome = await streamPassthrough(provider, path, body, reply).catch(() => null);
+    if (!outcome?.completed) {
+      await refund(req.userId!, askId);
+      req.log.warn({ started: outcome?.started ?? false }, 'streamed tutor turn did not complete');
+    }
+    return reply;
   });
 
   // Computer-use pointing — authed + credit-gated, UNMETERED (part of the same ask).
