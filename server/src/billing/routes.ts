@@ -36,7 +36,7 @@ type BillingAccount = {
   email: string;
 };
 
-function dodoClient(): DodoPayments | null {
+export function dodoClient(): DodoPayments | null {
   if (!dodoApiKey) return null;
   return new DodoPayments({ bearerToken: dodoApiKey, environment: env.DODO_ENV });
 }
