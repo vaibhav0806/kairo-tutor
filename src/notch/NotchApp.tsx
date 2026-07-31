@@ -24,6 +24,7 @@ import {
   type ScreenRegion,
 } from './followAlong';
 import { shouldIdleClose } from './idleClose';
+import { planGate } from './gateRouting';
 import type { AskTutorResult } from './notchTutor';
 import { subscribeToNotchPayload } from './notchEvents';
 import { askTutorFromNotch } from './notchTutor';
@@ -667,9 +668,19 @@ export function NotchApp() {
         // Phase 1 gate: keep it for voice, where direct answers can avoid a screen
         // turn. Typed asks are already explicit text, so route them screen-first;
         // the tutor/grounder then decides whether any visual target is useful.
-        // Gesture marks mean the user pointed at the screen → skip the gate (like
-        // the old pen did) so the turn always uses the screenshot with the marks.
-        const gateRan = source === 'voice' && annotations.length === 0 && !hasGestureMarks;
+        //
+        // Pen marks used to skip the gate, because the routing answer is already known:
+        // a turn with marks always needs the screenshot. But the gate does two jobs, and
+        // the other one still mattered — it produces the line Kairo speaks immediately.
+        // Skipping it meant a pen ask sat in total silence for the whole vision turn
+        // (measured at 8.4s), which read as the app being broken. Run it for every voice
+        // ask and let `needsScreen` below force the screen path regardless of its answer.
+        const { gateRan } = planGate({
+          source,
+          annotationCount: annotations.length,
+          hasGestureMarks,
+          gateNeedsScreen: false
+        });
         const gate = gateRan
           ? await runGate(trimmedQuery)
           : { needsScreen: true, voiceText: '', skillSlug: '' };
@@ -688,8 +699,12 @@ export function NotchApp() {
         }
         // A newer turn superseded this one while the gate ran → stop mutating shared state.
         if (signal.aborted) return;
-        const needsScreen =
-          source === 'typed' || annotations.length > 0 || hasGestureMarks || gate.needsScreen;
+        const { needsScreen } = planGate({
+          source,
+          annotationCount: annotations.length,
+          hasGestureMarks,
+          gateNeedsScreen: gate.needsScreen
+        });
 
         // Diagnostic: which route this turn took and whether the gate actually ran,
         // so an "unrelated answer" can be traced to the gate vs the vision turn.
