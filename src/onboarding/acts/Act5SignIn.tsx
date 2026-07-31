@@ -6,6 +6,7 @@ import { getAuthStatus, onAuthChanged, onAuthRejected, startGoogleAuth } from '.
 import { syncUserName } from '../userName';
 import { TempPanel } from './TempPanel';
 import { KairoLockup } from '../../components/KairoMark';
+import { InlineNotice } from '../../components/InlineNotice';
 
 /**
  * Act 5a — sign in (master spec §4). The Google button opens the system browser; on the deep-link
@@ -23,7 +24,11 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
     let un = () => {};
     let unRejected = () => {};
     void getAuthStatus().then((s) => s.signed_in && setSignedIn(true));
-    void onAuthChanged((s) => s && setSignedIn(true)).then((u) => {
+    void onAuthChanged((s) => {
+      if (!s) return;
+      setRejected(null);
+      setSignedIn(true);
+    }).then((u) => {
       un = u;
     });
     void onAuthRejected(setRejected).then((u) => {
@@ -63,7 +68,7 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
             <span className="ob-signin-sub">Sign in to save your setup</span>
             {/* Official "Sign in with Google" — Light theme (white) per Google's branding guidelines;
                 the crisp white button + neutral stroke sits cleanly on the light card. */}
-            {rejected ? <span className="ob-signin-error">{rejected}</span> : null}
+            {rejected ? <InlineNotice>{rejected}</InlineNotice> : null}
             <button
               type="button"
               className="google-signin-btn"

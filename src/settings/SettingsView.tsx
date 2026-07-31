@@ -12,6 +12,7 @@ import { klog } from '../core/logger';
 import { notify, notifySaving } from '../core/notify';
 import { KairoLockup } from '../components/KairoMark';
 import { KButton } from '../components/KButton';
+import { InlineNotice } from '../components/InlineNotice';
 import { QuotaRing } from '../components/QuotaRing';
 import { VoiceSettings } from './VoiceSettings';
 import { SkillsDialog, type SkillInfo } from './SkillsDialog';
@@ -126,6 +127,9 @@ export function SettingsView() {
     void loadExtras();
     const unsubs: Array<() => void> = [];
     void onAuthChanged(() => {
+      // Any auth transition retires an earlier rejection — signing out must not resurrect the
+      // message from a callback that was refused while the previous session was still live.
+      setAuthRejected(null);
       void refresh();
       void loadExtras();
     }).then((u) => unsubs.push(u));
@@ -245,11 +249,11 @@ export function SettingsView() {
     return (
       <div className="settings-scrim">
         <div className="settings-window-titlebar" onPointerDown={startWindowDrag} />
-        <div className="settings-card">
+        <div className="settings-card settings-card-signed-out">
           <KairoLockup className="settings-brand" />
           <h2 className="settings-h2">You're signed out</h2>
           <p className="settings-muted">Sign in to use Kairo.</p>
-          {authRejected ? <p className="settings-auth-error">{authRejected}</p> : null}
+          {authRejected ? <InlineNotice>{authRejected}</InlineNotice> : null}
           <KButton
             onClick={() => {
               setAuthRejected(null);

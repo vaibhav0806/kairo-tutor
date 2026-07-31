@@ -43,6 +43,17 @@ describe('desktop OAuth correlation · rollout transition', () => {
     expect(setCookies(res).some((c) => c.startsWith('kairo_desktop_auth_state='))).toBe(false);
   });
 
+  it('answers a failed OAuth handoff with our page, not Better Auth’s stock error screen', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/auth/error?error=state_mismatch' });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.body).toContain('That sign-in didn’t finish.');
+    // The stock page's furniture must not reach the user.
+    expect(res.body).not.toContain('state_mismatch');
+    expect(res.body).not.toContain('Go Home');
+  });
+
   it('does not refuse a legacy callback before the session check runs', async () => {
     // No correlation cookie and no session: the 401 proves the missing cookie is not what stopped
     // it, which is what a legacy build's callback looks like.

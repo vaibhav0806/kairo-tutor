@@ -86,6 +86,25 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
     return reply.status(500).send({ error: 'no_auth_url', code: 'provider_error' });
   });
 
+  // Better Auth redirects here when OAuth fails before it ever reaches our callback. Its stock page
+  // is a black "ERROR / CODE: state_mismatch" screen with a Go Home button that means nothing for a
+  // desktop sign-in. The common cause is benign and self-inflicted: starting sign-in twice replaces
+  // the Better Auth state cookie, so finishing the FIRST tab mismatches. Say that, in our voice.
+  // Registered as an exact path so it wins over the `/api/auth/*` handler mounted in app.ts.
+  app.get<{ Querystring: { error?: string } }>('/api/auth/error', async (req, reply) => {
+    const code = typeof req.query.error === 'string' ? req.query.error : 'unknown';
+    req.log.warn({ code }, 'oauth failed before callback');
+    return reply
+      .header('cache-control', 'no-store')
+      .header(
+        'content-security-policy',
+        "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      )
+      .type('text/html; charset=utf-8')
+      .status(400)
+      .send(callbackPage(null, 'error'));
+  });
+
   // Better Auth completes OAuth and redirects the browser here (with the session cookie). We mint a
   // one-time code and serve a small success page that fires the kairo:// deep link (so the app gets
   // the code) AND leaves the browser on a clean "you can close this" screen — not a spinning tab.

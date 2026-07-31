@@ -1915,3 +1915,22 @@ input {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------- InlineNotice
+   A message bound to the control beneath it (not the floating toaster). One size, one red, one
+   set of spacings, so onboarding and Settings stop inventing their own. */
+.inline-notice {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+.inline-notice-error {
+  color: #b3261e;
+}
+.inline-notice-info {
+  color: var(--ink-muted);
+}

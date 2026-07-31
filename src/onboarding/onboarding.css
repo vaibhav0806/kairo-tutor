@@ -210,16 +210,10 @@ body.onboarding-document {
   font-weight: 500;
   color: color-mix(in srgb, var(--ob-accent) 60%, var(--ink) 40%);
 }
-/* A callback that arrived but did not correlate. The browser already said "you can close this",
-   so this line is the only place the user learns the app did not accept it. */
-.ob-signin-error {
-  max-width: 280px;
+/* The sign-in card centres its stack, so the shared inline notice needs to centre with it. */
+.ob-signin .inline-notice {
   margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.4;
   text-align: center;
-  color: #b3261e;
 }
 
 /* Official "Sign in with Google" — Light theme (white). Google's 4-colour G may only sit on white
