@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { callbackPage } from '../src/auth/routes';
+import { authCallbackDeepLink, callbackPage, isDesktopAuthState } from '../src/auth/routes';
 import { renderBillingReturnPage } from '../src/billing/return-page';
 import { requestPath } from '../src/logging';
 
@@ -22,6 +22,16 @@ describe('browser handoff pages', () => {
     expect(failure).toContain('That sign-in didn’t finish.');
     expect(failure).toContain('href="/auth/start"');
     expect(failure).not.toContain('<script>');
+  });
+
+  it('preserves only a valid desktop correlation state in the auth deep link', () => {
+    const state = '0123456789abcdef0123456789abcdef';
+    expect(isDesktopAuthState(state)).toBe(true);
+    expect(authCallbackDeepLink('one-time-code', state)).toBe(
+      `kairo://auth-callback?code=one-time-code&state=${state}`,
+    );
+    expect(isDesktopAuthState('short')).toBe(false);
+    expect(isDesktopAuthState(['0123456789abcdef0123456789abcdef'])).toBe(false);
   });
 
   it('removes every query string from automatic request logs', () => {

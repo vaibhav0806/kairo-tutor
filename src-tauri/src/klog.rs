@@ -178,11 +178,11 @@ impl Drop for Timer {
     }
 }
 
-/// Format a transcript for logging. Returns the full text when
-/// `constants::LOG_TRANSCRIPTS` is true (the default — this is a local dev tool and
-/// the log file is our primary debugging surface), otherwise metadata-only
-/// (`len=N`). Never log raw audio, screenshot pixels/base64, or secrets — pass
-/// byte/size counts instead.
+/// Format a transcript for logging. Returns metadata-only (`len=N`) by default, or
+/// the full text when a local developer explicitly enables
+/// `constants::LOG_TRANSCRIPTS` and rebuilds. Never enable full-text logging in a
+/// distributed build. Never log raw audio, screenshot pixels/base64, or secrets —
+/// pass byte/size counts instead.
 pub(crate) fn transcript_field(text: &str) -> String {
     if crate::constants::LOG_TRANSCRIPTS {
         text.to_string()
@@ -201,5 +201,18 @@ pub(crate) fn frontend(level: &str, webview: &str, sub: &str, message: &str) {
         "debug" => tracing::debug!(target: "kairo::frontend", webview, sub, "{message}"),
         "trace" => tracing::trace!(target: "kairo::frontend", webview, sub, "{message}"),
         _ => tracing::info!(target: "kairo::frontend", webview, sub, "{message}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn transcript_field_redacts_text_by_default() {
+        let transcript = "private spoken question";
+
+        let field = super::transcript_field(transcript);
+
+        assert_eq!(field, "len=23");
+        assert!(!field.contains(transcript));
     }
 }

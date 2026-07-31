@@ -118,7 +118,8 @@ under `kairo::<subsystem>` targets, so:
 - `KAIRO_LOG=debug` — everything, including dependency internals (hyper/wry/reqwest).
 - Per-subsystem: `KAIRO_LOG=info,kairo::vision=trace,kairo::mic=warn`.
 - `KAIRO_LOG_STDERR=true` — also mirror to stderr (default off; useful when running in a terminal).
-- `KAIRO_LOG_TRANSCRIPTS=true` — include full STT transcript text (default off → length only).
+- Full transcript text is off by default. For temporary local debugging, set
+  `LOG_TRANSCRIPTS` in `src-tauri/src/constants.rs` to `true` and rebuild; never ship that setting.
 
 Design + rationale: [docs/superpowers/specs/2026-07-03-universal-logger-and-claude-md-design.md](./docs/superpowers/specs/2026-07-03-universal-logger-and-claude-md-design.md).
 
@@ -206,8 +207,9 @@ Non-secret config is centralized — **`.env` holds ONLY API keys.**
   vars needed.
 - The model/URL/provider constants stay env-overridable at runtime (default = the
   constant); timeouts, toggles, and logging flags are read directly from the constant.
-- Transcript + answer logging is **always on** (`constants::LOG_TRANSCRIPTS = true`) —
-  no env var. Set it to `false` in `constants.rs` to log lengths only.
+- Transcript + answer logging is **off by default** (`constants::LOG_TRANSCRIPTS = false`),
+  so logs contain character counts only. A local developer may temporarily enable it and rebuild;
+  never distribute a build with full-text logging enabled.
 - Backend selection is centralized in native code. Use `npm run app:local` or
   `npm run app:hosted`; every WebView asks native for that same URL. Do not add a
   frontend URL mirror or put `KAIRO_BACKEND_URL` in `.env`.

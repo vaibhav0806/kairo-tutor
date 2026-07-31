@@ -35,17 +35,26 @@ if [[ "${COMMAND}" != "list" && $# -eq 0 ]]; then
   exit 1
 fi
 
-EMAILS="$*"
+EMAILS_B64=""
+if [[ $# -gt 0 ]]; then
+  EMAILS_B64="$(printf '%s\0' "$@" | base64 | tr -d '\n')"
+fi
 
-# The node script runs in the container; emails come in through an env var rather than string
-# interpolation so an address can never be read as shell or SQL.
+if [[ ! "${CONTAINER}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+  echo "✗ Invalid container name." >&2
+  exit 1
+fi
+
+# Encode the argument boundary before building the remote command. Base64's alphabet cannot alter
+# remote-shell syntax, and NUL separators preserve each email as a distinct argument.
 ssh -i "${SSH_KEY}" "${HOST}" \
-  "docker exec -e KAIRO_INVITE_CMD='${COMMAND}' -e KAIRO_INVITE_EMAILS='${EMAILS}' ${CONTAINER} node -e '
+  "docker exec -e KAIRO_INVITE_CMD=${COMMAND} -e KAIRO_INVITE_EMAILS_B64=${EMAILS_B64} ${CONTAINER} node -e '
 const { Pool } = require(\"pg\");
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const command = process.env.KAIRO_INVITE_CMD;
-const emails = (process.env.KAIRO_INVITE_EMAILS || \"\")
-  .split(/\\s+/)
+const emails = Buffer.from(process.env.KAIRO_INVITE_EMAILS_B64 || \"\", \"base64\")
+  .toString(\"utf8\")
+  .split(\"\\0\")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
 

@@ -8,6 +8,34 @@ import { isInvited, markRedeemed } from '../access/service';
 import { env } from '../config/env';
 
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days
+const DESKTOP_AUTH_COOKIE = 'kairo_desktop_auth_state';
+
+export function isDesktopAuthState(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+}
+
+export function authCallbackDeepLink(code: string, state: string): string {
+  return `kairo://auth-callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+}
+
+function desktopAuthStateCookie(state: string): string {
+  const secure = env.PUBLIC_BASE_URL.startsWith('https://') ? '; Secure' : '';
+  return `${DESKTOP_AUTH_COOKIE}=${state}; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=600${secure}`;
+}
+
+function clearDesktopAuthStateCookie(): string {
+  const secure = env.PUBLIC_BASE_URL.startsWith('https://') ? '; Secure' : '';
+  return `${DESKTOP_AUTH_COOKIE}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
+function desktopAuthStateFromRequest(req: FastifyRequest): string | null {
+  const state = req.headers.cookie
+    ?.split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(`${DESKTOP_AUTH_COOKIE}=`))
+    ?.slice(DESKTOP_AUTH_COOKIE.length + 1);
+  return isDesktopAuthState(state) ? state : null;
+}
 
 function toHeaders(req: FastifyRequest): Headers {
   const h = new Headers();
@@ -26,13 +54,17 @@ function toHeaders(req: FastifyRequest): Headers {
 export async function ownedAuthRoutes(app: FastifyInstance) {
   // Opened in the system browser by the desktop app. We must forward Better Auth's Set-Cookie
   // (the OAuth `state`) to the browser, or the Google callback fails with `state_mismatch`.
-  app.get('/auth/start', async (_req, reply) => {
+  app.get<{ Querystring: { desktop_state?: unknown } }>('/auth/start', async (req, reply) => {
+    if (!isDesktopAuthState(req.query.desktop_state)) {
+      req.log.warn('auth start refused without valid desktop correlation state');
+      return reply.status(400).send({ error: 'bad_desktop_state', code: 'bad_request' });
+    }
     const res = await auth.api.signInSocial({
       body: { provider: 'google', callbackURL: `${env.PUBLIC_BASE_URL}/auth/callback` },
       asResponse: true,
     });
     const cookies = res.headers.getSetCookie?.() ?? [];
-    if (cookies.length) reply.header('set-cookie', cookies);
+    reply.header('set-cookie', [...cookies, desktopAuthStateCookie(req.query.desktop_state)]);
 
     const location = res.headers.get('location');
     if (location) return reply.redirect(location);
@@ -45,6 +77,8 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
   // one-time code and serve a small success page that fires the kairo:// deep link (so the app gets
   // the code) AND leaves the browser on a clean "you can close this" screen — not a spinning tab.
   app.get('/auth/callback', async (req, reply) => {
+    const desktopState = desktopAuthStateFromRequest(req);
+    reply.header('set-cookie', clearDesktopAuthStateCookie());
     const session = await auth.api.getSession({ headers: toHeaders(req) });
     const page = () =>
       reply
@@ -54,6 +88,10 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
           "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         )
         .type('text/html; charset=utf-8');
+    if (!desktopState) {
+      req.log.warn('auth callback opened without desktop correlation state');
+      return page().status(400).send(callbackPage(null));
+    }
     if (!session?.user) {
       req.log.warn('auth callback opened without a valid session');
       return page().status(401).send(callbackPage(null));
@@ -74,7 +112,7 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
     await markRedeemed(session.user.email);
 
     const code = await mintCode(session.user.id);
-    const deepLink = `kairo://auth-callback?code=${encodeURIComponent(code)}`;
+    const deepLink = authCallbackDeepLink(code, desktopState);
     req.log.info('auth callback ready for desktop handoff');
     return page().send(callbackPage(deepLink));
   });

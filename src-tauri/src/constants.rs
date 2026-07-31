@@ -182,10 +182,10 @@ pub(crate) const SHOW_IN_CAPTURE: bool = match option_env!("KAIRO_SHOW_IN_CAPTUR
 };
 
 // ---------------------------------------------------------------- Logging
-// Log the actual transcript + answer TEXT (not just lengths). Intentionally ON:
-// this is a local dev tool and the log file is our primary debugging surface. No env
-// var needed. Set to false to log lengths only.
-pub(crate) const LOG_TRANSCRIPTS: bool = true;
+// Log the actual transcript + answer TEXT instead of character counts. Privacy-safe
+// by default for shipped builds; a local developer may temporarily opt in by changing
+// this to `true` and rebuilding. Never enable it in a distributed build.
+pub(crate) const LOG_TRANSCRIPTS: bool = false;
 pub(crate) const LOG_TO_STDERR: bool = false;
 // Default verbosity filter (tracing EnvFilter syntax). KAIRO_LOG still overrides.
 pub(crate) const LOG_FILTER: &str = "info,kairo=debug";
