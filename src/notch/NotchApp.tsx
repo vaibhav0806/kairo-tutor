@@ -5,7 +5,6 @@ import { loadBrowserEnv } from '../config/env';
 import { klog, type LogFields, type LogLevel } from '../core/logger';
 import { playSound, playRecordingCue } from '../core/sound';
 import { pickThinkingVerb } from './thinkingVerbs';
-import { msUntilNextTier, thinkingLabel } from './thinkingStatus';
 import type { UserAnnotation, VisualTarget } from '../core/types';
 import {
   createNativeBridge,
@@ -1598,44 +1597,29 @@ export function NotchApp() {
   };
 
   // The busy label beside the spinning cube. Instead of a flat "Thinking", show a random playful
-  // gerund (Claude-Code style) — picked ONCE per thinking-spell and held stable so it doesn't
-  // re-roll every render. "Busy" = the thinking capsule, or the coach's empty "preparing" pulse
-  // (onboarding). Listening keeps its literal 'Listening'.
+  // gerund (Claude-Code style) — picked ONCE per thinking-spell and held stable for the whole
+  // spell. "Busy" = the thinking capsule, or the coach's empty "preparing" pulse (onboarding).
+  // Listening keeps its literal 'Listening'.
+  //
+  // The word does NOT change while the turn runs. Swapping it mid-spell ("Reading the screen",
+  // "Still going…") drew attention to the wait and read as restless rather than reassuring; one
+  // steady word is calmer and is what this always used to do.
   const busy = capsuleMode === 'thinking' || (capsuleMode === 'coach' && !payload.detail);
   const [thinkingVerb, setThinkingVerb] = useState(pickThinkingVerb);
-  // How long the CURRENT spell has run. A held word for eight seconds reads as "hung", so once a
-  // turn outlives the playful gerund the label starts acknowledging the wait (thinkingStatus.ts).
-  const [thinkingElapsed, setThinkingElapsed] = useState(0);
   const wasBusyRef = useRef(false);
   useEffect(() => {
     if (busy && !wasBusyRef.current) {
       setThinkingVerb(pickThinkingVerb());
-      setThinkingElapsed(0);
     }
     wasBusyRef.current = busy;
   }, [busy]);
-
-  // One timeout per tier rather than a 1s tick — most turns never leave the first tier at all.
-  useEffect(() => {
-    if (!busy) return;
-    const remaining = msUntilNextTier(thinkingElapsed);
-    if (remaining === null) return;
-    const timer = window.setTimeout(() => {
-      setThinkingElapsed(thinkingElapsed + remaining);
-      klog('notch', 'debug', 'thinking label escalated', { ms: thinkingElapsed + remaining });
-    }, remaining);
-    return () => window.clearTimeout(timer);
-  }, [busy, thinkingElapsed]);
 
   const statusLabel =
     capsuleMode === 'listening'
       ? 'Listening'
       : capsuleMode === 'speaking'
         ? 'Speaking'
-        // 'coach' is onboarding, whose only busy state is the Act 2 say-hi drill — transcribe →
-      // chat → speak, with no screen capture anywhere in it. Saying "reading the screen" there is
-      // simply untrue, and it lands during the act that is teaching the user what Kairo does.
-      : thinkingLabel(thinkingVerb, thinkingElapsed, capsuleMode !== 'coach');
+        : thinkingVerb;
 
   return (
     <>
