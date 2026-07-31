@@ -5,6 +5,9 @@ import { createRuntimeTutorPlanner, type RuntimeTutorProvider } from '../core/ru
 import { createTutorRuntimeErrorResponse } from '../core/tutorErrors';
 import { klog } from '../core/logger';
 import { shouldSuppressVisualTargets } from '../core/captureContext';
+import { createStreamingClip } from './streamingTts';
+import { discardPrewarmedClip, setPrewarmedClip } from './clipPrewarm';
+import { STEP_SYNTH_TIMEOUT_MS } from './notchConstants';
 import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
 import type {
   NativeBridge,
@@ -72,10 +75,24 @@ export async function askTutorFromNotch({
 }: AskTutorFromNotchOptions): Promise<AskTutorResult> {
   try {
     const mockPlanner = createMockTutorPlanner();
+    // Any clip left warm by an earlier ask belongs to an answer that is now superseded.
+    discardPrewarmedClip();
     const planner = createRuntimeTutorPlanner({
       aiProvider,
       nativeBridge,
-      mockPlanner
+      mockPlanner,
+      // Start synthesizing the FIRST step the moment its text is complete, while the model is
+      // still writing the rest. Playback used to run these back to back — wait for the whole
+      // answer, then spend 1.5-3s synthesizing step one — and this overlaps the second with the
+      // tail of the first. Only step one: later steps are prefetched during playback, and a
+      // barge-in must not leave us paying for speech nobody hears.
+      onEarlyStep: (step, index) => {
+        if (index !== 0) return;
+        const say = typeof (step as { say?: unknown })?.say === 'string' ? (step as { say: string }).say.trim() : '';
+        if (!say) return;
+        klog('tutor', 'info', 'prewarming first step audio', { chars: say.length });
+        setPrewarmedClip(say, createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS));
+      }
     });
     const orchestrator = createTutorOrchestrator({ planner });
     // Use the fast voice-start screenshot when there are no annotations. If the
@@ -208,6 +225,8 @@ export async function askTutorFromNotch({
       displayBounds: displayBounds ?? null
     };
   } catch (error) {
+    // The turn failed after a step may already have been warmed; nothing will claim it now.
+    discardPrewarmedClip();
     const response = createTutorRuntimeErrorResponse({
       skillSlug,
       error

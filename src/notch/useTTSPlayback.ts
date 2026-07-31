@@ -13,7 +13,9 @@ import type { RevealTransition } from '../overlay/targetRouting';
 import { buildAudioDataUrl } from './audioPlayback';
 import { createBufferedClip, createStreamingClip, type SpeechClip } from './streamingTts';
 import { createNativeBridge } from '../native/nativeBridge';
+import { klog } from '../core/logger';
 import { FILLER_FALLBACK, STEP_GAP_MS, STEP_SYNTH_TIMEOUT_MS } from './notchConstants';
+import { discardPrewarmedClip, takePrewarmedClip } from './clipPrewarm';
 
 type NativeBridge = ReturnType<typeof createNativeBridge>;
 
@@ -78,6 +80,9 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
     setIsSpeaking(false);
     // Any new playback supersedes a pending gate filler.
     fillerCancelRef.current = true;
+    // A clip warmed for an answer that is being superseded must never be spoken. Playback claims
+    // its own clip before reaching here, so this only ever catches genuinely orphaned audio.
+    discardPrewarmedClip();
     // Supersede anything queued behind the filler (see playAnswerAudio).
     playbackEpochRef.current += 1;
     // Also stop any in-flight follow-along step speech so a new turn's audio never
@@ -262,11 +267,24 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
       const prefetch = (index: number) => {
         if (index < steps.length && clips[index] === undefined) {
           const say = steps[index].say.trim();
-          clips[index] = say ? createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS) : null;
+          if (!say) {
+            clips[index] = null;
+            return;
+          }
+          // The streamed turn may already have synthesized this while the model was still
+          // writing later steps. A miss is not a failure — it just synthesizes now, as before.
+          const warm = takePrewarmedClip(say);
+          if (warm) {
+            klog('notch', 'info', 'using prewarmed step audio', { index });
+          }
+          clips[index] = warm ?? createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS);
         }
       };
       prefetch(0);
       prefetch(1);
+      // Whatever is left warm belongs to no step in this turn (a stream that produced a step the
+      // final parse dropped, say). Release it so it cannot be claimed by a later answer.
+      discardPrewarmedClip();
 
       // Queue behind the "let me look" filler (mirror playAnswerAudio).
       const epoch = playbackEpochRef.current;
