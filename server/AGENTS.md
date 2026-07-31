@@ -51,10 +51,27 @@ in `src/config/` intact; never make a remote database acceptable to contributor 
   single-use state flow.
 - Better Auth and JWKS remain the authentication source of truth. Do not implement a
   parallel token verifier or put session tokens in callback URLs.
+- Read the verification key set **in process** (`src/auth/jwks.ts` → `auth.api.getJwks()`).
+  Never verify against `PUBLIC_BASE_URL/api/auth/jwks` over HTTP: in a deployment behind
+  a CDN and reverse proxy that makes the container fetch its own public hostname, which
+  hangs and then 401s every authenticated request.
+- `KAIRO_REQUIRE_DESKTOP_AUTH_STATE` gates enforcement of the desktop correlation state.
+  It stays false until every installed build sends one — those builds open `/auth/start`
+  bare and cannot update past a sign-in they can no longer complete. Flip it only after
+  the `legacy desktop sign-in` warn stops appearing.
 - Verify Dodo webhooks against the raw request body. Never bypass signature
   verification, use live billing credentials locally, or simulate live transactions.
 - Local signed webhook testing uses `npm run billing:test:listen` from the repository
   root after test-mode configuration is present.
+
+## Deploying
+
+Changes under `server/` are not live until deployed. **Offer to deploy, then wait for
+explicit confirmation — never deploy automatically.** The deploy runs `server/deploy.sh`
+on the configured host: build, forward-only migrate, restart, and gate on `/readyz`.
+Host, key, and release directory come from `KAIRO_RELEASE_HOST`, `KAIRO_RELEASE_SSH_KEY`,
+and `KAIRO_RELEASE_DIR`; they are never committed. CI runs typecheck, build, and tests on
+push, but the deploy itself stays manual.
 
 ## Verification
 

@@ -44,6 +44,51 @@ Do not commit `.env` files, credentials, tokens, raw provider payloads, or gener
 build artifacts. Provider keys belong in `server/.env` for backend development; they
 must never be embedded in the desktop bundle.
 
+## Maintainer workflow
+
+Applies only if you hold the project signing identity. **Do not use
+`app:build:unsigned` on a machine that has it.** macOS ties Screen Recording,
+Accessibility, and Input Monitoring grants to the signing identity, so an unsigned
+build reads as a different app and silently loses every grant — the app then looks
+broken for reasons that have nothing to do with your change.
+
+```bash
+npm run app             # quit → build + sign → verify signature → launch (hosted backend)
+npm run app:local       # same, pointed at http://localhost:8787
+npm run app -- --check  # run typecheck + tests + cargo check first
+npm run local           # server (watch) + the packaged app against it
+```
+
+Never test against a dev server. Always exercise the packaged `.app` — that is where
+native permissions, panels, and logging actually behave like they do for a user.
+
+Rehearse onboarding from the top with `npm run local -- --reset-input-monitoring`.
+Plain `--reset` leaves Input Monitoring granted, which is not a true first run: the
+Act 2 primer never fires and the flow behaves like a returning user's.
+
+## Reading the logs
+
+Every subsystem, Rust and WebView alike, writes to one file:
+
+```bash
+tail -F ~/Library/Logs/Kairo/kairo-latest.log
+```
+
+Verbosity comes from the environment and needs no rebuild: `KAIRO_LOG=kairo=trace`
+for maximum detail from our code, `KAIRO_LOG=debug` to include dependencies, or a
+per-subsystem filter such as `KAIRO_LOG=info,kairo::vision=trace`. Set
+`KAIRO_LOG_STDERR=true` to mirror to stderr when running from a terminal.
+
+Redaction is compile-time and defaults to off: `constants::LOG_TRANSCRIPTS` for
+transcript and answer text, `constants::LOG_PROVIDER_BODIES` for provider error
+bodies. Enable one locally while debugging, rebuild, and never ship it enabled.
+
+## Commit discipline
+
+Work on `main` unless asked otherwise. Commit each change as you finish it — small,
+revertible commits rather than one batch at the end. Keep unrelated refactors out of
+a feature or security change.
+
 ## Desktop architecture
 
 - `src-tauri/src/lib.rs` owns Tauri setup, managed state, and command registration.
