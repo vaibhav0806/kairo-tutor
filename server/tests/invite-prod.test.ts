@@ -20,6 +20,7 @@ function runInvite(...args: string[]) {
   const capture = join(directory, 'docker-args');
   const ssh = join(directory, 'ssh');
   const docker = join(directory, 'docker');
+  const sshKey = join(directory, 'unused-key');
 
   writeFileSync(
     ssh,
@@ -35,6 +36,7 @@ printf '%s\\0' "$@" > "$DOCKER_CAPTURE"
 echo captured
 `,
   );
+  writeFileSync(sshKey, 'test fixture');
   chmodSync(ssh, 0o755);
   chmodSync(docker, 0o755);
 
@@ -46,7 +48,7 @@ echo captured
       DOCKER_CAPTURE: capture,
       KAIRO_TEST_MARKER: marker,
       KAIRO_RELEASE_HOST: 'test@example.invalid',
-      KAIRO_RELEASE_SSH_KEY: join(directory, 'unused-key'),
+      KAIRO_RELEASE_SSH_KEY: sshKey,
       KAIRO_CONTAINER: 'kairo-server',
     },
   });
