@@ -306,6 +306,12 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
       const playEpoch = playbackEpochRef.current;
 
       let firstSpoken = false;
+      // Instrumentation for the inter-step stall: how long a step waited for its own audio after
+      // the previous one finished. STEP_GAP_MS of that is a deliberate pause, so anything close to
+      // it is healthy; a much larger number means synthesis did not keep up and the user heard
+      // silence mid-answer. This is the number that decides whether prewarming step one costs more
+      // than it saves.
+      let previousEndedAt = 0;
       // The first box a walkthrough shows is drawn; once it's on screen, later
       // steps glide the same box to the next target instead of re-popping it.
       let boxOnScreen = false;
@@ -349,11 +355,21 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
             };
             clip.onplay = () => {
               setIsSpeaking(true);
+              if (previousEndedAt > 0) {
+                const waited = Date.now() - previousEndedAt;
+                klog('notch', 'info', 'step audio gap', {
+                  step: i,
+                  waited_ms: waited,
+                  intended_ms: STEP_GAP_MS,
+                  stalled_ms: Math.max(0, waited - STEP_GAP_MS)
+                });
+              }
               startStep(i);
               void emit('cursor:speaking', {});
             };
             clip.onended = () => {
               setIsSpeaking(false);
+              previousEndedAt = Date.now();
               finish();
             };
             // stopAnswerPlayback (a new turn / interruption) pauses the clip, which
