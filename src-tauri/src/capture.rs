@@ -348,7 +348,7 @@ pub(crate) fn capture_screen() -> ScreenCaptureResult {
                             sensitive = true,
                             active_app = %active_app_after_capture.active_app,
                             bounds = %bounds_summary,
-                            "capture discarded after app changed"
+                            "capture discarded: sensitive app became frontmost"
                         );
                         return ScreenCaptureResult {
                             captured: false,
