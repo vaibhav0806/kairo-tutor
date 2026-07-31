@@ -45,7 +45,7 @@ mod color;
 mod grounding;
 
 mod tutor;
-use tutor::{run_ack_turn, run_gate_turn, run_tutor_turn};
+use tutor::{run_ack_turn, run_gate_turn, run_tutor_turn, run_tutor_turn_stream};
 
 mod updater;
 use updater::{check_for_update, install_update};
@@ -60,6 +60,7 @@ mod audio;
 use audio::spawn_audio_capture;
 
 mod panels;
+mod sse;
 use panels::{
     configure_overlay_window, cursor_window, emit_overlay_payload, ensure_cursor_panel,
     ensure_notch_panel, ensure_overlay_panel, overlay_window, show_notch_with_payload,
@@ -1119,6 +1120,7 @@ pub fn run() {
             set_onboarding_hit_rect,
             hide_notch,
             run_tutor_turn,
+            run_tutor_turn_stream,
             run_gate_turn,
             run_ack_turn,
             transcribe_audio,

@@ -40,6 +40,104 @@ async fn proxy_vision_payload(
     }
 }
 
+/// A text delta from a streamed tutor turn, plus the terminal outcome.
+///
+/// `Delta` exists so the caller can start speaking the first complete step while the rest of the
+/// answer is still being written. `End` carries the FULL accumulated text: the streamed pieces are
+/// an accelerator, and the complete body stays the authoritative thing that gets parsed, so a
+/// malformed stream degrades to exactly the buffered behaviour instead of a broken answer.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub(crate) enum TutorStreamMsg {
+    Delta { text: String },
+    End { full: String },
+    Error { message: String },
+}
+
+/// Streamed twin of `openai_vision_chat`. Emits text deltas as they arrive and returns the same
+/// `VisionOutcome` the buffered call would have returned.
+///
+/// Streaming is proxy-only. Every shipped build proxies; the direct-key dev path would need its
+/// own streaming request and is not worth a second code path for a debugging-only route, so
+/// callers fall back to the buffered call there.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn openai_vision_chat_streaming(
+    app: &AppHandle,
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+    media_type: &str,
+    model: &str,
+    effort: &str,
+    timeout: Duration,
+    on_chunk: &tauri::ipc::Channel<TutorStreamMsg>,
+) -> VisionOutcome {
+    let data_url = format!("data:{media_type};base64,{image_base64}");
+    let body = json!({
+        "model": model,
+        "reasoning": { "effort": effort },
+        "instructions": system_prompt,
+        "input": [{
+            "role": "user",
+            "content": [
+                { "type": "input_text", "text": user_text },
+                { "type": "input_image", "image_url": data_url }
+            ]
+        }],
+        "max_output_tokens": constants::ANTHROPIC_VISION_MAX_TOKENS,
+    });
+    crate::klog!(tutor, info, provider = "openai", model = %model, effort = %effort, "openai vision (answer+box) stream request");
+    let _t = crate::klog::timer("tutor", "openai_vision_stream");
+
+    let mut response = match crate::proxy::vision_tutor_stream(app, "openai", body, timeout).await {
+        Ok(response) => response,
+        Err(crate::proxy::ProxyError::QuotaExceeded) => return VisionOutcome::QuotaExceeded,
+        Err(error) => {
+            crate::klog!(grounding, warn, provider = "openai", model = %model, error_class = error.class(), status = ?error.status(), "vision stream via proxy failed");
+            return VisionOutcome::Failed;
+        }
+    };
+
+    let mut reader = crate::sse::SseTextReader::new();
+    let mut full = String::new();
+    let mut deltas: u32 = 0;
+    loop {
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                // A chunk can split a UTF-8 sequence; lossy decoding here would corrupt the text,
+                // so hand the reader only what decodes cleanly and let it buffer the remainder.
+                let Ok(text) = std::str::from_utf8(&bytes) else {
+                    continue;
+                };
+                for delta in reader.push(text) {
+                    full.push_str(&delta);
+                    deltas += 1;
+                    if on_chunk
+                        .send(TutorStreamMsg::Delta { text: delta })
+                        .is_err()
+                    {
+                        // Frontend dropped the channel (a newer ask superseded this one).
+                        crate::klog!(tutor, debug, deltas = deltas, "tutor stream channel closed");
+                        return VisionOutcome::Failed;
+                    }
+                }
+            }
+            Ok(None) => break,
+            Err(error) => {
+                crate::klog!(tutor, warn, provider = "openai", model = %model, error_class = crate::proxy::request_error_class(&error), chars = full.chars().count(), "tutor stream read failed");
+                // Partial text cannot be trusted as an answer; the caller retries buffered.
+                return VisionOutcome::Failed;
+            }
+        }
+    }
+
+    crate::klog!(tutor, info, provider = "openai", model = %model, deltas = deltas, chars = full.chars().count(), "tutor stream complete");
+    if full.trim().is_empty() {
+        return VisionOutcome::Failed;
+    }
+    VisionOutcome::Answer(full)
+}
+
 fn grounding_timeout() -> Duration {
     Duration::from_millis(constants::GROUNDING_TIMEOUT_MS)
 }
