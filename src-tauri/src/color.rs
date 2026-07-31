@@ -138,7 +138,11 @@ pub(crate) fn vibrant_accent(accent_hex: &str, bg_r: f64, bg_g: f64, bg_b: f64) 
     let s = s_a.max(ACCENT_MIN_S);
     // Keep the user's own lightness unless it's too close to the background to be seen.
     let l = if (l_a - l_bg).abs() < ACCENT_MIN_L_CONTRAST {
-        if l_bg > 0.5 { 0.44 } else { 0.62 }
+        if l_bg > 0.5 {
+            0.44
+        } else {
+            0.62
+        }
     } else {
         l_a
     };

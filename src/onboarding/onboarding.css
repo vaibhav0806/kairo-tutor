@@ -210,6 +210,11 @@ body.onboarding-document {
   font-weight: 500;
   color: color-mix(in srgb, var(--ob-accent) 60%, var(--ink) 40%);
 }
+/* The sign-in card centres its stack, so the shared inline notice needs to centre with it. */
+.ob-signin .inline-notice {
+  margin-bottom: 8px;
+  text-align: center;
+}
 
 /* Official "Sign in with Google" — Light theme (white). Google's 4-colour G may only sit on white
    or their dark #131314; the white button + neutral #747775 stroke reads cleanly on the light card. */

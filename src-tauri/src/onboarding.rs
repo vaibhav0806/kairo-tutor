@@ -6,7 +6,10 @@ use std::sync::atomic::Ordering;
 use tauri::{LogicalPosition, LogicalSize, Manager};
 
 fn onboarded_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_config_dir().ok().map(|d| d.join("onboarded"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|d| d.join("onboarded"))
 }
 
 pub(crate) fn is_onboarded(app: &tauri::AppHandle) -> bool {
@@ -34,7 +37,10 @@ pub(crate) fn set_onboarding_step(app: tauri::AppHandle, step: String) {
 }
 
 fn user_name_marker(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_config_dir().ok().map(|d| d.join("user_name"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|d| d.join("user_name"))
 }
 
 /// Cache the user's display name (from their account) so every WebView can read it at launch
@@ -120,7 +126,11 @@ pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
     let _ = app.clone().run_on_main_thread(move || {
         #[cfg(target_os = "macos")]
         {
-            crate::klog!(auth, info, "focus onboarding: app already Regular, activating");
+            crate::klog!(
+                auth,
+                info,
+                "focus onboarding: app already Regular, activating"
+            );
             // Activate the APP (not just focus the window) — that's what pulls Kairo in FRONT of the
             // browser after the Google hand-off. Plain window.set_focus doesn't front the app on
             // Sonoma+, but the kairo:// deep-link open grants us activation rights, so
@@ -150,7 +160,11 @@ pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
                 let _ = win_release.set_always_on_top(false);
             });
         });
-        crate::klog!(auth, info, "activated Kairo + focused onboarding window after auth callback (front-pulse)");
+        crate::klog!(
+            auth,
+            info,
+            "activated Kairo + focused onboarding window after auth callback (front-pulse)"
+        );
     });
 }
 
@@ -187,7 +201,11 @@ pub(crate) fn show_onboarding_window(app: &tauri::AppHandle) {
             // interactive. The frontend flips it interactive while a temp panel is mounted.
             #[cfg(target_os = "macos")]
             let _ = win.set_ignore_cursor_events(true);
-            crate::klog!(app, info, "onboarding window created (full-screen transparent)");
+            crate::klog!(
+                app,
+                info,
+                "onboarding window created (full-screen transparent)"
+            );
         }
         Err(error) => crate::klog!(app, error, "failed to create onboarding window: {error}"),
     }
@@ -203,7 +221,11 @@ fn fit_onboarding_to_screen(win: &tauri::WebviewWindow) {
             let _ = win.set_position(LogicalPosition::new(pos.x, pos.y));
             let _ = win.set_size(LogicalSize::new(size.width, size.height));
         }
-        _ => crate::klog!(app, warn, "onboarding: no monitor found for full-screen fit"),
+        _ => crate::klog!(
+            app,
+            warn,
+            "onboarding: no monitor found for full-screen fit"
+        ),
     }
 }
 
@@ -215,7 +237,12 @@ pub(crate) fn set_onboarding_click_through(app: tauri::AppHandle, click_through:
     if let Some(win) = app.get_webview_window("onboarding") {
         #[cfg(target_os = "macos")]
         let _ = win.set_ignore_cursor_events(click_through);
-        crate::klog!(app, info, click_through = click_through, "onboarding click-through set");
+        crate::klog!(
+            app,
+            info,
+            click_through = click_through,
+            "onboarding click-through set"
+        );
     }
 }
 
@@ -258,7 +285,11 @@ pub(crate) fn replay_onboarding(app: &tauri::AppHandle) {
     }
     crate::input::ONBOARDING_PTT.store(false, Ordering::SeqCst);
     show_onboarding_window(app);
-    crate::klog!(app, info, "replay intro: onboarding marker cleared + window reopened");
+    crate::klog!(
+        app,
+        info,
+        "replay intro: onboarding marker cleared + window reopened"
+    );
 }
 
 /// Frontend/tray entry point for "Replay intro".

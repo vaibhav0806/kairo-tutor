@@ -1,9 +1,22 @@
 {
   "name": "kairo-tutor",
   "version": "0.1.0",
+  "description": "A screen-native AI tutor for practical software labs on macOS.",
   "private": true,
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vaibhav0806/kairo-tutor.git"
+  },
+  "homepage": "https://meetkairo.xyz",
+  "bugs": {
+    "url": "https://github.com/vaibhav0806/kairo-tutor/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@11.6.2",
   "workspaces": [
     "packages/*",
     "server"
@@ -13,6 +26,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "app:build:unsigned": "tauri build --bundles app --no-sign",
     "app": "bash scripts/rebuild-run.sh",
     "app:local": "KAIRO_BACKEND_TARGET=local bash scripts/rebuild-run.sh",
     "app:hosted": "KAIRO_BACKEND_TARGET=hosted bash scripts/rebuild-run.sh",

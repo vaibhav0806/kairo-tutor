@@ -8,6 +8,37 @@ import { isInvited, markRedeemed } from '../access/service';
 import { env } from '../config/env';
 
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days
+const DESKTOP_AUTH_COOKIE = 'kairo_desktop_auth_state';
+
+export function isDesktopAuthState(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-f0-9]{32}$/.test(value);
+}
+
+export function authCallbackDeepLink(code: string, state: string | null): string {
+  const base = `kairo://auth-callback?code=${encodeURIComponent(code)}`;
+  // A legacy build has no pending state to compare against and ignores unknown query pairs, so the
+  // correlated parameter is omitted rather than faked. Drop this branch with the transition shim.
+  return state ? `${base}&state=${encodeURIComponent(state)}` : base;
+}
+
+function desktopAuthStateCookie(state: string): string {
+  const secure = env.PUBLIC_BASE_URL.startsWith('https://') ? '; Secure' : '';
+  return `${DESKTOP_AUTH_COOKIE}=${state}; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=600${secure}`;
+}
+
+function clearDesktopAuthStateCookie(): string {
+  const secure = env.PUBLIC_BASE_URL.startsWith('https://') ? '; Secure' : '';
+  return `${DESKTOP_AUTH_COOKIE}=; Path=/auth; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
+function desktopAuthStateFromRequest(req: FastifyRequest): string | null {
+  const state = req.headers.cookie
+    ?.split(';')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(`${DESKTOP_AUTH_COOKIE}=`))
+    ?.slice(DESKTOP_AUTH_COOKIE.length + 1);
+  return isDesktopAuthState(state) ? state : null;
+}
 
 function toHeaders(req: FastifyRequest): Headers {
   const h = new Headers();
@@ -26,13 +57,27 @@ function toHeaders(req: FastifyRequest): Headers {
 export async function ownedAuthRoutes(app: FastifyInstance) {
   // Opened in the system browser by the desktop app. We must forward Better Auth's Set-Cookie
   // (the OAuth `state`) to the browser, or the Google callback fails with `state_mismatch`.
-  app.get('/auth/start', async (_req, reply) => {
+  app.get<{ Querystring: { desktop_state?: unknown } }>('/auth/start', async (req, reply) => {
+    const desktopState = isDesktopAuthState(req.query.desktop_state) ? req.query.desktop_state : null;
+    // TRANSITION (remove once the correlated desktop build has rolled out): every already-installed
+    // build opens `/auth/start` with no query string, so refusing here locks them out of sign-in
+    // entirely — and they cannot update past it, because the updater needs a working session. The
+    // browser retry link on the callback failure page is bare too. Serve those un-correlated, count
+    // them, and flip KAIRO_REQUIRE_DESKTOP_AUTH_STATE once the legacy warn stops appearing.
+    if (!desktopState) {
+      if (env.KAIRO_REQUIRE_DESKTOP_AUTH_STATE) {
+        req.log.warn('auth start refused without valid desktop correlation state');
+        return reply.status(400).send({ error: 'bad_desktop_state', code: 'bad_request' });
+      }
+      req.log.warn('legacy desktop sign-in without correlation state');
+    }
     const res = await auth.api.signInSocial({
       body: { provider: 'google', callbackURL: `${env.PUBLIC_BASE_URL}/auth/callback` },
       asResponse: true,
     });
     const cookies = res.headers.getSetCookie?.() ?? [];
-    if (cookies.length) reply.header('set-cookie', cookies);
+    const outgoing = desktopState ? [...cookies, desktopAuthStateCookie(desktopState)] : cookies;
+    if (outgoing.length) reply.header('set-cookie', outgoing);
 
     const location = res.headers.get('location');
     if (location) return reply.redirect(location);
@@ -41,10 +86,31 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
     return reply.status(500).send({ error: 'no_auth_url', code: 'provider_error' });
   });
 
+  // Better Auth redirects here when OAuth fails before it ever reaches our callback. Its stock page
+  // is a black "ERROR / CODE: state_mismatch" screen with a Go Home button that means nothing for a
+  // desktop sign-in. The common cause is benign and self-inflicted: starting sign-in twice replaces
+  // the Better Auth state cookie, so finishing the FIRST tab mismatches. Say that, in our voice.
+  // Registered as an exact path so it wins over the `/api/auth/*` handler mounted in app.ts.
+  app.get<{ Querystring: { error?: string } }>('/api/auth/error', async (req, reply) => {
+    const code = typeof req.query.error === 'string' ? req.query.error : 'unknown';
+    req.log.warn({ code }, 'oauth failed before callback');
+    return reply
+      .header('cache-control', 'no-store')
+      .header(
+        'content-security-policy',
+        "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      )
+      .type('text/html; charset=utf-8')
+      .status(400)
+      .send(callbackPage(null, 'error'));
+  });
+
   // Better Auth completes OAuth and redirects the browser here (with the session cookie). We mint a
   // one-time code and serve a small success page that fires the kairo:// deep link (so the app gets
   // the code) AND leaves the browser on a clean "you can close this" screen — not a spinning tab.
   app.get('/auth/callback', async (req, reply) => {
+    const desktopState = desktopAuthStateFromRequest(req);
+    reply.header('set-cookie', clearDesktopAuthStateCookie());
     const session = await auth.api.getSession({ headers: toHeaders(req) });
     const page = () =>
       reply
@@ -54,6 +120,13 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
           "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
         )
         .type('text/html; charset=utf-8');
+    // TRANSITION (see `/auth/start`): a legacy build never got the correlation cookie, so requiring
+    // it here would fail the handoff for exactly the users the shim above is keeping alive.
+    if (!desktopState && env.KAIRO_REQUIRE_DESKTOP_AUTH_STATE) {
+      req.log.warn('auth callback opened without desktop correlation state');
+      return page().status(400).send(callbackPage(null));
+    }
+    if (!desktopState) req.log.warn('legacy desktop auth callback without correlation state');
     if (!session?.user) {
       req.log.warn('auth callback opened without a valid session');
       return page().status(401).send(callbackPage(null));
@@ -62,11 +135,8 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
     // Closed alpha: no invite, no session. The Better Auth user row stays — when they are invited
     // later, the next sign-in just works with no re-signup.
     if (!(await isInvited(session.user.email))) {
-      // Name the email and the environment. On a fresh Neon `dev` branch the invite table starts
-      // EMPTY, so a developer testing locally hits this and reads it as "sign-in is broken" — it is
-      // not, it is the closed-alpha gate doing its job against a list nobody has been added to yet.
       req.log.warn(
-        { email: session.user.email, target: env.KAIRO_SERVER_TARGET },
+        { target: env.KAIRO_SERVER_TARGET },
         'sign-in refused: email not on the alpha invite list — add it with `npm run invite -- add <email>`',
       );
       return page().status(403).send(callbackPage(null, 'waitlist', env.KAIRO_SERVER_TARGET === 'local'));
@@ -74,7 +144,7 @@ export async function ownedAuthRoutes(app: FastifyInstance) {
     await markRedeemed(session.user.email);
 
     const code = await mintCode(session.user.id);
-    const deepLink = `kairo://auth-callback?code=${encodeURIComponent(code)}`;
+    const deepLink = authCallbackDeepLink(code, desktopState);
     req.log.info('auth callback ready for desktop handoff');
     return page().send(callbackPage(deepLink));
   });

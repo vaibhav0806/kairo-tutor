@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Redeploy the Kairo backend on the Hetzner box. Run from the repo root on the host:
-#   ssh era@<box> 'cd ~/kairo && git pull --ff-only && bash server/deploy.sh'
+# Redeploy the Kairo backend. Run from the repo root on the configured host:
+#   ssh -i "$KAIRO_RELEASE_SSH_KEY" "$KAIRO_RELEASE_HOST" \
+#     'cd /path/to/kairo && git pull --ff-only && bash server/deploy.sh'
 #
 # Builds the image, applies forward-only migrations as a release step (never on boot),
 # (re)starts the container, and gates success on /readyz. Secrets come from server/.env

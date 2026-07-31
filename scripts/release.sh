@@ -21,6 +21,8 @@
 # and export these before releasing (from your password manager):
 #   export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/kairo-updater.key)"
 #   export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="…"
+# Publishing also requires KAIRO_RELEASE_HOST, KAIRO_RELEASE_SSH_KEY, and
+# KAIRO_RELEASE_DIR. Keep production connection details out of this public script.
 #
 # LOSING THE PRIVATE KEY IS UNRECOVERABLE: every already-installed app verifies against
 # the embedded public key, so a new keypair cannot update them. They would all have to
@@ -35,9 +37,9 @@ R2_BUCKET="${KAIRO_R2_BUCKET:-kairo-downloads}"
 # NOT published here — see below.
 DOWNLOAD_BASE="${KAIRO_DOWNLOAD_BASE:-https://dl.meetkairo.xyz}"
 # The DMG ships to the API box instead, where an email-gated route serves it.
-RELEASE_HOST="${KAIRO_RELEASE_HOST:-era@178.105.44.3}"
-RELEASE_SSH_KEY="${KAIRO_RELEASE_SSH_KEY:-$HOME/.ssh/id_ed25519_2}"
-RELEASE_DIR="${KAIRO_RELEASE_DIR:-/home/era/kairo-releases}"
+RELEASE_HOST="${KAIRO_RELEASE_HOST:-}"
+RELEASE_SSH_KEY="${KAIRO_RELEASE_SSH_KEY:-}"
+RELEASE_DIR="${KAIRO_RELEASE_DIR:-}"
 
 cd "$(dirname "$0")/.."
 
@@ -50,6 +52,33 @@ for arg in "$@"; do
     *) echo "✗ Unknown flag: ${arg} (expected --publish and/or --universal)" >&2; exit 1 ;;
   esac
 done
+
+if [[ "${PUBLISH}" == true ]]; then
+  if [[ -z "${RELEASE_HOST}" ]]; then
+    echo "✗ KAIRO_RELEASE_HOST is required with --publish (SSH destination, for example user@host)." >&2
+    exit 1
+  fi
+  if [[ ! "${RELEASE_HOST}" =~ ^[a-zA-Z0-9._-]+(@[a-zA-Z0-9._:-]+)?$ ]]; then
+    echo "✗ KAIRO_RELEASE_HOST is not a valid SSH destination." >&2
+    exit 1
+  fi
+  if [[ -z "${RELEASE_SSH_KEY}" ]]; then
+    echo "✗ KAIRO_RELEASE_SSH_KEY is required with --publish (path to the SSH private key)." >&2
+    exit 1
+  fi
+  if [[ ! -r "${RELEASE_SSH_KEY}" ]]; then
+    echo "✗ KAIRO_RELEASE_SSH_KEY is not a readable file: ${RELEASE_SSH_KEY}" >&2
+    exit 1
+  fi
+  if [[ -z "${RELEASE_DIR}" ]]; then
+    echo "✗ KAIRO_RELEASE_DIR is required with --publish (absolute directory on the release host)." >&2
+    exit 1
+  fi
+  if [[ ! "${RELEASE_DIR}" =~ ^/[a-zA-Z0-9._/-]+$ || "${RELEASE_DIR}" == *".."* ]]; then
+    echo "✗ KAIRO_RELEASE_DIR must be a safe absolute path without '..'." >&2
+    exit 1
+  fi
+fi
 
 # A universal binary carries both an arm64 and an x86_64 slice; macOS runs the native one on each
 # machine, so a single artifact serves Apple silicon and Intel with no Rosetta and no perf cost.

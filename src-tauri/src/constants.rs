@@ -61,6 +61,7 @@ pub(crate) const OPENROUTER_APP_TITLE: &str = "Kairo Tutor";
 // ---------------------------------------------------------------- Anthropic
 pub(crate) const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 pub(crate) const TUTOR_VISION_MODEL: &str = "claude-opus-4-8"; // single-call answer + box
+
 // Output cap for the Anthropic single-call answer+box vision turn. On Opus 4.8 we send NO
 // `thinking` field, which means thinking is OFF (unlike Opus 5 / Fable, where omitting it
 // runs adaptive) — so this budget is all answer, and 3000 is ample for a 5–7 step
@@ -182,10 +183,15 @@ pub(crate) const SHOW_IN_CAPTURE: bool = match option_env!("KAIRO_SHOW_IN_CAPTUR
 };
 
 // ---------------------------------------------------------------- Logging
-// Log the actual transcript + answer TEXT (not just lengths). Intentionally ON:
-// this is a local dev tool and the log file is our primary debugging surface. No env
-// var needed. Set to false to log lengths only.
-pub(crate) const LOG_TRANSCRIPTS: bool = true;
+// Log the actual transcript + answer TEXT instead of character counts. Privacy-safe
+// by default for shipped builds; a local developer may temporarily opt in by changing
+// this to `true` and rebuilding. Never enable it in a distributed build.
+pub(crate) const LOG_TRANSCRIPTS: bool = false;
+// Log the truncated provider error body alongside its length. Off by default because those bodies
+// can echo request content; a local developer may set this to `true` and rebuild while diagnosing
+// a provider failure. Never enable it in a distributed build.
+pub(crate) const LOG_PROVIDER_BODIES: bool = false;
+pub(crate) const PROVIDER_BODY_SNIPPET_CHARS: usize = 500;
 pub(crate) const LOG_TO_STDERR: bool = false;
 // Default verbosity filter (tracing EnvFilter syntax). KAIRO_LOG still overrides.
 pub(crate) const LOG_FILTER: &str = "info,kairo=debug";
@@ -196,8 +202,8 @@ pub(crate) const PTT_RELEASE_SETTLE_MS: u64 = 60; // absorb a modifier key-bounc
 pub(crate) const PTT_MAX_RECORD_MS: u64 = 30_000; // hard cap: auto-send a runaway hold (keeps WAV under STT limit)
 
 // ---------------------------------------------------------------- Follow-along
-// The reactive, hands-on guide path. See
-// docs/superpowers/specs/2026-07-06-follow-along-guide-mode-design.md
+// The reactive, hands-on guide uses a fast text-only acknowledgement while the
+// vision turn plans the next instruction.
 pub(crate) const ACK_MODEL: &str = "google/gemini-2.5-flash-lite"; // text-only ack
 pub(crate) const ACK_TIMEOUT_MS: u64 = 6_000;
 

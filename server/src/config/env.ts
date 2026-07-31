@@ -5,6 +5,19 @@ import { assertStaticEnvironment } from './targets';
 
 const Env = z.object({
   KAIRO_SERVER_TARGET: z.enum(['local', 'hosted']).default('local'),
+  KAIRO_DATABASE_TARGET: z.enum(['neon', 'local-postgres']).default('neon'),
+  // Enforce desktop OAuth correlation state. Off during the rollout of the correlated desktop
+  // build so already-installed apps can still sign in; flip to true once the legacy warn is gone.
+  KAIRO_REQUIRE_DESKTOP_AUTH_STATE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // Include the truncated upstream provider body in server logs. Off by default because those
+  // bodies can echo request content; turn it on temporarily when diagnosing a provider failure.
+  KAIRO_LOG_PROVIDER_BODIES: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   PORT: z.coerce.number().default(8787),
   PUBLIC_BASE_URL: z.string().url(),
   DATABASE_URL: z.string().min(1),

@@ -35,19 +35,14 @@ export async function routeVisualTargets(
         )
       : undefined) ?? targets.find((target) => target.kind === 'highlight_box');
   const pointTarget = targets.find((target) => POINT_KINDS.has(target.kind)) ?? targets[0];
-  const targetSummary = targets
-    .map(
-      (target) =>
-        `${target.kind}:${target.label}[${target.screenRegion.x.toFixed(1)},${target.screenRegion.y.toFixed(1)},${target.screenRegion.width.toFixed(1)},${target.screenRegion.height.toFixed(1)}]`
-    )
-    .join(' | ');
+  const targetKinds = targets.map((target) => target.kind).join(',');
 
   klog('overlay', 'debug', 'route visual targets', {
     target_count: targets.length,
     transition,
-    point_target: pointTarget ? `${pointTarget.kind}:${pointTarget.label}` : 'none',
+    point_target_kind: pointTarget?.kind ?? 'none',
     bounds: `${displayBounds.x.toFixed(1)},${displayBounds.y.toFixed(1)},${displayBounds.width.toFixed(1)},${displayBounds.height.toFixed(1)},${displayBounds.scaleFactor.toFixed(3)}`,
-    targets: targetSummary
+    target_kinds: targetKinds
   });
 
   // First reveal of a box: the pet flies to the top-left corner, then drags the

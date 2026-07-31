@@ -4,12 +4,72 @@
 use crate::platform::{get_active_app, is_sensitive_app};
 use crate::types::{CaptureImageGeometry, DisplayBounds, ScreenCaptureResult};
 #[cfg(target_os = "macos")]
+use std::ffi::OsString;
+#[cfg(target_os = "macos")]
 use std::fs;
 #[cfg(target_os = "macos")]
+use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
 use std::process::Command;
+#[cfg(target_os = "macos")]
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 #[cfg(target_os = "macos")]
+use block2::RcBlock;
+#[cfg(target_os = "macos")]
 use core_graphics::display::CGDisplay;
+#[cfg(target_os = "macos")]
+use objc2::{
+    rc::Retained,
+    runtime::{AnyObject, NSObjectProtocol, ProtocolObject},
+};
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSWorkspace, NSWorkspaceDidActivateApplicationNotification};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{NSNotification, NSNotificationCenter};
+
+#[cfg(target_os = "macos")]
+fn screencapture_arguments(output_path: &Path) -> Vec<OsString> {
+    ["-x", "-m", "-t", "png"]
+        .into_iter()
+        .map(OsString::from)
+        .chain(std::iter::once(output_path.as_os_str().to_owned()))
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+struct TemporaryCaptureFile {
+    path: PathBuf,
+}
+
+#[cfg(target_os = "macos")]
+impl TemporaryCaptureFile {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for TemporaryCaptureFile {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_file(&self.path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                crate::klog!(
+                    screen,
+                    warn,
+                    "failed to remove temporary screenshot: {error}"
+                );
+            }
+        }
+    }
+}
 
 #[cfg(target_os = "macos")]
 fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
@@ -23,12 +83,10 @@ fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
         std::process::id(),
         seq
     ));
+    let capture_file = TemporaryCaptureFile::new(output_path);
 
     let output = Command::new("screencapture")
-        .arg("-x")
-        .arg("-t")
-        .arg("png")
-        .arg(&output_path)
+        .args(screencapture_arguments(capture_file.path()))
         .output()
         .map_err(|error| format!("Failed to run macOS screencapture: {error}"))?;
 
@@ -41,9 +99,8 @@ fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
         });
     }
 
-    let bytes = fs::read(&output_path)
+    let bytes = fs::read(capture_file.path())
         .map_err(|error| format!("Failed to read captured screenshot: {error}"))?;
-    let _ = fs::remove_file(output_path);
     Ok(bytes)
 }
 
@@ -142,11 +199,110 @@ fn downscale_screenshot(
     }
 }
 
-#[tauri::command]
+#[derive(Debug, PartialEq, Eq)]
+enum CaptureContextValidation {
+    Stable,
+    Changed,
+    Sensitive,
+}
+
+fn validate_capture_context(
+    before_capture: &crate::types::ActiveApp,
+    after_capture: &crate::types::ActiveApp,
+) -> CaptureContextValidation {
+    if is_sensitive_app(after_capture) {
+        return CaptureContextValidation::Sensitive;
+    }
+
+    let same_app = match (
+        before_capture.bundle_id.as_deref(),
+        after_capture.bundle_id.as_deref(),
+    ) {
+        (Some(before), Some(after)) => before == after,
+        (None, None) => before_capture.active_app == after_capture.active_app,
+        _ => false,
+    };
+
+    if same_app {
+        CaptureContextValidation::Stable
+    } else {
+        CaptureContextValidation::Changed
+    }
+}
+
+fn validate_capture_context_with_activation(
+    before_capture: &crate::types::ActiveApp,
+    after_capture: &crate::types::ActiveApp,
+    activation_observed: bool,
+) -> CaptureContextValidation {
+    if is_sensitive_app(after_capture) {
+        CaptureContextValidation::Sensitive
+    } else if activation_observed {
+        CaptureContextValidation::Changed
+    } else {
+        validate_capture_context(before_capture, after_capture)
+    }
+}
+
+#[cfg(target_os = "macos")]
+struct FrontmostAppActivationObserver {
+    notification_center: Retained<NSNotificationCenter>,
+    observer: Retained<ProtocolObject<dyn NSObjectProtocol>>,
+    activation_observed: Arc<AtomicBool>,
+}
+
+#[cfg(target_os = "macos")]
+impl FrontmostAppActivationObserver {
+    fn new() -> Self {
+        let activation_observed = Arc::new(AtomicBool::new(false));
+        let observed_in_handler = Arc::clone(&activation_observed);
+        let handler = RcBlock::new(move |_notification: std::ptr::NonNull<NSNotification>| {
+            observed_in_handler.store(true, Ordering::Release);
+        });
+        let notification_center = NSWorkspace::sharedWorkspace().notificationCenter();
+        // Register before taking the approved-app snapshot. That ordering makes
+        // the observer conservative: an activation racing with the snapshot is
+        // recorded and causes the eventual frame to be discarded.
+        let observer = unsafe {
+            notification_center.addObserverForName_object_queue_usingBlock(
+                Some(NSWorkspaceDidActivateApplicationNotification),
+                None,
+                None,
+                &handler,
+            )
+        };
+
+        Self {
+            notification_center,
+            observer,
+            activation_observed,
+        }
+    }
+
+    fn observed_activation(&self) -> bool {
+        self.activation_observed.load(Ordering::Acquire)
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for FrontmostAppActivationObserver {
+    fn drop(&mut self) {
+        let protocol_observer: &ProtocolObject<dyn NSObjectProtocol> = &self.observer;
+        let observer: &AnyObject = protocol_observer.as_ref();
+        unsafe {
+            self.notification_center.removeObserver(observer);
+        }
+    }
+}
+
+// Run off the app event loop so NSWorkspace can deliver activation notifications
+// while the external screencapture process is blocking this command.
+#[tauri::command(async)]
 pub(crate) fn capture_screen() -> ScreenCaptureResult {
     let _t = crate::klog::timer("screen", "capture");
     #[cfg(target_os = "macos")]
     {
+        let activation_observer = FrontmostAppActivationObserver::new();
         let active_app = get_active_app();
         let bounds = main_display_bounds();
         let bounds_summary = display_bounds_summary(&bounds);
@@ -178,6 +334,65 @@ pub(crate) fn capture_screen() -> ScreenCaptureResult {
 
         match capture_screen_with_screencapture() {
             Ok(bytes) => {
+                let active_app_after_capture = get_active_app();
+                match validate_capture_context_with_activation(
+                    &active_app,
+                    &active_app_after_capture,
+                    activation_observer.observed_activation(),
+                ) {
+                    CaptureContextValidation::Sensitive => {
+                        crate::klog!(
+                            screen,
+                            info,
+                            captured = false,
+                            sensitive = true,
+                            active_app = %active_app_after_capture.active_app,
+                            bounds = %bounds_summary,
+                            "capture discarded: sensitive app became frontmost"
+                        );
+                        return ScreenCaptureResult {
+                            captured: false,
+                            reason: Some(
+                                "Screen tutoring is paused because this app may contain sensitive information."
+                                    .to_string(),
+                            ),
+                            blocked_sensitive_app: true,
+                            active_app: Some(active_app_after_capture),
+                            image_mime_type: None,
+                            image_base64: None,
+                            byte_length: None,
+                            display_bounds: Some(bounds),
+                            image_geometry: None,
+                        };
+                    }
+                    CaptureContextValidation::Changed => {
+                        crate::klog!(
+                            screen,
+                            info,
+                            captured = false,
+                            active_app_before = %active_app.active_app,
+                            active_app_after = %active_app_after_capture.active_app,
+                            bounds = %bounds_summary,
+                            "capture discarded after app changed"
+                        );
+                        return ScreenCaptureResult {
+                            captured: false,
+                            reason: Some(
+                                "The active app changed while the screen was being captured. Please try again."
+                                    .to_string(),
+                            ),
+                            blocked_sensitive_app: false,
+                            active_app: Some(active_app_after_capture),
+                            image_mime_type: None,
+                            image_base64: None,
+                            byte_length: None,
+                            display_bounds: Some(bounds),
+                            image_geometry: None,
+                        };
+                    }
+                    CaptureContextValidation::Stable => {}
+                }
+
                 use base64::Engine;
                 let raw_bytes = bytes.len();
                 let (image_bytes, mime, image_geometry) = downscale_screenshot(bytes);
@@ -264,5 +479,122 @@ pub(crate) fn capture_screen() -> ScreenCaptureResult {
             display_bounds: None,
             image_geometry: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::ActiveApp;
+
+    fn active_app(name: &str, bundle_id: Option<&str>) -> ActiveApp {
+        ActiveApp {
+            active_app: name.to_string(),
+            bundle_id: bundle_id.map(str::to_string),
+            window_title: None,
+            source: "native".to_string(),
+        }
+    }
+
+    #[test]
+    fn rejects_frame_when_frontmost_app_changes_during_capture() {
+        let before = active_app("Safari", Some("com.apple.Safari"));
+        let after = active_app("Notes", Some("com.apple.Notes"));
+
+        assert_eq!(
+            validate_capture_context(&before, &after),
+            CaptureContextValidation::Changed
+        );
+    }
+
+    #[test]
+    fn preserves_frame_when_frontmost_app_identity_is_stable() {
+        let before = active_app("Safari", Some("com.apple.Safari"));
+        let after = active_app("Safari", Some("com.apple.Safari"));
+
+        assert_eq!(
+            validate_capture_context(&before, &after),
+            CaptureContextValidation::Stable
+        );
+    }
+
+    #[test]
+    fn reports_sensitive_block_when_sensitive_app_becomes_frontmost() {
+        let before = active_app("Safari", Some("com.apple.Safari"));
+        let after = active_app("1Password", Some("com.1password.1password"));
+
+        assert_eq!(
+            validate_capture_context(&before, &after),
+            CaptureContextValidation::Sensitive
+        );
+    }
+
+    #[test]
+    fn rejects_frame_when_app_switches_away_and_back_during_capture() {
+        let before = active_app("Safari", Some("com.apple.Safari"));
+        let after = active_app("Safari", Some("com.apple.Safari"));
+
+        assert_eq!(
+            validate_capture_context_with_activation(&before, &after, true),
+            CaptureContextValidation::Changed
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn workspace_activation_observer_records_activation_notification() {
+        let observer = FrontmostAppActivationObserver::new();
+        let notification_center = NSWorkspace::sharedWorkspace().notificationCenter();
+
+        unsafe {
+            notification_center
+                .postNotificationName_object(NSWorkspaceDidActivateApplicationNotification, None);
+        }
+
+        assert!(observer.observed_activation());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn screencapture_arguments_limit_capture_to_main_display() {
+        let output_path = std::path::Path::new("/tmp/kairo-capture.png");
+
+        assert_eq!(
+            screencapture_arguments(output_path),
+            vec!["-x", "-m", "-t", "png", "/tmp/kairo-capture.png"]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn temporary_capture_file_removes_output_when_dropped() {
+        let output_path = std::env::temp_dir().join(format!(
+            "kairo-capture-cleanup-test-{}-{}.png",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&output_path, b"private screenshot bytes").unwrap();
+
+        {
+            let _capture_file = TemporaryCaptureFile::new(output_path.clone());
+        }
+
+        assert!(!output_path.exists());
+    }
+
+    #[test]
+    fn falls_back_to_app_name_when_bundle_ids_are_unavailable() {
+        let before = active_app("Terminal", None);
+        let same_app = active_app("Terminal", None);
+        let different_app = active_app("Notes", None);
+
+        assert_eq!(
+            validate_capture_context(&before, &same_app),
+            CaptureContextValidation::Stable
+        );
+        assert_eq!(
+            validate_capture_context(&before, &different_app),
+            CaptureContextValidation::Changed
+        );
     }
 }

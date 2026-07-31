@@ -183,8 +183,22 @@ pub(crate) fn spawn_context_input_tap(
                 if let Some(button) = follow_button {
                     if follow.armed.load(Ordering::SeqCst) {
                         let p = event.location();
-                        let _ = app.emit("input:click", ClickPoint { x: p.x, y: p.y, button });
-                        crate::klog!(follow, debug, x = p.x, y = p.y, button = button, "emit input:click");
+                        let _ = app.emit(
+                            "input:click",
+                            ClickPoint {
+                                x: p.x,
+                                y: p.y,
+                                button,
+                            },
+                        );
+                        crate::klog!(
+                            follow,
+                            debug,
+                            x = p.x,
+                            y = p.y,
+                            button = button,
+                            "emit input:click"
+                        );
                     }
                 }
                 // Listen-only: never modify the event stream, always keep the event.
@@ -295,10 +309,9 @@ fn ptt_transition(state: PttState, wake: Wake) -> (PttState, PttAction) {
             },
             PttAction::None,
         ),
-        (PttState::Recording { started, promoted }, Wake::Event(PttEvent::Down(_))) => (
-            PttState::Recording { started, promoted },
-            PttAction::None,
-        ),
+        (PttState::Recording { started, promoted }, Wake::Event(PttEvent::Down(_))) => {
+            (PttState::Recording { started, promoted }, PttAction::None)
+        }
 
         // key-bounce: re-down within the settle window resumes the same recording
         (
@@ -306,10 +319,7 @@ fn ptt_transition(state: PttState, wake: Wake) -> (PttState, PttAction) {
                 started, promoted, ..
             },
             Wake::Event(PttEvent::Down(_)),
-        ) => (
-            PttState::Recording { started, promoted },
-            PttAction::None,
-        ),
+        ) => (PttState::Recording { started, promoted }, PttAction::None),
         (
             PttState::Releasing {
                 started,
@@ -366,9 +376,11 @@ fn ptt_promote(app: &tauri::AppHandle) {
     let app_main = app.clone();
     let _ = app.run_on_main_thread(move || {
         let notch_state = app_main.state::<NotchState>();
-        if let Err(error) =
-            show_notch_with_payload(&app_main, notch_state.inner(), Some(listening_notch_payload()))
-        {
+        if let Err(error) = show_notch_with_payload(
+            &app_main,
+            notch_state.inner(),
+            Some(listening_notch_payload()),
+        ) {
             crate::klog!(ptt, error, "failed to show notch: {error}");
         }
     });
@@ -447,10 +459,7 @@ fn spawn_ptt_controller(app: tauri::AppHandle, rx: Receiver<PttEvent>) {
             };
             let is_max_record = matches!(
                 (&state, &wake),
-                (
-                    PttState::Recording { promoted: true, .. },
-                    Wake::Timeout
-                )
+                (PttState::Recording { promoted: true, .. }, Wake::Timeout)
             );
             let (next, action) = ptt_transition(state, wake);
             state = next;
@@ -463,7 +472,12 @@ fn spawn_ptt_controller(app: tauri::AppHandle, rx: Receiver<PttEvent>) {
                 PttAction::Promote => ptt_promote(&app),
                 PttAction::Commit { held } => {
                     if is_max_record {
-                        crate::klog!(ptt, warn, ms = held.as_millis(), "max record reached → auto-send");
+                        crate::klog!(
+                            ptt,
+                            warn,
+                            ms = held.as_millis(),
+                            "max record reached → auto-send"
+                        );
                     }
                     ptt_commit(&app, held);
                 }
@@ -517,7 +531,11 @@ fn spawn_ptt_poll(tx: Sender<PttEvent>) {
     // kCGEventSourceStateHIDSystemState = 1 → the physical keyboard state.
     const HID_STATE: u32 = 1;
     std::thread::spawn(move || {
-        crate::klog!(ptt, info, "ptt modifier poll active (⌥⌃ live, no tap / no Input Monitoring)");
+        crate::klog!(
+            ptt,
+            info,
+            "ptt modifier poll active (⌥⌃ live, no tap / no Input Monitoring)"
+        );
         let mut was_down = false;
         loop {
             let flags = unsafe { CGEventSourceFlagsState(HID_STATE) };
@@ -539,22 +557,39 @@ mod ptt_tests {
 
     #[test]
     fn quick_press_is_a_tap() {
-        assert_eq!(classify_press(Duration::from_millis(120), 250), PttOutcome::Tap);
+        assert_eq!(
+            classify_press(Duration::from_millis(120), 250),
+            PttOutcome::Tap
+        );
     }
     #[test]
     fn at_or_over_threshold_is_a_hold() {
-        assert_eq!(classify_press(Duration::from_millis(250), 250), PttOutcome::Hold);
+        assert_eq!(
+            classify_press(Duration::from_millis(250), 250),
+            PttOutcome::Hold
+        );
     }
     #[test]
     fn idle_down_starts_capture_once() {
         let (s, a) = ptt_transition(PttState::Idle, Wake::Event(PttEvent::Down(Instant::now())));
         assert_eq!(a, PttAction::StartCapture);
-        assert!(matches!(s, PttState::Recording { promoted: false, .. }));
+        assert!(matches!(
+            s,
+            PttState::Recording {
+                promoted: false,
+                ..
+            }
+        ));
     }
     #[test]
     fn recording_threshold_promotes() {
         let (s, a) = ptt_transition(
-            PttState::Recording { started: Instant::now(), promoted: false }, Wake::Timeout);
+            PttState::Recording {
+                started: Instant::now(),
+                promoted: false,
+            },
+            Wake::Timeout,
+        );
         assert_eq!(a, PttAction::Promote);
         assert!(matches!(s, PttState::Recording { promoted: true, .. }));
     }
@@ -562,8 +597,13 @@ mod ptt_tests {
     fn release_bounce_resumes_same_recording_no_new_start() {
         let t = Instant::now();
         let (s, a) = ptt_transition(
-            PttState::Releasing { started: t, released: t, promoted: true },
-            Wake::Event(PttEvent::Down(t)));
+            PttState::Releasing {
+                started: t,
+                released: t,
+                promoted: true,
+            },
+            Wake::Event(PttEvent::Down(t)),
+        );
         assert_eq!(a, PttAction::None); // NOT StartCapture — the stream keeps running
         assert!(matches!(s, PttState::Recording { promoted: true, .. }));
     }
@@ -571,14 +611,25 @@ mod ptt_tests {
     fn release_settle_commits_and_returns_idle() {
         let t = Instant::now();
         let (s, a) = ptt_transition(
-            PttState::Releasing { started: t, released: t, promoted: true }, Wake::Timeout);
+            PttState::Releasing {
+                started: t,
+                released: t,
+                promoted: true,
+            },
+            Wake::Timeout,
+        );
         assert!(matches!(a, PttAction::Commit { .. }));
         assert!(matches!(s, PttState::Idle));
     }
     #[test]
     fn max_record_commits_and_returns_idle() {
         let (s, a) = ptt_transition(
-            PttState::Recording { started: Instant::now(), promoted: true }, Wake::Timeout);
+            PttState::Recording {
+                started: Instant::now(),
+                promoted: true,
+            },
+            Wake::Timeout,
+        );
         assert!(matches!(a, PttAction::Commit { .. }));
         assert!(matches!(s, PttState::Idle));
     }

@@ -103,7 +103,11 @@ actual control in the screenshot.\n{}",
             }
         }
         None if input.skill_slug.trim().is_empty() => {
-            crate::klog!(skills, debug, "no skill slug for this turn — tutor prompt has no L2 body");
+            crate::klog!(
+                skills,
+                debug,
+                "no skill slug for this turn — tutor prompt has no L2 body"
+            );
         }
         None => {
             crate::klog!(

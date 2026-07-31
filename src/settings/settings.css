@@ -617,3 +617,24 @@
     transition: none;
   }
 }
+
+/* The signed-out card is four stacked items with nothing between them, so the copy collided with
+   the button and an inline notice had nowhere to sit. Give the stack real rhythm: the lockup leads,
+   the heading and its one line of copy stay tight as a pair, and the CTA gets room of its own. */
+.settings-card-signed-out {
+  padding: 26px 22px 24px;
+  gap: 10px;
+  align-items: stretch;
+}
+.settings-card-signed-out .settings-brand {
+  margin-bottom: 6px;
+}
+.settings-card-signed-out .settings-h2 {
+  margin: 0;
+}
+.settings-card-signed-out .settings-muted {
+  margin-top: -4px; /* heading + subcopy read as one block */
+}
+.settings-card-signed-out .k-btn {
+  margin-top: 6px;
+}
