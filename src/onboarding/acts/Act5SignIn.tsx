@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { klog } from '../../core/logger';
 import { useCoach } from '../useCoach';
 import { ACT5_SIGNIN } from '../copy';
-import { getAuthStatus, onAuthChanged, startGoogleAuth } from '../authClient';
+import { getAuthStatus, onAuthChanged, onAuthRejected, startGoogleAuth } from '../authClient';
 import { syncUserName } from '../userName';
 import { TempPanel } from './TempPanel';
 import { KairoLockup } from '../../components/KairoMark';
@@ -16,19 +16,25 @@ import { KairoLockup } from '../../components/KairoMark';
 export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void }) {
   const { say, clear, bridge } = useCoach('');
   const [signedIn, setSignedIn] = useState(false);
+  const [rejected, setRejected] = useState<string | null>(null);
 
   useEffect(() => {
     void say(ACT5_SIGNIN); // caption == the spoken line
     let un = () => {};
+    let unRejected = () => {};
     void getAuthStatus().then((s) => s.signed_in && setSignedIn(true));
     void onAuthChanged((s) => s && setSignedIn(true)).then((u) => {
       un = u;
+    });
+    void onAuthRejected(setRejected).then((u) => {
+      unRejected = u;
     });
     // Belt-and-suspenders: re-check when the window regains focus (tab back from the browser).
     const recheck = () => void getAuthStatus().then((s) => s.signed_in && setSignedIn(true));
     window.addEventListener('focus', recheck);
     return () => {
       un();
+      unRejected();
       window.removeEventListener('focus', recheck);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -57,10 +63,14 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
             <span className="ob-signin-sub">Sign in to save your setup</span>
             {/* Official "Sign in with Google" — Light theme (white) per Google's branding guidelines;
                 the crisp white button + neutral stroke sits cleanly on the light card. */}
+            {rejected ? <span className="ob-signin-error">{rejected}</span> : null}
             <button
               type="button"
               className="google-signin-btn"
-              onClick={() => void startGoogleAuth()}
+              onClick={() => {
+                setRejected(null);
+                void startGoogleAuth();
+              }}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />

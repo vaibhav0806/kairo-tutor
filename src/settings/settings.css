@@ -83,6 +83,15 @@
   color: var(--ink-muted);
 }
 
+/* Shown when a sign-in callback arrived but did not correlate with this app's request. */
+.settings-auth-error {
+  margin: 0;
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #b3261e;
+}
+
 .s-section {
   padding: 13px 0;
   border-top: 1px solid var(--hairline);

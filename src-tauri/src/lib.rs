@@ -1061,14 +1061,16 @@ pub fn run() {
                             let _ = handle.emit("billing:changed", status);
                             continue;
                         }
-                        let Some(code) = crate::auth::accept_auth_callback(&handle, &url) else {
-                            continue;
-                        };
+                        // Front the window BEFORE deciding, so a rejected callback is seen rather
+                        // than swallowed — the browser is already claiming success by this point.
                         crate::onboarding::focus_onboarding_window(&handle);
                         // Signed in from Settings (no onboarding window) → front the main window.
                         if handle.get_webview_window("onboarding").is_none() {
                             crate::onboarding::focus_app_window(&handle, "main");
                         }
+                        let Some(code) = crate::auth::accept_auth_callback(&handle, &url) else {
+                            continue;
+                        };
                         let handle = handle.clone();
                         tauri::async_runtime::spawn(async move {
                             crate::auth::exchange_code(&handle, &code).await;

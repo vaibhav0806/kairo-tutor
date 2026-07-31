@@ -143,29 +143,51 @@ fn consume_pending_auth_state_at(path: &std::path::Path, returned: &str, now_sec
     if expected.trim() != returned {
         return false;
     }
-    std::fs::remove_file(path).is_ok()
+    // The state already matched, so the callback is genuine. A failed unlink (locked file, a
+    // second instance racing us) must not turn that into a rejected sign-in; single use is still
+    // enforced, because any later attempt re-reads this file and compares again.
+    if let Err(error) = std::fs::remove_file(path) {
+        klog!(auth, warn, "failed to clear pending auth state: {error}");
+    }
+    true
+}
+
+/// A rejected callback must never fail silently. The browser is already showing "you can close
+/// this", so with no signal here the app just sits there and the user reads it as a hang. Each
+/// arm carries the line the UI shows.
+fn reject_auth_callback(
+    app: &AppHandle,
+    reason: &'static str,
+    message: &'static str,
+) -> Option<String> {
+    klog!(auth, warn, reason = reason, "rejected auth callback");
+    let _ = app.emit("auth:rejected", message);
+    None
 }
 
 pub(crate) fn accept_auth_callback(app: &AppHandle, url: &tauri::Url) -> Option<String> {
     let Some(callback) = parse_auth_callback(url) else {
-        klog!(auth, warn, "rejected malformed auth callback");
-        return None;
+        return reject_auth_callback(
+            app,
+            "malformed",
+            "That sign-in link was incomplete. Please try signing in again.",
+        );
     };
     let Some(path) = pending_auth_path(app) else {
-        klog!(
-            auth,
-            warn,
-            "rejected auth callback without config directory"
+        return reject_auth_callback(
+            app,
+            "no_config_dir",
+            "Kairo could not read its settings folder. Please try signing in again.",
         );
-        return None;
     };
     if !consume_pending_auth_state(&path, &callback.state) {
-        klog!(
-            auth,
-            warn,
-            "rejected unsolicited or mismatched auth callback"
+        // Reachable without an attacker: starting sign-in twice replaces the pending state, so
+        // finishing the FIRST browser tab lands here, as does any tab left open past the TTL.
+        return reject_auth_callback(
+            app,
+            "uncorrelated",
+            "That sign-in didn’t match this app. Please start sign-in again from Kairo.",
         );
-        return None;
     }
     klog!(auth, info, "accepted correlated auth callback");
     Some(callback.code)

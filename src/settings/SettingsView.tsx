@@ -6,7 +6,7 @@ import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { hasManageableSubscription, type MeResponse } from '@kairo/shared';
 import { createNativeBridge, type NativePermissionStatus, type NativePermissionKey } from '../native/nativeBridge';
-import { getAuthStatus, onAuthChanged, signOut, startGoogleAuth } from '../onboarding/authClient';
+import { getAuthStatus, onAuthChanged, onAuthRejected, signOut, startGoogleAuth } from '../onboarding/authClient';
 import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import { notify, notifySaving } from '../core/notify';
@@ -35,6 +35,8 @@ export function SettingsView() {
   const bridge = useMemo(() => createNativeBridge(), []);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [signedIn, setSignedIn] = useState(false);
+  // A `kairo://` callback that arrived but did not correlate with the sign-in this app started.
+  const [authRejected, setAuthRejected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
@@ -127,6 +129,7 @@ export function SettingsView() {
       void refresh();
       void loadExtras();
     }).then((u) => unsubs.push(u));
+    void onAuthRejected(setAuthRejected).then((u) => unsubs.push(u));
     void listen<string>('billing:changed', (event) => {
       const returnStatus = normalizeBillingReturnStatus(event.payload);
       setBillingReturnStatus(returnStatus);
@@ -246,7 +249,15 @@ export function SettingsView() {
           <KairoLockup className="settings-brand" />
           <h2 className="settings-h2">You're signed out</h2>
           <p className="settings-muted">Sign in to use Kairo.</p>
-          <KButton onClick={() => void startGoogleAuth()}>Sign in with Google</KButton>
+          {authRejected ? <p className="settings-auth-error">{authRejected}</p> : null}
+          <KButton
+            onClick={() => {
+              setAuthRejected(null);
+              void startGoogleAuth();
+            }}
+          >
+            Sign in with Google
+          </KButton>
         </div>
       </div>
     );
