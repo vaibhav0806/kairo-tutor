@@ -194,10 +194,21 @@ pub(crate) const SHOW_IN_CAPTURE: bool = match option_env!("KAIRO_SHOW_IN_CAPTUR
 };
 
 // ---------------------------------------------------------------- Logging
-// Log the actual transcript + answer TEXT instead of character counts. Privacy-safe
-// by default for shipped builds; a local developer may temporarily opt in by changing
-// this to `true` and rebuilding. Never enable it in a distributed build.
-pub(crate) const LOG_TRANSCRIPTS: bool = false;
+// Log the actual transcript + answer TEXT instead of character counts.
+//
+// Keyed on the SAME compile-time flag that selects the backend, so it cannot be shipped on. A
+// build compiled for the local backend is by definition a developer's own machine talking to
+// their own server, with their own data; `npm run app:local` and `npm run local` set it, and
+// `scripts/release.sh` does not, so a distributed DMG is always compiled without it.
+//
+// This is deliberately stronger than the plain `false` it replaces. A constant is only as safe
+// as the person who edits it: flipping it to true and forgetting is a one-line mistake that
+// ships transcripts to every alpha user. Here the text path does not exist in a hosted binary at
+// all, and no runtime environment variable can bring it back.
+pub(crate) const LOG_TRANSCRIPTS: bool = match option_env!("KAIRO_BACKEND_TARGET") {
+    Some(v) => str_eq(v, "local"),
+    None => false, // unset → hosted → never
+};
 // Log the truncated provider error body alongside its length. Off by default because those bodies
 // can echo request content; a local developer may set this to `true` and rebuild while diagnosing
 // a provider failure. Never enable it in a distributed build.
