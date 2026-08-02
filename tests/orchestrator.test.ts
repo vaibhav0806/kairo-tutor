@@ -31,10 +31,18 @@ describe('tutor orchestrator', () => {
       byteLength: 6
     });
     expect(input.skillSlug).toBe('first-figma-motion-tutorial');
-    expect(input.constraints).toContain('Return one short tutor step.');
+    expect(input.constraints).toContain('Keep each step’s spoken line short.');
     expect(input.constraints).toContain(
       'Do not invent app state that is not visible in the provided context.'
     );
+    // Regression guard. These constraints are appended LAST in the system prompt, so they get
+    // the final word over the step-count rules. A constraint that asks for one step gets one
+    // step: measured on the production prompt, an "orient me on this screen" question returned
+    // 1 step with the old wording and 7 without it, silently capping every walkthrough to a
+    // single box. Constrain the length of a step, never how many there are.
+    for (const constraint of input.constraints) {
+      expect(constraint).not.toMatch(/\bone\b.*\bstep\b/i);
+    }
   });
 
   test('carries the skill slug through verbatim (routing lives in Rust, not here)', () => {

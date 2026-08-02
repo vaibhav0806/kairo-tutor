@@ -293,7 +293,7 @@ describe('createNativeBridge', () => {
       annotations: [],
       screen: { captured: false, reason: 'No capture' },
       skillSlug: 'blender',
-      constraints: ['Return one short tutor step.']
+      constraints: ['Keep each step’s spoken line short.']
     };
     const invoke = vi.fn(async () => '{"voiceText":"Click the cube."}') as unknown as NativeInvoke;
     const bridge = createNativeBridge(invoke);
@@ -384,7 +384,7 @@ describe('createNativeBridge', () => {
       annotations: [],
       screen: { captured: false, reason: 'No capture' },
       skillSlug: 'blender',
-      constraints: ['Return one short tutor step.']
+      constraints: ['Keep each step’s spoken line short.']
     };
     const invoke = vi.fn(async () => {
       throw new Error('OPENROUTER_API_KEY is required for native OpenRouter tutor turns.');

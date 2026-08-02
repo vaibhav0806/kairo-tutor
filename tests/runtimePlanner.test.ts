@@ -13,7 +13,7 @@ const input: TutorTurnInput = {
     byteLength: 6
   },
   skillSlug: 'blender',
-  constraints: ['Return one short tutor step.']
+  constraints: ['Keep each step’s spoken line short.']
 };
 
 describe('createRuntimeTutorPlanner', () => {

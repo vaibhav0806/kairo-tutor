@@ -1434,7 +1434,7 @@ mod tests {
                 image_geometry: None,
             },
             skill_slug: "first-figma-motion-tutorial".to_string(),
-            constraints: vec!["Return one short tutor step.".to_string()],
+            constraints: vec!["Keep each step's spoken line short.".to_string()],
             recent_context: None,
             spoken_intro: None,
             user_name: None,

@@ -66,8 +66,14 @@ export function buildTutorTurnInput({
           reason: 'No screen capture is available for this turn.'
         },
     skillSlug: skillSlug ?? '',
+    // These ride at the END of the system prompt, so they get the last word — which is exactly
+    // why the first one must not contradict the step-count rules above it. It used to read
+    // "Return one short tutor step." and it did precisely that: measured on the production
+    // prompt, an "orient me on this screen" question produced 1 step with it and 7 without,
+    // while a single-target question stayed at 1 either way. It was capping every walkthrough
+    // to a single box. Brevity is about the length of a spoken line, not the number of steps.
     constraints: [
-      'Return one short tutor step.',
+      'Keep each step’s spoken line short.',
       'Do not invent app state that is not visible in the provided context.'
     ],
     ...(recentContext && recentContext.trim() ? { recentContext } : {}),

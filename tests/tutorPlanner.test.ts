@@ -24,7 +24,7 @@ const tutorInput: TutorTurnInput = {
     displayBounds: { x: 0, y: 0, width: 900, height: 600, scaleFactor: 2 }
   },
   skillSlug: 'blender',
-  constraints: ['Return one short tutor step.']
+  constraints: ['Keep each step’s spoken line short.']
 };
 
 describe('parseTutorPlannerResponse', () => {
