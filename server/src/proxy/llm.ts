@@ -23,6 +23,17 @@ export function streamingBody(body: unknown): unknown {
   return stripped && typeof stripped === 'object' ? { ...(stripped as object), stream: true } : stripped;
 }
 
+/**
+ * Whether a streamed turn is worth charging for.
+ *
+ * `completed` alone is not enough: a stream can finish having forwarded nothing, and the desktop
+ * then retries buffered. Without this the user pays twice for one answer — once for the empty
+ * stream and once for the retry that actually answered.
+ */
+function delivered(outcome: { completed: boolean; bytes: number } | null): boolean {
+  return Boolean(outcome?.completed && outcome.bytes > 0);
+}
+
 function providerFor(body: unknown): { provider: 'anthropic' | 'openai'; path: string } {
   const provider = (body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
   return { provider, path: provider === 'anthropic' ? '/v1/messages' : '/v1/responses' };
@@ -87,9 +98,9 @@ export async function llmRoutes(app: FastifyInstance) {
     if (await isOnboarding(req.userId!)) {
       if (!(await reserveOnboarding(req.userId!))) throw new QuotaExceededError('tutorial limit reached');
       const outcome = await streamPassthrough(provider, path, body, reply).catch(() => null);
-      if (!outcome?.completed) {
+      if (!delivered(outcome)) {
         await refundOnboarding(req.userId!);
-        req.log.warn({ started: outcome?.started ?? false }, 'streamed tutorial turn did not complete');
+        req.log.warn({ started: outcome?.started ?? false, bytes: outcome?.bytes ?? 0 }, 'streamed tutorial turn delivered nothing');
       }
       return reply;
     }
@@ -97,9 +108,9 @@ export async function llmRoutes(app: FastifyInstance) {
     const allowed = await reserve(req.userId!, askId);
     if (!allowed) throw new QuotaExceededError('free limit reached');
     const outcome = await streamPassthrough(provider, path, body, reply).catch(() => null);
-    if (!outcome?.completed) {
+    if (!delivered(outcome)) {
       await refund(req.userId!, askId);
-      req.log.warn({ started: outcome?.started ?? false }, 'streamed tutor turn did not complete');
+      req.log.warn({ started: outcome?.started ?? false, bytes: outcome?.bytes ?? 0 }, 'streamed tutor turn delivered nothing');
     }
     return reply;
   });

@@ -15,6 +15,8 @@ export type StreamOutcome = {
   started: boolean;
   /** True only when the upstream body was piped through to its end. */
   completed: boolean;
+  /** Bytes forwarded. A completed-but-empty stream is a provider failure, not an answer. */
+  bytes: number;
 };
 
 /**
@@ -31,7 +33,7 @@ export async function streamPassthrough(
   const p = providers[providerId];
   if (!p?.key) {
     reply.status(502).send({ error: 'provider_error', code: 'provider_error' });
-    return { started: false, completed: false };
+    return { started: false, completed: false, bytes: 0 };
   }
 
   const ac = new AbortController();
@@ -49,7 +51,7 @@ export async function streamPassthrough(
     // same safe envelope every other provider failure returns.
     await upstream.body.text().catch(() => '');
     reply.status(502).send({ error: 'provider_error', code: 'provider_error' });
-    return { started: false, completed: false };
+    return { started: false, completed: false, bytes: 0 };
   }
 
   reply.hijack();
@@ -58,12 +60,17 @@ export async function streamPassthrough(
     if (!reply.raw.writableEnded) ac.abort();
   });
 
+  let bytes = 0;
+  upstream.body.on('data', (chunk: Buffer) => {
+    bytes += chunk.length;
+  });
+
   try {
     await pipeline(upstream.body, reply.raw);
-    return { started: true, completed: true };
+    return { started: true, completed: true, bytes };
   } catch {
     ac.abort();
     if (!reply.raw.writableEnded) reply.raw.end();
-    return { started: true, completed: false };
+    return { started: true, completed: false, bytes };
   }
 }

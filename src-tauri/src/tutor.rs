@@ -487,6 +487,8 @@ async fn run_tutor_turn_inner(
                 match streamed {
                     Some(VisionOutcome::Answer(raw)) => VisionOutcome::Answer(raw),
                     Some(VisionOutcome::QuotaExceeded) => VisionOutcome::QuotaExceeded,
+                    // Superseded: stop here rather than paying for a buffered retry.
+                    Some(VisionOutcome::Abandoned) => VisionOutcome::Abandoned,
                     // Failed OR not attempted → the buffered call decides the turn.
                     _ => {
                         if on_chunk.is_some() {
@@ -555,6 +557,9 @@ async fn run_tutor_turn_inner(
                         "free request limit reached; returning upgrade prompt"
                     );
                     return Ok(quota_exceeded_turn());
+                }
+                VisionOutcome::Abandoned => {
+                    return Err("Tutor turn superseded by a newer ask.".to_string());
                 }
                 VisionOutcome::Failed => {
                     crate::klog!(

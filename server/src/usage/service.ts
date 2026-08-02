@@ -24,7 +24,7 @@ export async function reserve(userId: string, askId: string): Promise<boolean> {
     // so a subscriber quietly burned through their 10 and had none left the moment they cancelled
     // — someone who had used 5 before subscribing came back to 0, not 5. Pro is unmetered, so
     // record the ask for idempotency and leave the counter alone.
-    if (await isEntitledToPro(userId)) return true;
+    if (await isEntitledToPro(userId, await readSubscription(userId))) return true;
 
     const upd = await tx.execute(
       sql`UPDATE usage_counter SET used_free = used_free + 1, updated_at = now()
@@ -58,19 +58,42 @@ export async function isOnboarding(userId: string): Promise<boolean> {
  * subscription row and the clock on every check, so it expires on time whether or not a message
  * ever reaches us.
  */
-export async function isEntitledToPro(userId: string): Promise<boolean> {
+export type SubscriptionSnapshot = {
+  status: string;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+};
+
+/** One read of the subscription row, so a request can evaluate entitlement without re-querying. */
+export async function readSubscription(userId: string): Promise<SubscriptionSnapshot | null> {
   const r = await db.execute(sql`
     SELECT status, current_period_end, cancel_at_period_end
       FROM subscription WHERE user_id = ${userId}`);
   const row = r.rows[0] as
     | { status: string; current_period_end: string | null; cancel_at_period_end: boolean | null }
     | undefined;
-  if (!row) return false;
-  return isProNow({
+  if (!row) return null;
+  return {
     status: row.status,
     currentPeriodEnd: row.current_period_end ? new Date(row.current_period_end) : null,
     cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
-  });
+  };
+}
+
+/** True when the subscription entitles Pro right now. Pass a snapshot to avoid a second read. */
+export async function isEntitledToPro(
+  userId: string,
+  snapshot?: SubscriptionSnapshot | null,
+): Promise<boolean> {
+  const sub = snapshot === undefined ? await readSubscription(userId) : snapshot;
+  return sub ? isProNow(sub) : false;
+}
+
+/** True when we still hold a Pro-shaped subscription whose paid period has already ended. */
+export function hasLapsedProRecord(sub: SubscriptionSnapshot | null): boolean {
+  if (!sub || !sub.currentPeriodEnd) return false;
+  if (!['active', 'on_hold'].includes(sub.status)) return false;
+  return sub.currentPeriodEnd.getTime() <= Date.now();
 }
 
 /**
@@ -79,34 +102,22 @@ export async function isEntitledToPro(userId: string): Promise<boolean> {
  * row reads as NOT paywalled so a setup hiccup never blocks a legit user; the atomic reserves on
  * the vision route are the real ceilings regardless.
  */
-export async function isPaywalled(userId: string): Promise<boolean> {
+export async function isPaywalled(
+  userId: string,
+  snapshot?: SubscriptionSnapshot | null,
+): Promise<boolean> {
   const r = await db.execute(sql`
     SELECT uc.used_free, uc.free_limit, uc.onboarding_used,
-           (p.onboarding_completed_at IS NULL) AS onboarding,
-           s.status, s.current_period_end, s.cancel_at_period_end
+           (p.onboarding_completed_at IS NULL) AS onboarding
     FROM usage_counter uc
     LEFT JOIN profile p ON p.user_id = uc.user_id
-    LEFT JOIN subscription s ON s.user_id = uc.user_id
     WHERE uc.user_id = ${userId}`);
   const row = r.rows[0] as
-    | {
-        used_free: number;
-        free_limit: number;
-        onboarding_used: number;
-        onboarding: boolean;
-        status: string | null;
-        current_period_end: string | null;
-        cancel_at_period_end: boolean | null;
-      }
+    | { used_free: number; free_limit: number; onboarding_used: number; onboarding: boolean }
     | undefined;
   if (!row) return false;
 
-  const pro = isProNow({
-    status: row.status ?? 'none',
-    currentPeriodEnd: row.current_period_end ? new Date(row.current_period_end) : null,
-    cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
-  });
-  if (pro) return false;
+  if (await isEntitledToPro(userId, snapshot)) return false;
 
   return row.onboarding
     ? Number(row.onboarding_used) >= ONBOARDING_VISION_CAP

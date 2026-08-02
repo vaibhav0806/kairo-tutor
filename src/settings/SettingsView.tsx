@@ -179,7 +179,11 @@ export function SettingsView() {
       });
       setName(saved);
       setSavedName(saved);
-      await refresh();
+      // Refresh is a courtesy, NOT part of the save. The name is already persisted, so a failure
+      // here must not roll the field back to a value the server no longer holds.
+      void refresh().catch((error) => {
+        klog('settings', 'warn', 'refresh after rename failed', { error: String(error) });
+      });
     } catch (error) {
       klog('settings', 'warn', 'display name save failed', { error: String(error) });
       // Put the field back to what is actually stored, so the UI never shows an unsaved rename

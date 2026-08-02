@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  beginPrewarmTurn,
   discardPrewarmedClip,
   hasPrewarmedClip,
   setPrewarmedClip,
@@ -27,13 +28,13 @@ afterEach(() => discardPrewarmedClip());
 describe('prewarmed speech clip', () => {
   it('hands back the clip for the exact text it was warmed for', () => {
     const clip = fakeClip();
-    setPrewarmedClip('Open the File menu.', clip);
+    setPrewarmedClip('Open the File menu.', clip, beginPrewarmTurn());
 
     expect(takePrewarmedClip('Open the File menu.')).toBe(clip);
   });
 
   it('never hands the same clip out twice', () => {
-    setPrewarmedClip('Open the File menu.', fakeClip());
+    setPrewarmedClip('Open the File menu.', fakeClip(), beginPrewarmTurn());
 
     expect(takePrewarmedClip('Open the File menu.')).not.toBeNull();
     expect(takePrewarmedClip('Open the File menu.')).toBeNull();
@@ -41,17 +42,18 @@ describe('prewarmed speech clip', () => {
 
   it('refuses a clip warmed for different text', () => {
     const clip = fakeClip();
-    setPrewarmedClip('Open the File menu.', clip);
+    setPrewarmedClip('Open the File menu.', clip, beginPrewarmTurn());
 
     // A stale clip spoken for the wrong step would narrate the wrong thing entirely.
     expect(takePrewarmedClip('Choose Export.')).toBeNull();
   });
 
   it('stops the previous clip when a newer turn warms another', () => {
+    const turn = beginPrewarmTurn();
     const first = fakeClip();
-    setPrewarmedClip('First answer.', first);
+    setPrewarmedClip('First answer.', first, turn);
 
-    setPrewarmedClip('Second answer.', fakeClip());
+    setPrewarmedClip('Second answer.', fakeClip(), turn);
 
     expect(first.paused).toBe(1);
     expect(hasPrewarmedClip('First answer.')).toBe(false);
@@ -60,7 +62,7 @@ describe('prewarmed speech clip', () => {
 
   it('stops an unclaimed clip on discard, so a barge-in cannot leave audio live', () => {
     const clip = fakeClip();
-    setPrewarmedClip('Abandoned answer.', clip);
+    setPrewarmedClip('Abandoned answer.', clip, beginPrewarmTurn());
 
     discardPrewarmedClip();
 
@@ -70,14 +72,14 @@ describe('prewarmed speech clip', () => {
   });
 
   it('ignores empty text rather than holding an unusable slot', () => {
-    setPrewarmedClip('   ', fakeClip());
+    setPrewarmedClip('   ', fakeClip(), beginPrewarmTurn());
 
     expect(hasPrewarmedClip()).toBe(false);
   });
 
   it('matches across surrounding whitespace', () => {
     const clip = fakeClip();
-    setPrewarmedClip('  Trimmed.  ', clip);
+    setPrewarmedClip('  Trimmed.  ', clip, beginPrewarmTurn());
 
     expect(takePrewarmedClip('Trimmed.')).toBe(clip);
   });
@@ -89,7 +91,7 @@ describe('prewarmed speech clip', () => {
         throw new Error('already gone');
       },
     } as unknown as SpeechClip;
-    setPrewarmedClip('Hostile.', hostile);
+    setPrewarmedClip('Hostile.', hostile, beginPrewarmTurn());
 
     expect(() => discardPrewarmedClip()).not.toThrow();
     expect(hasPrewarmedClip()).toBe(false);
@@ -99,5 +101,31 @@ describe('prewarmed speech clip', () => {
     const spy = vi.fn();
     expect(() => discardPrewarmedClip()).not.toThrow();
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('fences a late clip from a superseded turn out of the live slot', () => {
+    // The reported race: turn A's onEarlyStep can still fire after turn B has started.
+    const turnA = beginPrewarmTurn();
+    const turnB = beginPrewarmTurn();
+    const liveClip = fakeClip();
+    setPrewarmedClip('Turn B opening line.', liveClip, turnB);
+
+    const lateClip = fakeClip();
+    setPrewarmedClip('Turn A opening line.', lateClip, turnA);
+
+    // The late clip is dropped, not stored, and the live one is untouched.
+    expect(lateClip.paused).toBe(1);
+    expect(takePrewarmedClip('Turn B opening line.')).toBe(liveClip);
+  });
+
+  it('never hands a new turn audio synthesized for the previous one', () => {
+    // Same opening sentence in both turns — text matching alone would have allowed this.
+    const turnA = beginPrewarmTurn();
+    const stale = fakeClip();
+    setPrewarmedClip('Open the File menu.', stale, turnA);
+
+    beginPrewarmTurn(); // turn B starts; A's clip belongs to a screenshot that is gone
+    expect(takePrewarmedClip('Open the File menu.')).toBeNull();
+    expect(stale.paused).toBe(1);
   });
 });

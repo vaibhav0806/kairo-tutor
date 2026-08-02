@@ -15,22 +15,47 @@ import type { SpeechClip } from './streamingTts';
  * Matching is by exact text, so a stale clip can never be spoken for a different step: a miss just
  * synthesizes normally, exactly as before this existed.
  */
-type Prewarmed = { text: string; clip: SpeechClip };
+type Prewarmed = { text: string; clip: SpeechClip; turn: number };
 
 let slot: Prewarmed | null = null;
+let activeTurn = 0;
+
+/**
+ * Claim the prewarm slot for a new turn and return its token.
+ *
+ * Text alone was not enough to keep turns apart. A late `onEarlyStep` from a superseded request
+ * can still fire after the next turn has started; without a token it either replaces the live
+ * clip, or — if both turns open with the same sentence — hands the new turn audio synthesized
+ * from the old screenshot.
+ */
+export function beginPrewarmTurn(): number {
+  discardPrewarmedClip();
+  activeTurn += 1;
+  return activeTurn;
+}
 
 /** Hold `clip` as the warm clip for `text`, replacing (and stopping) any previous one. */
-export function setPrewarmedClip(text: string, clip: SpeechClip): void {
-  discardPrewarmedClip();
+export function setPrewarmedClip(text: string, clip: SpeechClip, turn: number): void {
   const key = text.trim();
   if (!key) return;
-  slot = { text: key, clip };
+  if (turn !== activeTurn) {
+    // A superseded turn finished synthesizing. Nothing will play it; drop it now.
+    try {
+      clip.pause();
+      clip.src = '';
+    } catch {
+      // Best-effort cleanup.
+    }
+    return;
+  }
+  discardPrewarmedClip();
+  slot = { text: key, clip, turn };
 }
 
 /** Take the warm clip for `text`, or null. Taking clears the slot — a clip is never handed out twice. */
 export function takePrewarmedClip(text: string): SpeechClip | null {
   const key = text.trim();
-  if (!slot || !key || slot.text !== key) return null;
+  if (!slot || !key || slot.text !== key || slot.turn !== activeTurn) return null;
   const { clip } = slot;
   slot = null;
   return clip;

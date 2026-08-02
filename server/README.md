@@ -57,7 +57,17 @@ Kairo maintainers can set `KAIRO_DATABASE_TARGET=neon` with the pooled guarded `
 
 ## Test
 
-```bash
+```
+
+> If you created `kairo-local-db` under the earlier instructions it is still bound to 5432, and
+> `docker start` keeps that old mapping. Recreate it once:
+>
+> ```bash
+> docker rm -f kairo-local-db
+> ```
+>
+> then run the command above.
+bash
 # Re-runnable: starts the existing container, or creates it the first time.
 docker start kairo-test-db 2>/dev/null || docker run --name kairo-test-db \
   -e POSTGRES_DB=kairo_test \

@@ -340,7 +340,9 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
         const clip = clips[i] ?? null;
 
         if (!clip) {
-          // No audio (empty step): still reveal the step briefly.
+          // No audio (empty step): still reveal the step briefly. Clear the marker so the next
+          // step's wait is not reported as synthesis stall — this pause is deliberate.
+          previousEndedAt = 0;
           startStep(i);
           await new Promise<void>((resolve) => setTimeout(resolve, 900));
         } else {

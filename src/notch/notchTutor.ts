@@ -6,7 +6,7 @@ import { createTutorRuntimeErrorResponse } from '../core/tutorErrors';
 import { klog } from '../core/logger';
 import { shouldSuppressVisualTargets } from '../core/captureContext';
 import { createStreamingClip } from './streamingTts';
-import { discardPrewarmedClip, setPrewarmedClip } from './clipPrewarm';
+import { beginPrewarmTurn, discardPrewarmedClip, setPrewarmedClip } from './clipPrewarm';
 import { STEP_SYNTH_TIMEOUT_MS } from './notchConstants';
 import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
 import type {
@@ -75,8 +75,9 @@ export async function askTutorFromNotch({
 }: AskTutorFromNotchOptions): Promise<AskTutorResult> {
   try {
     const mockPlanner = createMockTutorPlanner();
-    // Any clip left warm by an earlier ask belongs to an answer that is now superseded.
-    discardPrewarmedClip();
+    // Any clip left warm by an earlier ask belongs to an answer that is now superseded. The token
+    // also fences late callbacks from that ask out of this one's slot.
+    const prewarmTurn = beginPrewarmTurn();
     const planner = createRuntimeTutorPlanner({
       aiProvider,
       nativeBridge,
@@ -91,7 +92,7 @@ export async function askTutorFromNotch({
         const say = typeof (step as { say?: unknown })?.say === 'string' ? (step as { say: string }).say.trim() : '';
         if (!say) return;
         klog('tutor', 'info', 'prewarming first step audio', { chars: say.length });
-        setPrewarmedClip(say, createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS));
+        setPrewarmedClip(say, createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS), prewarmTurn);
       }
     });
     const orchestrator = createTutorOrchestrator({ planner });

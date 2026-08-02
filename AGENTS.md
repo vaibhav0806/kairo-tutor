@@ -120,8 +120,12 @@ user will be asked to grant.
 Kairo handles microphone recordings, screenshots, transcripts, and model responses.
 Read [`PRIVACY.md`](./PRIVACY.md) before changing capture or provider flows.
 
-- Never log secrets, authorization data, PII, raw audio, screenshot data, window
-  titles, transcripts, questions, answers, or raw provider bodies.
+- Never log secrets, authorization data, PII, raw audio, or screenshot data — in any
+  build, without exception.
+- Window titles, transcripts, questions, answers, and raw provider bodies are never
+  logged by a hosted or released build. A LOCAL-backend build may log transcript and
+  answer text, because it is a developer's own machine talking to their own server
+  about their own data; see the compile-time switches above.
 - Log metadata such as byte counts, dimensions, duration, status, and text length.
 - Full-text logging must remain impossible in distributable builds. Keep
   `constants::LOG_TRANSCRIPTS` keyed to the compile-time backend target rather than to a

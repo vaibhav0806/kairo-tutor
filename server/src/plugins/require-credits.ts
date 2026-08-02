@@ -1,7 +1,5 @@
 import type { FastifyRequest } from 'fastify';
-import { sql } from 'drizzle-orm';
-import { db } from '../db/client';
-import { isPaywalled } from '../usage/service';
+import { hasLapsedProRecord, isPaywalled, readSubscription } from '../usage/service';
 import { claimReconcileSlot } from '../billing/entitlement';
 import { dodoClient, reconcileBillingAccount } from '../billing/routes';
 import { QuotaExceededError } from './error-handler';
@@ -26,27 +24,23 @@ import { QuotaExceededError } from './error-handler';
 export async function requireCredits(req: FastifyRequest): Promise<void> {
   if (!req.userId) return;
 
+  // ONE read of the subscription, shared by both checks below. This runs on every credit-gated
+  // route including the gate and the ack, which are on the latency path the product is tuned
+  // around, so it must not turn into three round trips for overlapping columns.
+  let subscription = await readSubscription(req.userId);
+
   // A Pro record whose period has elapsed is the mirror of the case below, and the more expensive
   // one: nothing paywalls that user, so nothing would ever re-check them. Left alone, a
-  // cancellation whose webhook went missing serves Pro forever, for free. Confirm with the
-  // provider once the local record says the period is over.
-  if (await hasLapsedProRecord(req.userId)) {
-    await recheckWithProvider(req, 'lapsed pro record');
+  // cancellation whose webhook went missing serves Pro forever, for free.
+  if (hasLapsedProRecord(subscription)) {
+    if (await recheckWithProvider(req, 'lapsed pro record')) {
+      subscription = await readSubscription(req.userId); // the provider may have moved it
+    }
   }
 
-  if (!(await isPaywalled(req.userId))) return;
+  if (!(await isPaywalled(req.userId, subscription))) return;
   if (await recoveredEntitlement(req)) return;
   throw new QuotaExceededError('free limit reached');
-}
-
-/** True when we still hold a Pro-shaped subscription whose paid period has already ended. */
-async function hasLapsedProRecord(userId: string): Promise<boolean> {
-  const r = await db.execute(sql`
-    SELECT status, current_period_end FROM subscription WHERE user_id = ${userId}`);
-  const row = r.rows[0] as { status: string; current_period_end: string | null } | undefined;
-  if (!row || !row.current_period_end) return false;
-  if (!['active', 'on_hold'].includes(row.status)) return false;
-  return new Date(row.current_period_end).getTime() <= Date.now();
 }
 
 /** True when Dodo says this user is entitled after all. Never throws. */

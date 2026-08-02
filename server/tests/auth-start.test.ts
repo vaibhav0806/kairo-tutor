@@ -80,7 +80,10 @@ describe('desktop OAuth correlation · shim (escape hatch, off by default)', () 
   });
 
   afterAll(async () => {
-    process.env.KAIRO_REQUIRE_DESKTOP_AUTH_STATE = previous;
+    // Assigning `undefined` stores the STRING "undefined", which then fails Zod on a later
+    // fresh import instead of falling back to the default. Delete it when there was no value.
+    if (previous === undefined) delete process.env.KAIRO_REQUIRE_DESKTOP_AUTH_STATE;
+    else process.env.KAIRO_REQUIRE_DESKTOP_AUTH_STATE = previous;
     vi.resetModules();
   });
 

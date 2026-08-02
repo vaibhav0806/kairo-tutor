@@ -17,6 +17,10 @@ pub(crate) enum VisionOutcome {
     Answer(String),
     QuotaExceeded,
     Failed,
+    /// The consumer went away mid-stream — a newer ask superseded this turn. Distinct from
+    /// `Failed` because there is nothing to recover: retrying buffered would bill a second
+    /// metered vision call for an answer nobody is listening to, and keep a dead turn running.
+    Abandoned,
 }
 
 /// Send a vision answer+box body through the metered proxy. Returns the raw provider JSON,
@@ -101,24 +105,41 @@ pub(crate) async fn openai_vision_chat_streaming(
     let mut reader = crate::sse::SseTextReader::new();
     let mut full = String::new();
     let mut deltas: u32 = 0;
+    // Raw bytes that arrived mid-character. A chunk boundary can land inside a multi-byte
+    // sequence — an em dash or a curly quote is enough, and the tutor's prose is full of both —
+    // so the tail is carried forward rather than decoded. Dropping it silently truncated the
+    // answer, and because a truncated body simply fails to parse and falls back to the buffered
+    // turn, the corruption produced a correct answer and left no trace.
+    let mut pending: Vec<u8> = Vec::new();
     loop {
         match response.chunk().await {
             Ok(Some(bytes)) => {
-                // A chunk can split a UTF-8 sequence; lossy decoding here would corrupt the text,
-                // so hand the reader only what decodes cleanly and let it buffer the remainder.
-                let Ok(text) = std::str::from_utf8(&bytes) else {
-                    continue;
+                pending.extend_from_slice(&bytes);
+                let valid_upto = match std::str::from_utf8(&pending) {
+                    Ok(_) => pending.len(),
+                    Err(error) => error.valid_up_to(),
                 };
-                for delta in reader.push(text) {
+                if valid_upto == 0 {
+                    continue; // Nothing complete yet; wait for the rest of the character.
+                }
+                let text: String = String::from_utf8_lossy(&pending[..valid_upto]).into_owned();
+                pending.drain(..valid_upto);
+                for delta in reader.push(&text) {
                     full.push_str(&delta);
                     deltas += 1;
                     if on_chunk
                         .send(TutorStreamMsg::Delta { text: delta })
                         .is_err()
                     {
-                        // Frontend dropped the channel (a newer ask superseded this one).
-                        crate::klog!(tutor, debug, deltas = deltas, "tutor stream channel closed");
-                        return VisionOutcome::Failed;
+                        // Frontend dropped the channel (a newer ask superseded this one). Do NOT
+                        // fall back — that would pay for a second vision call nobody will hear.
+                        crate::klog!(
+                            tutor,
+                            info,
+                            deltas = deltas,
+                            "tutor stream abandoned by the consumer; not retrying"
+                        );
+                        return VisionOutcome::Abandoned;
                     }
                 }
             }
