@@ -105,7 +105,8 @@ uses an isolated loopback PostgreSQL database.
 Start the dedicated PostgreSQL 17 test database:
 
 ```bash
-docker run --name kairo-test-db \
+# Re-runnable: starts the existing container, or creates it the first time.
+docker start kairo-test-db 2>/dev/null || docker run --name kairo-test-db \
   -e POSTGRES_DB=kairo_test \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
@@ -119,11 +120,13 @@ and deliberately ignores `server/.env`. It refuses remote database hosts and any
 database name other than `kairo_test`, so tests cannot accidentally reach Neon or a
 production database.
 
-If port 5432 is already in use, set `KAIRO_TEST_DATABASE_URL` to another loopback
-PostgreSQL URL whose database is still named `kairo_test`:
+The test database owns port 5432 (the same port CI uses, so no configuration is
+needed). The development database uses 5433, so the two never collide. If something
+else already holds 5432, point the tests elsewhere — the database must still be named
+`kairo_test`:
 
 ```bash
-KAIRO_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/kairo_test \
+KAIRO_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5434/kairo_test \
   npm run server:test
 ```
 
@@ -174,15 +177,15 @@ rebuild. Do not grant these permissions to code you have not reviewed.
 Contributors can run the backend against a local PostgreSQL 17 database. Hosted and maintainer
 Neon modes retain strict environment guards, and Dodo always stays in test mode locally.
 
-1. Stop the test container if it owns port 5432, then start a development database:
+1. Start a development database. It uses port **5433** so it can run alongside the
+   test database on 5432 — you never have to stop one to use the other:
 
    ```bash
-   docker stop kairo-test-db 2>/dev/null || true
-   docker run --name kairo-local-db \
+   docker start kairo-local-db 2>/dev/null || docker run --name kairo-local-db \
      -e POSTGRES_DB=kairo_local \
      -e POSTGRES_USER=postgres \
      -e POSTGRES_PASSWORD=postgres \
-     -p 127.0.0.1:5432:5432 \
+     -p 127.0.0.1:5433:5432 \
      -d postgres:17-alpine
    ```
 
