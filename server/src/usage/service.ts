@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
+import { isProNow } from '../billing/service';
 
 /** Seed the two per-user rows on signup (called from the Better Auth after-create hook). */
 export async function ensureUserRows(userId: string) {
@@ -19,9 +20,15 @@ export async function reserve(userId: string, askId: string): Promise<boolean> {
     );
     if (dup.rows.length === 0) return true; // replay of an already-counted ask -> allow
 
+    // A Pro turn must not spend a free credit. It used to: the counter incremented for pro too,
+    // so a subscriber quietly burned through their 10 and had none left the moment they cancelled
+    // — someone who had used 5 before subscribing came back to 0, not 5. Pro is unmetered, so
+    // record the ask for idempotency and leave the counter alone.
+    if (await isEntitledToPro(userId)) return true;
+
     const upd = await tx.execute(
       sql`UPDATE usage_counter SET used_free = used_free + 1, updated_at = now()
-          WHERE user_id = ${userId} AND (plan = 'pro' OR used_free < free_limit)
+          WHERE user_id = ${userId} AND used_free < free_limit
           RETURNING used_free`,
     );
     return upd.rows.length > 0;
@@ -43,22 +50,64 @@ export async function isOnboarding(userId: string): Promise<boolean> {
 }
 
 /**
+ * Whether this user is entitled to Pro right now, derived from the subscription itself.
+ *
+ * `usage_counter.plan` is a CACHE written by webhooks and reconciliation, never the authority. If
+ * it were the authority, a webhook that never arrived would grant Pro forever — which is exactly
+ * what a cancelled-then-lapsed subscription used to do. Entitlement is recomputed from the
+ * subscription row and the clock on every check, so it expires on time whether or not a message
+ * ever reaches us.
+ */
+export async function isEntitledToPro(userId: string): Promise<boolean> {
+  const r = await db.execute(sql`
+    SELECT status, current_period_end, cancel_at_period_end
+      FROM subscription WHERE user_id = ${userId}`);
+  const row = r.rows[0] as
+    | { status: string; current_period_end: string | null; cancel_at_period_end: boolean | null }
+    | undefined;
+  if (!row) return false;
+  return isProNow({
+    status: row.status,
+    currentPeriodEnd: row.current_period_end ? new Date(row.current_period_end) : null,
+    cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
+  });
+}
+
+/**
  * Fast paywall check (no reserve): true when the user is out of their CURRENT budget and not
- * pro — the tutorial cap while onboarding, else the 10-free limit. A missing counter row reads
- * as NOT paywalled so a setup hiccup never blocks a legit user; the atomic reserves on the
- * vision route are the real ceilings regardless.
+ * entitled to Pro — the tutorial cap while onboarding, else the 10-free limit. A missing counter
+ * row reads as NOT paywalled so a setup hiccup never blocks a legit user; the atomic reserves on
+ * the vision route are the real ceilings regardless.
  */
 export async function isPaywalled(userId: string): Promise<boolean> {
   const r = await db.execute(sql`
-    SELECT uc.plan, uc.used_free, uc.free_limit, uc.onboarding_used,
-           (p.onboarding_completed_at IS NULL) AS onboarding
+    SELECT uc.used_free, uc.free_limit, uc.onboarding_used,
+           (p.onboarding_completed_at IS NULL) AS onboarding,
+           s.status, s.current_period_end, s.cancel_at_period_end
     FROM usage_counter uc
     LEFT JOIN profile p ON p.user_id = uc.user_id
+    LEFT JOIN subscription s ON s.user_id = uc.user_id
     WHERE uc.user_id = ${userId}`);
   const row = r.rows[0] as
-    | { plan: string; used_free: number; free_limit: number; onboarding_used: number; onboarding: boolean }
+    | {
+        used_free: number;
+        free_limit: number;
+        onboarding_used: number;
+        onboarding: boolean;
+        status: string | null;
+        current_period_end: string | null;
+        cancel_at_period_end: boolean | null;
+      }
     | undefined;
-  if (!row || row.plan === 'pro') return false;
+  if (!row) return false;
+
+  const pro = isProNow({
+    status: row.status ?? 'none',
+    currentPeriodEnd: row.current_period_end ? new Date(row.current_period_end) : null,
+    cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
+  });
+  if (pro) return false;
+
   return row.onboarding
     ? Number(row.onboarding_used) >= ONBOARDING_VISION_CAP
     : Number(row.used_free) >= Number(row.free_limit);

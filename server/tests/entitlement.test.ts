@@ -71,13 +71,23 @@ describe('paywall entitlement recovery', () => {
   });
 
   it('only reaches the recovery path for a user who is actually out of budget', async () => {
+    // Entitlement comes from the SUBSCRIPTION, so a Pro user needs a live subscription — setting
+    // usage_counter.plan alone grants nothing, which is the loophole that used to exist.
     const pro = await makeUser('pro', 999);
+    await db.execute(sql`
+      UPDATE subscription SET status = 'active', current_period_end = now() + interval '30 days'
+       WHERE user_id = ${pro}`);
     const fresh = await makeUser('free', 0);
     const spent = await makeUser('free', 10);
 
     expect(await isPaywalled(pro)).toBe(false);
     expect(await isPaywalled(fresh)).toBe(false);
     expect(await isPaywalled(spent)).toBe(true);
+  });
+
+  it('a stale plan column alone never grants Pro', async () => {
+    const stale = await makeUser('pro', 10); // cached plan says pro, no subscription backs it
+    expect(await isPaywalled(stale)).toBe(true);
   });
 
   it('keeps the cooldown long enough to bound a blocked user’s retries', () => {
