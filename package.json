@@ -49,7 +49,8 @@
     "invite:prod": "bash server/scripts/invite-prod.sh",
     "billing:test:prepare": "npm run db:migrate && node server/scripts/verify-billing-test-env.mjs",
     "billing:test:login": "node server/scripts/dodo-test-login.mjs",
-    "billing:test:listen": "npm run billing:test:prepare && npx --yes dodopayments-cli@3.4.0 wh listen http://localhost:8787/webhooks/dodo"
+    "billing:test:listen": "npm run billing:test:prepare && npx --yes dodopayments-cli@3.4.0 wh listen http://localhost:8787/webhooks/dodo",
+    "voices:bake": "npx tsx --env-file=server/.env server/scripts/bake-voice-previews.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
