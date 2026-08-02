@@ -12,8 +12,7 @@ const input: TutorTurnInput = {
     imageBase64: 'abc123',
     byteLength: 6
   },
-  skillSlug: 'blender',
-  constraints: ['Keep each step’s spoken line short.']
+  skillSlug: 'blender'
 };
 
 describe('createRuntimeTutorPlanner', () => {
