@@ -39,6 +39,8 @@ describe('browser handoff pages', () => {
     expect(isDesktopAuthState(['0123456789abcdef0123456789abcdef'])).toBe(false);
   });
 
+  // Only reachable with the shim enabled (KAIRO_REQUIRE_DESKTOP_AUTH_STATE=false). Kept so the
+  // escape hatch cannot rot: if it is ever needed, it must still emit a link a client can use.
   it('omits the correlated parameter for a legacy build instead of faking one', () => {
     expect(authCallbackDeepLink('one-time-code', null)).toBe(
       'kairo://auth-callback?code=one-time-code',

@@ -6,11 +6,13 @@ import { assertStaticEnvironment } from './targets';
 const Env = z.object({
   KAIRO_SERVER_TARGET: z.enum(['local', 'hosted']).default('local'),
   KAIRO_DATABASE_TARGET: z.enum(['neon', 'local-postgres']).default('neon'),
-  // Enforce desktop OAuth correlation state. Off during the rollout of the correlated desktop
-  // build so already-installed apps can still sign in; flip to true once the legacy warn is gone.
+  // Enforce the desktop OAuth correlation state. ON by default: no build without it was ever
+  // distributed, so there are no legacy clients to keep alive. The shim it guards stays in the
+  // code as an escape hatch — set this to false to restore un-correlated sign-in if a build
+  // predating the correlated flow ever turns up in the wild.
   KAIRO_REQUIRE_DESKTOP_AUTH_STATE: z
     .enum(['true', 'false'])
-    .default('false')
+    .default('true')
     .transform((value) => value === 'true'),
   // Include the truncated upstream provider body in server logs. Off by default because those
   // bodies can echo request content; turn it on temporarily when diagnosing a provider failure.
