@@ -1,6 +1,6 @@
 {
   "name": "kairo-tutor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A screen-native AI tutor for practical software labs on macOS.",
   "private": true,
   "type": "module",
