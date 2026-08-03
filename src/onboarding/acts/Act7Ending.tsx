@@ -12,7 +12,7 @@ import { saveOnboarding } from '../backendClient';
  * product knows it — §12), then finishes (the pet retreats naturally via the product's normal
  * post-turn backoff; no special graduation choreography).
  */
-export function Act6Ending({
+export function Act7Ending({
   name,
   source,
   onComplete

@@ -25,7 +25,7 @@ const SOURCES: { label: string; Icon: IconType }[] = [
 ];
 
 /** Act 5b — "where'd you hear about me?" one-tap icon grid. */
-export function Act5Source({ onPick }: { onPick: (source: string) => void }) {
+export function Act6Source({ onPick }: { onPick: (source: string) => void }) {
   const { say, clear } = useCoach('');
 
   useEffect(() => {

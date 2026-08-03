@@ -14,7 +14,7 @@ const MIC_PROMPT_DELAY_MS = 1200;
 // are NOT needed here — the ⌥⌃ tap watches modifier keys only, which are exempt), then the
 // hold-⌥⌃-say-hi drill: the chord is the ONLY Next. Renders null — the notch caption + the live pet
 // halo are the whole UI.
-export function Act2Hearing({ name, onAdvance }: ActProps) {
+export function Act3Hearing({ name, onAdvance }: ActProps) {
   const { say, thinking, caption, guide, clear, voice, bridge } = useCoach(name);
   const [phase, setPhase] = useState<'primer' | 'drill'>('primer');
   const recordingRef = useRef(false);

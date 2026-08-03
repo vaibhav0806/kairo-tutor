@@ -90,7 +90,7 @@ export const HERO_COPY = {
 // the user at the OS pop-up's "Open System Settings" button — we never open Settings ourselves.
 // Instruction is FRONT-LOADED — the "a box is popping up now" + what-to-do lands in the first ~2.5s,
 // because we fire the OS pop-up 2.5s in (not after the whole line), so the user can act immediately
-// while the why/reassurance keeps playing. See BOX_DELAY_MS in Act3Permissions.
+// while the why/reassurance keeps playing. See BOX_DELAY_MS in Act4Permissions.
 export const ACT3_LINES: Record<'act3_screen' | 'act3_access', string> = {
   act3_screen:
     'Time to earn my eyes. A box is popping up now — tap “Open System Settings,” then flip Kairo ' +
@@ -131,10 +131,6 @@ export const PRACTICE_RETRY: Record<'empty' | 'no_target', Segment[]> = {
 };
 
 /** Act 5a — sign in (temp panel). Static line, cached. */
-export const ACT5_SIGNIN: Segment[] = [
-  { cacheKey: 'act5_signin', text: () => "Almost there — let's save your setup. Sign in with Google and we're good." }
-];
-
 /** Spoken once the Google name is known (dynamic — synthesized live). */
 export const act5Greeting = (name: string): Segment[] =>
   name ? [{ text: () => `Nice to meet you, ${name}.` }] : [];
@@ -160,7 +156,7 @@ export const CACHED_LINES: { key: string; text: string }[] = [
   // Act 3 permission lines (Phase 4).
   ...Object.entries(ACT3_LINES).map(([key, text]) => ({ key, text })),
   // Act 5-6 lines (Phase 6) — spoken outside the STEPS wizard.
-  ...[...ACT5_SIGNIN, ...ACT5_SOURCE, ...act6Ending('')]
+  ...[...ACT5_SOURCE, ...act6Ending('')]
     .filter((seg) => seg.cacheKey)
     .map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
 ];

@@ -16,7 +16,7 @@ const BOX_DELAY_MS = 4000;
 // registers Kairo in the Settings list AND is the gateway to the toggle (its own "Open System
 // Settings" button). We deliberately do NOT open System Settings ourselves. Status-driven, so it's
 // idempotent across the Screen-Recording quit+reopen.
-export function Act3Permissions({ name, onAdvance }: ActProps) {
+export function Act4Permissions({ name, onAdvance }: ActProps) {
   const { say, bridge } = useCoach(name);
   const [sub, setSub] = useState<Act3SubStep | null>(null);
   const spoke = useRef<Record<string, boolean>>({});
@@ -25,7 +25,9 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
   // Persist the resume marker: granting Screen Recording forces a macOS quit+reopen, and the
   // orchestrator resumes to whatever the marker says (mapped in OnboardingApp).
   useEffect(() => {
-    void invoke('set_onboarding_step', { step: 'act3' }).catch(() => {});
+    // Named, not numbered: this marker is persisted to disk, so an act renumber must not be able
+    // to silently point a resume at the wrong place.
+    void invoke('set_onboarding_step', { step: 'permissions' }).catch(() => {});
   }, []);
 
   // Live status is the source of truth (idempotent across the relaunch). Poll → pick the sub-step.

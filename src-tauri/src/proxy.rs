@@ -18,43 +18,24 @@ use crate::tutor::shared_http_client;
 // Mirrors `ASK_ID_HEADER` in packages/shared (Rust can't import the TS constant).
 const ASK_ID_HEADER: &str = "x-kairo-ask-id";
 
-/// True while an onboarding practice turn owns push-to-talk. Onboarding demos run PRE-sign-in
-/// (value-first), so their provider calls must NEVER require a JWT or hit the credit meter — they
-/// transparently route to the unauthenticated, IP-rate-limited `/v1/onboarding/*` sibling routes.
+/// True while an onboarding practice turn owns push-to-talk.
+///
+/// This used to also mean "send these turns to unauthenticated sibling routes", because onboarding
+/// ran before sign-in and still needed a provider. Sign-in now happens immediately after the colour
+/// step, before anything costs money, so an onboarding turn is an ordinary authenticated turn and
+/// the siblings are gone. The flag survives only for the things it always meant locally: which
+/// surface owns push-to-talk, and which audio events to emit.
 pub(crate) fn onboarding_active() -> bool {
     crate::input::ONBOARDING_PTT.load(Ordering::SeqCst)
 }
 
-/// Map an authed/metered product proxy path to its unauthenticated onboarding sibling.
-/// Unknown paths pass through unchanged (borrowing the input, hence the tied lifetime).
-fn onboarding_sibling(path: &str) -> &str {
-    match path {
-        "/v1/stt" => "/v1/onboarding/stt",
-        "/v1/llm/chat" => "/v1/onboarding/gate",
-        "/v1/vision/tutor" => "/v1/onboarding/vision",
-        "/v1/tts/stream" => "/v1/onboarding/tts/stream",
-        _ => path,
-    }
-}
-
-/// Build the POST for `path`. During an onboarding practice turn, reroute to the unauthenticated
-/// onboarding sibling (no JWT, no metering); otherwise a JWT-authed POST (`NoAuth` when signed out).
+/// Build the JWT-authed POST for `path` (`NoAuth` when signed out). Every provider call in the
+/// product goes through here now, including onboarding's.
 async fn proxy_post_builder(
     app: &AppHandle,
     path: &str,
     timeout: Duration,
 ) -> Result<reqwest::RequestBuilder, ProxyError> {
-    if onboarding_active() {
-        let sibling = onboarding_sibling(path);
-        crate::klog!(
-            app,
-            debug,
-            path = sibling,
-            "onboarding turn → unauthenticated proxy route"
-        );
-        let url = format!("{}{}", backend_url(), sibling);
-        return Ok(shared_http_client().post(&url).timeout(timeout));
-    }
     authed_post(app, path, timeout).await
 }
 

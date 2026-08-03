@@ -198,6 +198,15 @@ body.onboarding-document {
   color: var(--ink-strong);
   text-transform: lowercase;
 }
+/* This act is silent, so the card carries the whole message: a line that says what happens next,
+   and a quieter one that says why. The title takes the weight the spoken line used to. */
+.ob-signin-title {
+  margin-bottom: 2px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink-strong);
+}
 .ob-signin-sub {
   margin-bottom: 6px;
   font-size: 13px;

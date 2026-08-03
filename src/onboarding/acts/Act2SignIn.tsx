@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { klog } from '../../core/logger';
 import { useCoach } from '../useCoach';
-import { ACT5_SIGNIN } from '../copy';
 import { getAuthStatus, onAuthChanged, onAuthRejected, startGoogleAuth } from '../authClient';
 import { syncUserName } from '../userName';
 import { TempPanel } from './TempPanel';
@@ -9,18 +8,26 @@ import { KairoLockup } from '../../components/KairoMark';
 import { InlineNotice } from '../../components/InlineNotice';
 
 /**
- * Act 5a — sign in (master spec §4). The Google button opens the system browser; on the deep-link
- * return the orchestrator window regains focus (already built). Once signed in we pull the user's
- * name from `/v1/me` (Google profile → account) and cache it, then advance — the resolved name is
- * held by the orchestrator for the warm ending + the account save.
+ * Act 2 — sign in, immediately after the colour step and before anything costs money.
+ *
+ * Silent by design. Every other act speaks, but this one is a credential step sharing the front
+ * door's card, and being talked at while reaching for a password reads as pushy — so it says what
+ * it needs in text and gets out of the way. There is deliberately no spoken line and no cached
+ * audio for it.
+ *
+ * The Google button opens the system browser; on the deep-link return the orchestrator window
+ * regains focus. Once signed in we pull the user's name from `/v1/me` and cache it, then advance —
+ * the resolved name is held by the orchestrator for the warm ending and the account save.
  */
-export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void }) {
-  const { say, clear, bridge } = useCoach('');
+export function Act2SignIn({ onSignedIn }: { onSignedIn: (name: string) => void }) {
+  const { clear, bridge } = useCoach('');
   const [signedIn, setSignedIn] = useState(false);
   const [rejected, setRejected] = useState<string | null>(null);
 
   useEffect(() => {
-    void say(ACT5_SIGNIN); // caption == the spoken line
+    // No `say` here: this act is silent. Clear whatever the colour step left on the caption so the
+    // card is not competing with a stale line.
+    void clear();
     let un = () => {};
     let unRejected = () => {};
     void getAuthStatus().then((s) => s.signed_in && setSignedIn(true));
@@ -65,7 +72,8 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
           <span className="ob-signin-done">Signed in — one sec…</span>
         ) : (
           <>
-            <span className="ob-signin-sub">Sign in to save your setup</span>
+            <span className="ob-signin-title">First, make it yours.</span>
+            <span className="ob-signin-sub">Sign in with Google to save your setup.</span>
             {/* Official "Sign in with Google" — Light theme (white) per Google's branding guidelines;
                 the crisp white button + neutral stroke sits cleanly on the light card. */}
             {rejected ? <InlineNotice>{rejected}</InlineNotice> : null}

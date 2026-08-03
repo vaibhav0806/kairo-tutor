@@ -6,23 +6,32 @@ import { hasNativeBridge } from './config';
 import { klog } from '../core/logger';
 import { STEPS } from './copy';
 import { FrontDoor } from './acts/FrontDoor';
-import { Act2Hearing } from './acts/Act2Hearing';
-import { Act3Permissions } from './acts/Act3Permissions';
-import { Act5SignIn } from './acts/Act5SignIn';
-import { Act5Source } from './acts/Act5Source';
-import { Act6Ending } from './acts/Act6Ending';
+import { Act3Hearing } from './acts/Act3Hearing';
+import { Act4Permissions } from './acts/Act4Permissions';
+import { Act2SignIn } from './acts/Act2SignIn';
+import { Act6Source } from './acts/Act6Source';
+import { Act7Ending } from './acts/Act7Ending';
 import './onboarding.css';
 
-// The redesigned first-run is a sequence of "acts" over the full-screen transparent orchestrator
-// (Phase 0). Value-first ordering (spec §4): color → hearing → permissions → the real-screen
-// practice (point + circle) → sign-in → source → warm ending. Sign-in is LAST-but-one, so the first
-// "whoa" always precedes any account ask.
+// The first-run is a sequence of "acts" over the full-screen transparent orchestrator (Phase 0).
+// Order: hero+color → sign-in → hearing → permissions → the real-screen practice (point + circle)
+// → source → warm ending.
+//
+// Sign-in sits second, right after the color step, because that is exactly where the product starts
+// spending money. Everything before it is baked audio and a color wheel — no provider call at all —
+// so the account ask is the boundary between "free to run" and "costs us per turn", and every paid
+// call in the product is authenticated and attributable to a user.
+//
+// It also fails fast: alpha access is gated on an invited email, and discovering you are not on the
+// list AFTER granting Screen Recording, Accessibility and Input Monitoring would be a small
+// betrayal. And it leaves the run to the peak uninterrupted — the practice beats now land last
+// before the ending, with no credential step between the "whoa" and the close.
 const ACT = {
   WELCOME: 0, // the "front door" (hero → color in one card) — first-impression only, NEVER a resume target
-  HEARING: 1,
-  PERMISSIONS: 2,
-  PRACTICE: 3, // legacy STEPS wizard, now just point + circle
-  SIGNIN: 4,
+  SIGNIN: 1,
+  HEARING: 2,
+  PERMISSIONS: 3,
+  PRACTICE: 4, // legacy STEPS wizard, now just point + circle
   SOURCE: 5,
   ENDING: 6
 } as const;
@@ -30,13 +39,13 @@ const ACT_COUNT = 7;
 
 // index = act (WELCOME:0 … ENDING:6); value = chapter (0..3). Chapters (internal names; the notch dots
 // show NO text): Welcome / Set up / Try it / Wrap up. Drives the notch progress dots (Phase D).
-const actToChapter = [0, 1, 1, 2, 3, 3, 3] as const;
+const actToChapter = [0, 0, 1, 1, 2, 3, 3] as const;
 const CHAPTER_TOTAL = 4;
 
 // Whether the window must catch clicks for that act (front door / sign-in / chips), or stay
 // click-through so the desktop + pet + System Settings receive input. Hearing and practice are
 // notch + chord driven, so they stay click-through — the user acts on the REAL screen.
-const INTERACTIVE = [true, false, false, false, true, true, false];
+const INTERACTIVE = [true, true, false, false, false, true, false];
 
 /** Root of the full-screen, transparent, click-through onboarding orchestrator (#/onboarding). */
 export function OnboardingApp() {
@@ -91,10 +100,12 @@ export function OnboardingApp() {
     void invoke<string>('get_onboarding_step')
       .then((saved) => {
         klog('onboarding', 'info', 'resume', { saved });
-        // Resume only ever lands on PERMISSIONS ('act3') or PRACTICE (a STEPS id). WELCOME(0) is a
+        // Resume only ever lands on PERMISSIONS or PRACTICE (a STEPS id). WELCOME(0) is a
         // first-impression-only act and is intentionally NEVER a resume target, so a Screen-Recording
         // quit+reopen never replays the front door. A fresh run (no marker) keeps useState(0) = WELCOME.
-        if (saved === 'act3') setActIndex(ACT.PERMISSIONS);
+        // 'act3' is the legacy spelling of this marker, written by builds from before sign-in
+        // moved. Accepted so an onboarding already in flight resumes instead of restarting.
+        if (saved === 'permissions' || saved === 'act3') setActIndex(ACT.PERMISSIONS);
         else if (saved && STEPS.some((s) => s.id === saved)) setActIndex(ACT.PRACTICE);
       })
       .catch(() => {})
@@ -116,19 +127,9 @@ export function OnboardingApp() {
     case ACT.WELCOME:
       body = <FrontDoor onComplete={advance} />;
       break;
-    case ACT.HEARING:
-      body = <Act2Hearing name="" onAdvance={advance} />;
-      break;
-    case ACT.PERMISSIONS:
-      body = <Act3Permissions name="" onAdvance={advance} />;
-      break;
-    case ACT.PRACTICE:
-      // Notch + chord driven (renders null); the caption + pet are the UI, like Act 2's drill.
-      body = <OnboardingFlow onComplete={advance} />;
-      break;
     case ACT.SIGNIN:
       body = (
-        <Act5SignIn
+        <Act2SignIn
           onSignedIn={(name) => {
             setObName(name);
             advance();
@@ -136,9 +137,19 @@ export function OnboardingApp() {
         />
       );
       break;
+    case ACT.HEARING:
+      body = <Act3Hearing name="" onAdvance={advance} />;
+      break;
+    case ACT.PERMISSIONS:
+      body = <Act4Permissions name="" onAdvance={advance} />;
+      break;
+    case ACT.PRACTICE:
+      // Notch + chord driven (renders null); the caption + pet are the UI, like the hearing drill.
+      body = <OnboardingFlow onComplete={advance} />;
+      break;
     case ACT.SOURCE:
       body = (
-        <Act5Source
+        <Act6Source
           onPick={(source) => {
             setObSource(source);
             advance();
@@ -147,7 +158,7 @@ export function OnboardingApp() {
       );
       break;
     default:
-      body = <Act6Ending name={obName} source={obSource} onComplete={finish} />;
+      body = <Act7Ending name={obName} source={obSource} onComplete={finish} />;
   }
 
   return <div className="ob-orchestrator">{body}</div>;
