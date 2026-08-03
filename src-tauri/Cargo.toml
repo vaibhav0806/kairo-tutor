@@ -1,6 +1,6 @@
 [package]
 name = "kairo-tutor"
-version = "0.1.0"
+version = "0.1.1"
 description = "Screen-native AI tutor for software labs"
 authors = ["Kairo Tutor"]
 edition = "2021"
