@@ -3,7 +3,8 @@ import { sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { db } from '../src/db/client';
 import { claimReconcileSlot, RECONCILE_COOLDOWN_MS } from '../src/billing/entitlement';
-import { isPaywalled } from '../src/usage/service';
+import { hasLapsedProRecord, isPaywalled, refund, reserve } from '../src/usage/service';
+import { RENEWAL_GRACE_MS } from '../src/billing/service';
 
 const created: string[] = [];
 
@@ -24,10 +25,83 @@ async function makeUser(plan: 'free' | 'pro', usedFree: number): Promise<string>
   return id;
 }
 
+async function usedFree(userId: string): Promise<number> {
+  const r = await db.execute(sql`SELECT used_free FROM usage_counter WHERE user_id = ${userId}`);
+  return Number((r.rows[0] as { used_free: number }).used_free);
+}
+
 afterEach(async () => {
   for (const id of created.splice(0)) {
     await db.execute(sql`DELETE FROM "user" WHERE id = ${id}`);
   }
+});
+
+describe('lapse detection tracks the entitlement boundary', () => {
+  const future = (ms: number) => new Date(Date.now() + ms);
+
+  it('does not call a renewing subscription lapsed while its grace window is open', () => {
+    // The period end has passed but `isProNow` still entitles this user, so treating the record as
+    // lapsed would send every credit-gated request off to the provider for a working subscription.
+    const inGrace = {
+      status: 'active',
+      currentPeriodEnd: future(-60_000),
+      cancelAtPeriodEnd: false,
+    };
+    expect(hasLapsedProRecord(inGrace)).toBe(false);
+  });
+
+  it('calls it lapsed once the grace window has closed', () => {
+    expect(
+      hasLapsedProRecord({
+        status: 'active',
+        currentPeriodEnd: future(-RENEWAL_GRACE_MS - 60_000),
+        cancelAtPeriodEnd: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('gives a cancelled subscription no grace past its promised end date', () => {
+    expect(
+      hasLapsedProRecord({
+        status: 'active',
+        currentPeriodEnd: future(-60_000),
+        cancelAtPeriodEnd: true,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('refund mirrors what reserve charged', () => {
+  it('neither charges nor credits a subscriber whose cached plan still reads free', async () => {
+    // The webhook that would have flipped `usage_counter.plan` to 'pro' never landed, so the cache
+    // and the subscription disagree. Entitlement comes from the subscription in both directions.
+    const userId = await makeUser('free', 2);
+    await db.execute(sql`
+      UPDATE subscription
+         SET status = 'active', current_period_end = now() + interval '30 days',
+             cancel_at_period_end = false
+       WHERE user_id = ${userId}`);
+
+    const askId = randomUUID();
+    expect(await reserve(userId, askId)).toBe(true);
+    expect(await usedFree(userId)).toBe(2); // a Pro turn does not spend a free credit
+
+    await refund(userId, askId);
+    // Before the fix this handed back a credit that was never spent: the user's free balance grew
+    // by one on every failed Pro turn, purely because the cache said 'free'.
+    expect(await usedFree(userId)).toBe(2);
+  });
+
+  it('still refunds a genuinely free user', async () => {
+    const userId = await makeUser('free', 0);
+    const askId = randomUUID();
+
+    expect(await reserve(userId, askId)).toBe(true);
+    expect(await usedFree(userId)).toBe(1);
+
+    await refund(userId, askId);
+    expect(await usedFree(userId)).toBe(0);
+  });
 });
 
 describe('paywall entitlement recovery', () => {

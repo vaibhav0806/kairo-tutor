@@ -89,11 +89,18 @@ export async function isEntitledToPro(
   return sub ? isProNow(sub) : false;
 }
 
-/** True when we still hold a Pro-shaped subscription whose paid period has already ended. */
+/**
+ * True when we still hold a Pro-shaped subscription that no longer entitles Pro.
+ *
+ * The boundary has to be `isProNow`, not `currentPeriodEnd`, or the two disagree for the length of
+ * the renewal grace window: a still-entitled subscriber whose period end has just passed would look
+ * "lapsed" here and send `requireCredits` to the provider on their credit-gated requests, for a
+ * record that is working exactly as intended.
+ */
 export function hasLapsedProRecord(sub: SubscriptionSnapshot | null): boolean {
   if (!sub || !sub.currentPeriodEnd) return false;
   if (!['active', 'on_hold'].includes(sub.status)) return false;
-  return sub.currentPeriodEnd.getTime() <= Date.now();
+  return !isProNow(sub);
 }
 
 /**
@@ -150,8 +157,14 @@ export async function refund(userId: string, askId: string) {
     sql`UPDATE usage_event SET counted = false WHERE ask_id = ${askId} AND counted = true RETURNING ask_id`,
   );
   if (r.rows.length === 0) return;
+  // Refund exactly what `reserve` charged, which means asking the same question it asked: the
+  // SUBSCRIPTION, not `usage_counter.plan`. Gating this on the cache instead let the two disagree
+  // in the one direction that costs the user money — a subscriber whose `plan` still read `free`
+  // because a webhook never landed had their Pro turn skipped by `reserve`, then handed back a
+  // free credit here for a turn that never spent one, growing their free balance on every failure.
+  if (await isEntitledToPro(userId)) return;
   await db.execute(
-    sql`UPDATE usage_counter SET used_free = GREATEST(used_free - 1, 0) WHERE user_id = ${userId} AND plan <> 'pro'`,
+    sql`UPDATE usage_counter SET used_free = GREATEST(used_free - 1, 0) WHERE user_id = ${userId}`,
   );
 }
 
