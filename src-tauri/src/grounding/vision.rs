@@ -58,6 +58,30 @@ pub(crate) enum TutorStreamMsg {
     Error { message: String },
 }
 
+/// How much of a partially-received byte buffer can be decoded right now.
+enum Decodable {
+    /// The first `n` bytes are complete, valid UTF-8. Anything after them is a character still
+    /// arriving, so it stays buffered.
+    Upto(usize),
+    /// The buffer contains bytes that are not valid UTF-8 and no later chunk can repair.
+    Invalid,
+}
+
+/// Split a stream buffer into "decodable now" and "still in flight".
+///
+/// The distinction that matters is `error_len()`: `None` means the buffer merely ENDS mid-character
+/// and the remainder is still on the wire, while `Some(_)` means genuinely invalid bytes. Treating
+/// the second case as the first is what made a corrupt stream unrecoverable — `valid_up_to()` stuck
+/// at zero, every later chunk piled into the buffer undecoded, and the turn still returned whatever
+/// text had arrived before the bad byte as if it were the whole answer.
+fn decodable_prefix(pending: &[u8]) -> Decodable {
+    match std::str::from_utf8(pending) {
+        Ok(_) => Decodable::Upto(pending.len()),
+        Err(error) if error.error_len().is_none() => Decodable::Upto(error.valid_up_to()),
+        Err(_) => Decodable::Invalid,
+    }
+}
+
 /// Streamed twin of `openai_vision_chat`. Emits text deltas as they arrive and returns the same
 /// `VisionOutcome` the buffered call would have returned.
 ///
@@ -115,9 +139,12 @@ pub(crate) async fn openai_vision_chat_streaming(
         match response.chunk().await {
             Ok(Some(bytes)) => {
                 pending.extend_from_slice(&bytes);
-                let valid_upto = match std::str::from_utf8(&pending) {
-                    Ok(_) => pending.len(),
-                    Err(error) => error.valid_up_to(),
+                let valid_upto = match decodable_prefix(&pending) {
+                    Decodable::Upto(n) => n,
+                    Decodable::Invalid => {
+                        crate::klog!(tutor, warn, provider = "openai", model = %model, chars = full.chars().count(), "tutor stream carried invalid utf-8");
+                        return VisionOutcome::Failed;
+                    }
                 };
                 if valid_upto == 0 {
                     continue; // Nothing complete yet; wait for the rest of the character.
@@ -143,7 +170,15 @@ pub(crate) async fn openai_vision_chat_streaming(
                     }
                 }
             }
-            Ok(None) => break,
+            Ok(None) => {
+                // EOF with bytes still held back means the body stopped mid-character. The answer
+                // is truncated, so it must not be returned as one — the caller retries buffered.
+                if !pending.is_empty() {
+                    crate::klog!(tutor, warn, provider = "openai", model = %model, held = pending.len(), chars = full.chars().count(), "tutor stream ended mid-character");
+                    return VisionOutcome::Failed;
+                }
+                break;
+            }
             Err(error) => {
                 crate::klog!(tutor, warn, provider = "openai", model = %model, error_class = crate::proxy::request_error_class(&error), chars = full.chars().count(), "tutor stream read failed");
                 // Partial text cannot be trusted as an answer; the caller retries buffered.
@@ -627,8 +662,43 @@ fn extract_openai_click_point(payload: &Value) -> Option<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_openai_click_point;
+    use super::{decodable_prefix, extract_openai_click_point, Decodable};
     use serde_json::json;
+
+    #[test]
+    fn a_character_split_across_chunks_is_held_then_decoded() {
+        // "…" is three bytes; a chunk boundary lands after the first one.
+        let full = "step…".as_bytes();
+        let split = full.len() - 2;
+
+        match decodable_prefix(&full[..split]) {
+            Decodable::Upto(n) => assert_eq!(n, split - 1, "the incomplete tail stays buffered"),
+            Decodable::Invalid => panic!("an incomplete trailing sequence is not invalid"),
+        }
+        match decodable_prefix(full) {
+            Decodable::Upto(n) => assert_eq!(n, full.len(), "the rest arrived; decode all of it"),
+            Decodable::Invalid => panic!("a complete buffer is valid"),
+        }
+    }
+
+    #[test]
+    fn genuinely_invalid_bytes_are_rejected_rather_than_buffered_forever() {
+        // 0xff can never begin a UTF-8 sequence, so no later chunk can repair this.
+        assert!(matches!(
+            decodable_prefix(&[0xff, 0x41]),
+            Decodable::Invalid
+        ));
+        // Invalid bytes AFTER valid text are still invalid — not a short read.
+        assert!(matches!(
+            decodable_prefix(&[b'h', b'i', 0xc3, 0x28]),
+            Decodable::Invalid
+        ));
+    }
+
+    #[test]
+    fn an_empty_buffer_decodes_to_nothing() {
+        assert!(matches!(decodable_prefix(&[]), Decodable::Upto(0)));
+    }
 
     #[test]
     fn extracts_click_from_actions_array() {
