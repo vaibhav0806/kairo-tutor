@@ -6,7 +6,8 @@ import { forwardJson } from './forward';
 import { streamPassthrough } from './stream';
 import { reserve, refund, isOnboarding, reserveOnboarding, refundOnboarding } from '../usage/service';
 import { QuotaExceededError } from '../plugins/error-handler';
-import { clampAuthedChat } from './model-guard';
+import { clampAuthedChat, clampAuthedVision } from './model-guard';
+import { chargeAccount } from '../plugins/account-limits';
 
 /** Drop the `_provider` routing hint before forwarding the body to the provider. */
 function stripMeta(body: unknown): unknown {
@@ -35,6 +36,13 @@ function delivered(outcome: { completed: boolean; bytes: number } | null): boole
   return Boolean(outcome?.completed && outcome.bytes > 0);
 }
 
+/** Clamp a vision payload and note an unrecognised model, without rejecting it. */
+function guardVision(req: { log: { warn: (msg: string) => void } }, body: unknown): unknown {
+  const { body: guarded, knownModel } = clampAuthedVision(body);
+  if (!knownModel) req.log.warn('vision turn requested a model outside the shipped set');
+  return guarded;
+}
+
 function providerFor(body: unknown): { provider: 'anthropic' | 'openai'; path: string } {
   const provider = (body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
   return { provider, path: provider === 'anthropic' ? '/v1/messages' : '/v1/responses' };
@@ -49,6 +57,7 @@ export async function llmRoutes(app: FastifyInstance) {
     // it. The ceiling still applies — Pro is unmetered, so an unclamped route is an unlimited
     // any-size proxy for the price of one subscription. The warn is how we learn which models are
     // really in the wild before tightening this to a list.
+    await chargeAccount(req, 'llm-chat');
     const { body, knownModel } = clampAuthedChat(req.body);
     if (!knownModel) req.log.warn('authed chat requested a model outside the shipped set');
     const { json } = await forwardJson('openrouter', '/chat/completions', body);
@@ -62,6 +71,8 @@ export async function llmRoutes(app: FastifyInstance) {
     const askId = randomUUID();
     const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
     const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
+    // Clamp BEFORE reserving: a payload we will refuse must not cost the user a credit.
+    const visionBody = guardVision(req, stripMeta(req.body));
 
     // Onboarding "tutorial" turns draw a SEPARATE capped budget — NOT billed against the 10
     // free, but bounded. Server-decided by onboarding state (profile.onboarding_completed_at),
@@ -69,7 +80,7 @@ export async function llmRoutes(app: FastifyInstance) {
     if (await isOnboarding(req.userId!)) {
       if (!(await reserveOnboarding(req.userId!))) throw new QuotaExceededError('tutorial limit reached');
       try {
-        const { json } = await forwardJson(provider, path, stripMeta(req.body));
+        const { json } = await forwardJson(provider, path, visionBody);
         return json;
       } catch (e) {
         await refundOnboarding(req.userId!);
@@ -80,7 +91,7 @@ export async function llmRoutes(app: FastifyInstance) {
     const allowed = await reserve(req.userId!, askId);
     if (!allowed) throw new QuotaExceededError('free limit reached');
     try {
-      const { json } = await forwardJson(provider, path, stripMeta(req.body));
+      const { json } = await forwardJson(provider, path, visionBody);
       return json;
     } catch (e) {
       await refund(req.userId!, askId); // don't burn a free credit on our/provider failure
@@ -101,7 +112,7 @@ export async function llmRoutes(app: FastifyInstance) {
   app.post('/v1/vision/tutor/stream', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
     const askId = randomUUID();
     const { provider, path } = providerFor(req.body);
-    const body = streamingBody(req.body);
+    const body = guardVision(req, streamingBody(req.body));
 
     if (await isOnboarding(req.userId!)) {
       if (!(await reserveOnboarding(req.userId!))) throw new QuotaExceededError('tutorial limit reached');
@@ -125,7 +136,8 @@ export async function llmRoutes(app: FastifyInstance) {
 
   // Computer-use pointing — authed + credit-gated, UNMETERED (part of the same ask).
   app.post('/v1/vision/point', { preHandler: [requireAuth, requireCredits] }, async (req) => {
-    const { json } = await forwardJson('openai', '/v1/responses', stripMeta(req.body));
+    await chargeAccount(req, 'vision-point');
+    const { json } = await forwardJson('openai', '/v1/responses', guardVision(req, stripMeta(req.body)));
     return json;
   });
 }

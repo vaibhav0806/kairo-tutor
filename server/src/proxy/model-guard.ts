@@ -1,31 +1,31 @@
 /**
  * What a client is allowed to ask a provider for.
  *
- * The desktop builds the full provider payload itself and the proxy forwards it, which is fine
- * while the caller is our own signed build. It stops being fine on the `/v1/onboarding/*` routes:
- * those run BEFORE sign-in, so there is no user, no meter, and no credit gate — the only thing
- * standing between a stranger and our provider keys is what this file allows through. Left
- * unguarded, `{"model": "<the most expensive thing on the menu>", "max_tokens": 100000}` was a
- * valid request that we paid for.
+ * The desktop builds the full provider payload itself and the proxy forwards it. Authentication
+ * alone does not make that safe, because the expensive dimension of an LLM request is not how many
+ * you send — it is how much each one costs. A caller who stays comfortably inside every rate limit
+ * can still name the priciest model and ask for a hundred thousand tokens, and a Pro subscriber is
+ * unmetered by design, so nothing downstream would stop them.
  *
- * So: the model must be one we actually ship, token ceilings are clamped rather than trusted, and
- * a payload cannot carry an unbounded number of images. Anything else is a client we did not build.
+ * So the ceilings are clamped rather than trusted, and a payload cannot carry an unbounded number
+ * of images. This is the control for cost-per-request; the quota is the control for request count.
+ * They are different attacks and need different answers.
  */
 import { BadRequestError } from '../plugins/error-handler';
 
 /**
  * Chat models the desktop is built to request (`constants.rs`: GATE_MODEL, ACK_MODEL,
- * OPENROUTER_MODEL, OPENROUTER_VISION_MODEL). Kept as a literal list rather than derived from
- * anything — a constant that silently changes shape must not silently widen what strangers can buy.
+ * OPENROUTER_MODEL, OPENROUTER_VISION_MODEL). Kept as a literal list rather than derived from a
+ * constant, so a model change is a deliberate edit here rather than a silent widening.
  */
-const ONBOARDING_CHAT_MODELS = new Set([
+const KNOWN_CHAT_MODELS = new Set([
   'openai/gpt-5.6-luna',
   'google/gemini-2.5-flash-lite',
   'google/gemini-2.5-flash',
 ]);
 
 /** Single-call answer+box models (`TUTOR_VISION_MODEL`, `OPENAI_TUTOR_MODEL`). */
-const ONBOARDING_VISION_MODELS = new Set(['claude-opus-4-8', 'gpt-5.6-sol']);
+const KNOWN_VISION_MODELS = new Set(['claude-opus-4-8', 'gpt-5.6-sol']);
 
 /**
  * Token ceilings. The product's own vision turn asks for `ANTHROPIC_VISION_MAX_TOKENS` (3000), and
@@ -78,44 +78,36 @@ function requireAllowedModel(body: Body, allowed: Set<string>): void {
   }
 }
 
-/** Guard an unauthenticated onboarding chat/gate payload. Returns the sanitised body to forward. */
-export function guardOnboardingChat(body: unknown): Body {
-  const guarded = asObject(body);
-  requireAllowedModel(guarded, ONBOARDING_CHAT_MODELS);
-  clampTokens(guarded, 'max_tokens', MAX_CHAT_TOKENS);
-  clampTokens(guarded, 'max_completion_tokens', MAX_CHAT_TOKENS);
-  if (countImages(guarded) > 0) {
-    // The gate is a text decision. An image here means someone is using it as a vision endpoint.
-    throw new BadRequestError('images are not accepted on this route');
-  }
-  return guarded;
-}
-
-/** Guard an unauthenticated onboarding vision payload. Returns the sanitised body to forward. */
-export function guardOnboardingVision(body: unknown): Body {
-  const guarded = asObject(body);
-  requireAllowedModel(guarded, ONBOARDING_VISION_MODELS);
-  clampTokens(guarded, 'max_tokens', MAX_VISION_TOKENS);
-  clampTokens(guarded, 'max_output_tokens', MAX_VISION_TOKENS);
-  if (countImages(guarded) > MAX_IMAGES) {
-    throw new BadRequestError('too many images');
-  }
-  return guarded;
-}
-
 /**
- * Clamp the AUTHED chat route. Deliberately weaker than the onboarding guards: every installed
- * build sends whatever model constant it was compiled with, so rejecting an unrecognised one would
- * break users who cannot update past it. The ceiling still applies — a Pro subscriber is unmetered,
- * which makes an unclamped route an unlimited any-size proxy for the price of one subscription.
+ * Clamp a chat payload. Clamped, not allowlisted: an installed build sends whatever model constant
+ * it was compiled with, and refusing an unrecognised one would strand users on a version they
+ * cannot update past. The unknown model is reported so we learn what is actually in the wild.
  * Returns the sanitised body and whether the model was one we recognise, for the caller to log.
  */
 export function clampAuthedChat(body: unknown): { body: Body; knownModel: boolean } {
   const guarded = asObject(body);
   clampTokens(guarded, 'max_tokens', MAX_CHAT_TOKENS);
   clampTokens(guarded, 'max_completion_tokens', MAX_CHAT_TOKENS);
+  if (countImages(guarded) > MAX_IMAGES) throw new BadRequestError('too many images');
   const model = typeof guarded.model === 'string' ? guarded.model : '';
-  return { body: guarded, knownModel: ONBOARDING_CHAT_MODELS.has(model) };
+  return { body: guarded, knownModel: KNOWN_CHAT_MODELS.has(model) };
+}
+
+/**
+ * Clamp a vision payload — the expensive one, and the reason this file exists.
+ *
+ * A single vision turn carries a full screenshot and can be asked for thousands of output tokens.
+ * The quota bounds how many turns a free user gets; nothing bounds what one turn costs, and Pro
+ * has no quota at all. So the ceiling and the image count are enforced here regardless of who is
+ * asking.
+ */
+export function clampAuthedVision(body: unknown): { body: Body; knownModel: boolean } {
+  const guarded = asObject(body);
+  clampTokens(guarded, 'max_tokens', MAX_VISION_TOKENS);
+  clampTokens(guarded, 'max_output_tokens', MAX_VISION_TOKENS);
+  if (countImages(guarded) > MAX_IMAGES) throw new BadRequestError('too many images');
+  const model = typeof guarded.model === 'string' ? guarded.model : '';
+  return { body: guarded, knownModel: KNOWN_VISION_MODELS.has(model) };
 }
 
 export const MODEL_GUARD_LIMITS = {

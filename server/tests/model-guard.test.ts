@@ -1,66 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import {
-  clampAuthedChat,
-  guardOnboardingChat,
-  guardOnboardingVision,
-  MODEL_GUARD_LIMITS,
-} from '../src/proxy/model-guard';
+import { clampAuthedChat, clampAuthedVision, MODEL_GUARD_LIMITS } from '../src/proxy/model-guard';
 import { BadRequestError } from '../src/plugins/error-handler';
 
-const GATE_MODEL = 'openai/gpt-5.6-luna';
+const CHAT_MODEL = 'openai/gpt-5.6-luna';
 const VISION_MODEL = 'claude-opus-4-8';
 
-describe('unauthenticated onboarding payloads', () => {
-  it('refuses a model we do not ship', () => {
-    // The whole point: these routes have no user, no meter and no credit gate, so an arbitrary
-    // model here is an arbitrary bill.
-    expect(() => guardOnboardingChat({ model: 'some/expensive-model', messages: [] })).toThrow(
-      BadRequestError,
+describe('cost-per-request is clamped even for authenticated callers', () => {
+  it('caps an outsized token request instead of forwarding it', () => {
+    // The quota bounds how MANY turns a free user gets. Nothing bounds what ONE turn costs, and a
+    // Pro subscriber has no quota at all — so the ceiling has to live here.
+    expect(clampAuthedChat({ model: CHAT_MODEL, max_tokens: 100_000 }).body.max_tokens).toBe(
+      MODEL_GUARD_LIMITS.MAX_CHAT_TOKENS,
     );
-    expect(() => guardOnboardingVision({ model: 'some/expensive-model' })).toThrow(BadRequestError);
-  });
-
-  it('refuses a body that is not an object at all', () => {
-    expect(() => guardOnboardingChat('not a body')).toThrow(BadRequestError);
-    expect(() => guardOnboardingChat(null)).toThrow(BadRequestError);
-    expect(() => guardOnboardingChat([{ model: GATE_MODEL }])).toThrow(BadRequestError);
-  });
-
-  it('clamps an outsized token request instead of forwarding it', () => {
-    const guarded = guardOnboardingChat({ model: GATE_MODEL, max_tokens: 100_000 });
-    expect(guarded.max_tokens).toBe(MODEL_GUARD_LIMITS.MAX_CHAT_TOKENS);
-
-    const vision = guardOnboardingVision({ model: VISION_MODEL, max_output_tokens: 999_999 });
-    expect(vision.max_output_tokens).toBe(MODEL_GUARD_LIMITS.MAX_VISION_TOKENS);
+    expect(
+      clampAuthedVision({ model: VISION_MODEL, max_output_tokens: 999_999 }).body.max_output_tokens,
+    ).toBe(MODEL_GUARD_LIMITS.MAX_VISION_TOKENS);
   });
 
   it('pins a nonsense token value to the ceiling rather than passing it through', () => {
-    expect(guardOnboardingChat({ model: GATE_MODEL, max_tokens: -1 }).max_tokens).toBe(
+    expect(clampAuthedChat({ model: CHAT_MODEL, max_tokens: -1 }).body.max_tokens).toBe(
       MODEL_GUARD_LIMITS.MAX_CHAT_TOKENS,
     );
-    expect(guardOnboardingChat({ model: GATE_MODEL, max_tokens: 'lots' }).max_tokens).toBe(
+    expect(clampAuthedChat({ model: CHAT_MODEL, max_tokens: 'lots' }).body.max_tokens).toBe(
       MODEL_GUARD_LIMITS.MAX_CHAT_TOKENS,
     );
   });
 
   it('leaves a reasonable request untouched', () => {
-    const guarded = guardOnboardingChat({ model: GATE_MODEL, max_tokens: 90, temperature: 0.7 });
-    expect(guarded.max_tokens).toBe(90);
-    expect(guarded.temperature).toBe(0.7);
+    const { body } = clampAuthedChat({ model: CHAT_MODEL, max_tokens: 90, temperature: 0.7 });
+    expect(body.max_tokens).toBe(90);
+    expect(body.temperature).toBe(0.7);
   });
 
-  it('does not invent a token ceiling the caller never asked for', () => {
+  it('does not invent a ceiling the caller never asked for', () => {
     // Forcing a field the provider would have defaulted changes behaviour for legitimate callers.
-    expect('max_tokens' in guardOnboardingChat({ model: GATE_MODEL })).toBe(false);
+    expect('max_tokens' in clampAuthedChat({ model: CHAT_MODEL }).body).toBe(false);
   });
 
-  it('rejects images on the text gate and caps them on the vision route', () => {
-    const oneImage = {
-      model: GATE_MODEL,
-      messages: [{ role: 'user', content: [{ type: 'input_image', image_url: 'data:…' }] }],
-    };
-    expect(() => guardOnboardingChat(oneImage)).toThrow(BadRequestError);
-
+  it('refuses a payload carrying more images than a turn can justify', () => {
     const manyImages = {
       model: VISION_MODEL,
       messages: [
@@ -72,7 +49,8 @@ describe('unauthenticated onboarding payloads', () => {
         },
       ],
     };
-    expect(() => guardOnboardingVision(manyImages)).toThrow(BadRequestError);
+    expect(() => clampAuthedVision(manyImages)).toThrow(BadRequestError);
+    expect(() => clampAuthedChat(manyImages)).toThrow(BadRequestError);
   });
 
   it('accepts the single screenshot the product actually sends', () => {
@@ -83,24 +61,24 @@ describe('unauthenticated onboarding payloads', () => {
         { role: 'user', content: [{ type: 'text', text: 'what is this' }, { type: 'image' }] },
       ],
     };
-    expect(() => guardOnboardingVision(body)).not.toThrow();
+    expect(() => clampAuthedVision(body)).not.toThrow();
   });
-});
 
-describe('authed chat clamp', () => {
-  it('clamps tokens but keeps forwarding an unrecognised model', () => {
+  it('refuses a body that is not a JSON object', () => {
+    expect(() => clampAuthedChat('not a body')).toThrow(BadRequestError);
+    expect(() => clampAuthedChat(null)).toThrow(BadRequestError);
+    expect(() => clampAuthedVision([{ model: VISION_MODEL }])).toThrow(BadRequestError);
+  });
+
+  it('reports an unrecognised model without rejecting it', () => {
     // An installed build sends the constant it was compiled with. Refusing it would strand users
-    // on a version they cannot update past, so the model is reported, not rejected.
-    const { body, knownModel } = clampAuthedChat({
-      model: 'openrouter/some-future-model',
-      max_tokens: 500_000,
-    });
-    expect(knownModel).toBe(false);
-    expect(body.model).toBe('openrouter/some-future-model');
-    expect(body.max_tokens).toBe(MODEL_GUARD_LIMITS.MAX_CHAT_TOKENS);
-  });
+    // on a version they cannot update past, so it is reported and clamped, not blocked.
+    const chat = clampAuthedChat({ model: 'openrouter/some-future-model', max_tokens: 500_000 });
+    expect(chat.knownModel).toBe(false);
+    expect(chat.body.model).toBe('openrouter/some-future-model');
+    expect(chat.body.max_tokens).toBe(MODEL_GUARD_LIMITS.MAX_CHAT_TOKENS);
 
-  it('recognises a shipped model', () => {
-    expect(clampAuthedChat({ model: GATE_MODEL }).knownModel).toBe(true);
+    expect(clampAuthedChat({ model: CHAT_MODEL }).knownModel).toBe(true);
+    expect(clampAuthedVision({ model: VISION_MODEL }).knownModel).toBe(true);
   });
 });
