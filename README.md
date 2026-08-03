@@ -330,7 +330,17 @@ help channels. Report vulnerabilities privately as described in
 
 ## License
 
-Kairo Tutor's original code is available under the [MIT License](./LICENSE). See
-[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for shipped third-party material and
+Kairo Tutor is open source under two licences, split by directory:
+
+- **`server/`** — [GNU AGPL v3.0 or later](./server/LICENSE). Self-host it freely; if you run a
+  modified version as a service for other people, publish your modifications.
+- **Everything else** (the desktop app, shared packages, tests, scripts, docs) —
+  [MIT](./LICENSE).
+
+They are separate programs communicating over HTTP, so the AGPL binds whoever *runs* the backend
+and does not reach the MIT desktop client or its users. [LICENSING.md](./LICENSING.md) explains the
+split, what it means for contributors, and how to ask about a commercial licence for `server/`.
+
+See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for shipped third-party material and
 [the asset-provenance ledger](./docs/asset-provenance.md) for known binary-asset evidence and
 unresolved clearance work.
