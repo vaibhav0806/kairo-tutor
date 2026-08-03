@@ -5,6 +5,7 @@ import { providers } from '../config/providers';
 import { forwardJson } from '../proxy/forward';
 import { streamPassthrough } from '../proxy/stream';
 import { rateLimit } from '../lib/ratelimit';
+import { guardOnboardingChat, guardOnboardingVision } from '../proxy/model-guard';
 import { SARVAM_DEFAULT_VOICE_ID } from '../speech/catalog';
 import { sarvamTtsBody, streamTarget, TTS_TEXT_LIMIT } from '../speech/synthesis';
 import { saveProfile } from './service';
@@ -133,7 +134,9 @@ export async function onboardingRoutes(app: FastifyInstance) {
   // point turn runs PRE-sign-in, so it can't use the authed gate route. IP-rate-limited.
   app.post('/v1/onboarding/gate', async (req, reply) => {
     if (!rateLimit(`obgate:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
-    const { json } = await forwardJson('openrouter', '/chat/completions', req.body);
+    // Guarded, not forwarded: this route has no user, no meter and no credit gate, so an
+    // unvalidated body is an open LLM proxy billed to us. See `model-guard.ts`.
+    const { json } = await forwardJson('openrouter', '/chat/completions', guardOnboardingChat(req.body));
     return json;
   });
 
@@ -144,7 +147,8 @@ export async function onboardingRoutes(app: FastifyInstance) {
     if (!rateLimit(`obvis:${req.ip}`, 12, 10 * 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
     const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
     const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
-    const { json } = await forwardJson(provider, path, dropProviderHint(req.body));
+    // Same reasoning as the gate, and it matters more here: vision is the expensive call.
+    const { json } = await forwardJson(provider, path, guardOnboardingVision(dropProviderHint(req.body)));
     return json;
   });
 

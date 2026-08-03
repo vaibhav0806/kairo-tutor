@@ -6,6 +6,7 @@ import { forwardJson } from './forward';
 import { streamPassthrough } from './stream';
 import { reserve, refund, isOnboarding, reserveOnboarding, refundOnboarding } from '../usage/service';
 import { QuotaExceededError } from '../plugins/error-handler';
+import { clampAuthedChat } from './model-guard';
 
 /** Drop the `_provider` routing hint before forwarding the body to the provider. */
 function stripMeta(body: unknown): unknown {
@@ -43,7 +44,14 @@ export async function llmRoutes(app: FastifyInstance) {
   // Gate / text / ack — authed + credit-gated but UNMETERED (they keep keys server-side; a
   // paywalled user is refused here so we never spend on their gate/ack calls).
   app.post('/v1/llm/chat', { preHandler: [requireAuth, requireCredits] }, async (req) => {
-    const { json } = await forwardJson('openrouter', '/chat/completions', req.body);
+    // Clamped rather than allowlisted: an installed build sends whatever model constant it was
+    // compiled with, and refusing an unrecognised one would strand users who cannot update past
+    // it. The ceiling still applies — Pro is unmetered, so an unclamped route is an unlimited
+    // any-size proxy for the price of one subscription. The warn is how we learn which models are
+    // really in the wild before tightening this to a list.
+    const { body, knownModel } = clampAuthedChat(req.body);
+    if (!knownModel) req.log.warn('authed chat requested a model outside the shipped set');
+    const { json } = await forwardJson('openrouter', '/chat/completions', body);
     return json;
   });
 

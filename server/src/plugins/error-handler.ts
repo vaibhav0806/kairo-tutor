@@ -22,6 +22,13 @@ export class QuotaExceededError extends Error {
 export class AuthError extends Error {
   code = 'unauthenticated' as const;
 }
+/**
+ * A request we refuse to forward. The message is ours, never the caller's input echoed back, so it
+ * is safe to return — a rejected payload must not become a way to get our server to repeat text.
+ */
+export class BadRequestError extends Error {
+  code = 'bad_request' as const;
+}
 export class ProviderError extends Error {
   code = 'provider_error' as const;
 
@@ -63,6 +70,14 @@ export function registerErrorHandler(app: FastifyInstance) {
     }
     if (err instanceof AuthError) {
       return reply.status(401).send({ error: 'unauthenticated', code: 'unauthenticated' } satisfies ErrorEnvelope);
+    }
+    if (err instanceof BadRequestError) {
+      // Logged at info: on the unauthenticated routes this fires for every probe, and a stranger
+      // must not be able to fill the disk by being refused loudly.
+      req.log.info({ path: requestPath(req.url) }, 'request refused before forwarding');
+      return reply
+        .status(400)
+        .send({ error: 'bad_request', code: 'bad_request', message: err.message } satisfies ErrorEnvelope);
     }
     if (err instanceof ProviderError) {
       req.log.warn(providerErrorLogFields(err, req.url), 'provider error');
