@@ -53,7 +53,7 @@ The copyright holders below have each agreed to license their existing contribut
 
 | Copyright holder | Consent recorded |
 | --- | --- |
-| Prasad Sankar (@Prasad-178) | _pending_ |
+| Prasad Sankar (@Prasad-178) | [recorded](https://github.com/vaibhav0806/kairo-tutor/pull/21#issuecomment-5167813948) |
 | Vaibhav Pandey (@vaibhav0806) | _pending_ |
 
 Consent is recorded as a comment on the pull request that introduces this file, from the
