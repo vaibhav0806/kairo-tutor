@@ -680,6 +680,61 @@ pub(crate) async fn set_speech_preferences(
     Ok(value)
 }
 
+/// Voice previews baked at development time by `npm run voices:bake`.
+///
+/// A preview is a fixed sentence in a fixed voice, so the bytes are the same for every user
+/// forever — synthesizing them per click paid repeatedly for an answer that cannot change, and
+/// made the one control whose job is to sound instant take a couple of seconds. These play with
+/// no network at all.
+///
+/// Sarvam only: its shortlist is curated in the repo, so there is a fixed set to bake. ElevenLabs
+/// comes from a live catalog that changes without us, so those still synthesize on demand.
+const BAKED_SARVAM_PREVIEWS: &[(&str, &[u8])] = &[
+    (
+        "shubh",
+        include_bytes!("../assets/voice-previews/sarvam-shubh.wav"),
+    ),
+    (
+        "aditya",
+        include_bytes!("../assets/voice-previews/sarvam-aditya.wav"),
+    ),
+    (
+        "rahul",
+        include_bytes!("../assets/voice-previews/sarvam-rahul.wav"),
+    ),
+    (
+        "dev",
+        include_bytes!("../assets/voice-previews/sarvam-dev.wav"),
+    ),
+    (
+        "ritu",
+        include_bytes!("../assets/voice-previews/sarvam-ritu.wav"),
+    ),
+    (
+        "priya",
+        include_bytes!("../assets/voice-previews/sarvam-priya.wav"),
+    ),
+    (
+        "kavya",
+        include_bytes!("../assets/voice-previews/sarvam-kavya.wav"),
+    ),
+    (
+        "neha",
+        include_bytes!("../assets/voice-previews/sarvam-neha.wav"),
+    ),
+];
+
+/// The baked clip for a voice, if we shipped one.
+fn baked_preview(provider: &str, voice_id: &str) -> Option<&'static [u8]> {
+    if !provider.eq_ignore_ascii_case("sarvam") {
+        return None;
+    }
+    BAKED_SARVAM_PREVIEWS
+        .iter()
+        .find(|(id, _)| id.eq_ignore_ascii_case(voice_id))
+        .map(|(_, bytes)| *bytes)
+}
+
 /// Synthesize the fixed preview line in one voice so it can be auditioned before saving.
 #[tauri::command]
 pub(crate) async fn preview_voice(
@@ -688,6 +743,15 @@ pub(crate) async fn preview_voice(
     voice_id: String,
 ) -> Result<SpeechSynthesisResult, String> {
     let _t = crate::klog::timer("tts", "preview_voice");
+    if let Some(bytes) = baked_preview(&provider, &voice_id) {
+        use base64::Engine;
+        crate::klog!(tts, info, provider = %provider, voice = %voice_id, bytes = bytes.len(), "voice preview served from the baked clip");
+        return Ok(SpeechSynthesisResult {
+            audio_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+            mime_type: "audio/wav".to_string(),
+            provider,
+        });
+    }
     let body = json!({ "provider": provider, "voiceId": voice_id });
     let value =
         crate::proxy::proxy_post_json(&app, "/v1/voices/preview", &body, None, VOICE_TIMEOUT)
@@ -711,4 +775,30 @@ pub(crate) async fn preview_voice(
             .to_string(),
         provider,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_curated_sarvam_voice_has_a_baked_preview() {
+        // If the catalog gains a voice, the bake must be re-run. A missing clip is not a crash —
+        // it silently falls back to a provider call, which is the cost this removed.
+        for id in [
+            "shubh", "aditya", "rahul", "dev", "ritu", "priya", "kavya", "neha",
+        ] {
+            let clip = super::baked_preview("sarvam", id);
+            assert!(clip.is_some(), "no baked preview for {id}");
+            let bytes = clip.unwrap();
+            assert!(bytes.len() > 1000, "baked preview for {id} looks truncated");
+            assert_eq!(&bytes[..4], b"RIFF", "baked preview for {id} is not a WAV");
+        }
+    }
+
+    #[test]
+    fn baked_previews_are_matched_case_insensitively_and_per_provider() {
+        assert!(super::baked_preview("Sarvam", "ADITYA").is_some());
+        // ElevenLabs voices come from a live catalog, so there is nothing to bake for them.
+        assert!(super::baked_preview("elevenlabs", "aditya").is_none());
+        assert!(super::baked_preview("sarvam", "not-a-voice").is_none());
+    }
 }

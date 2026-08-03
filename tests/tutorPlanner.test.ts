@@ -23,8 +23,7 @@ const tutorInput: TutorTurnInput = {
     byteLength: 6,
     displayBounds: { x: 0, y: 0, width: 900, height: 600, scaleFactor: 2 }
   },
-  skillSlug: 'blender',
-  constraints: ['Return one short tutor step.']
+  skillSlug: 'blender'
 };
 
 describe('parseTutorPlannerResponse', () => {

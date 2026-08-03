@@ -16,13 +16,55 @@ export interface DodoSubscriptionState {
 type SqlExecutor = Pick<typeof db, 'execute'>;
 
 /**
- * Dodo keeps a scheduled cancellation `active` until the paid period ends. A fully `cancelled`
- * subscription has already ended and must be Free. On-hold gets Kairo's three-day dunning grace.
+ * Renewal webhooks can be late, so a subscription that is merely mid-renewal keeps working for a
+ * few days rather than cutting a paying customer off. Dunning (`on_hold`) gets the same window.
  */
-export function isProNow(status: string, currentPeriodEnd: Date | null, now = Date.now()): boolean {
-  if (status === 'active') return true;
-  if (status !== 'on_hold' || !currentPeriodEnd) return false;
-  return now < currentPeriodEnd.getTime() + 3 * 24 * 3600 * 1000;
+export const RENEWAL_GRACE_MS = 3 * 24 * 3600 * 1000;
+
+export type EntitlementInput = {
+  status: string;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd?: boolean;
+};
+
+/**
+ * Whether this subscription entitles Pro **right now**.
+ *
+ * Time is an input, not an afterthought. The previous rule returned true for `active` whatever the
+ * date, which meant entitlement only ever changed when a webhook arrived: a cancelled subscription
+ * whose period had elapsed stayed Pro forever if that webhook was missed, and nothing in the system
+ * would have noticed. Access must expire because time passed, not because a message arrived.
+ *
+ * Dodo keeps a scheduled cancellation `active` until the paid period ends, so the status alone
+ * cannot distinguish "renewing" from "ending" — `cancelAtPeriodEnd` is what separates them:
+ *
+ *   - active, renewing        → Pro, plus a grace window for a late renewal webhook.
+ *   - active, ending          → Pro until the period ends, and NOT a minute longer. The end date
+ *                               is the promise made to the user; a grace period here would be us
+ *                               granting time nobody agreed to.
+ *   - on_hold (dunning)       → Pro through the grace window, then Free.
+ *   - cancelled / expired     → already over. Free.
+ *   - pending / failed        → never entitled.
+ */
+export function isProNow(
+  input: EntitlementInput | string,
+  currentPeriodEnd: Date | null = null,
+  now = Date.now(),
+): boolean {
+  // Accepts the legacy (status, periodEnd) shape so call sites can migrate independently.
+  const { status, currentPeriodEnd: periodEnd, cancelAtPeriodEnd } =
+    typeof input === 'string' ? { status: input, currentPeriodEnd, cancelAtPeriodEnd: false } : input;
+
+  if (status === 'active') {
+    // No end date recorded yet (a checkout that has not reported one) — trust the status.
+    if (!periodEnd) return true;
+    const deadline = periodEnd.getTime() + (cancelAtPeriodEnd ? 0 : RENEWAL_GRACE_MS);
+    return now < deadline;
+  }
+  if (status === 'on_hold') {
+    return periodEnd ? now < periodEnd.getTime() + RENEWAL_GRACE_MS : false;
+  }
+  return false;
 }
 
 async function applyDodoStateWith(

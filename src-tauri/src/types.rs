@@ -204,7 +204,6 @@ pub(crate) struct TutorTurnInput {
     /// `run_tutor_turn` against the frontmost app before injection.
     #[serde(default)]
     pub(crate) skill_slug: String,
-    pub(crate) constraints: Vec<String>,
     // Preformatted recent conversation (last N turns, incl. any interrupted
     // walkthrough) for continuity. Built on the frontend; injected into the prompt.
     #[serde(default)]

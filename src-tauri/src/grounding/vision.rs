@@ -17,6 +17,10 @@ pub(crate) enum VisionOutcome {
     Answer(String),
     QuotaExceeded,
     Failed,
+    /// The consumer went away mid-stream — a newer ask superseded this turn. Distinct from
+    /// `Failed` because there is nothing to recover: retrying buffered would bill a second
+    /// metered vision call for an answer nobody is listening to, and keep a dead turn running.
+    Abandoned,
 }
 
 /// Send a vision answer+box body through the metered proxy. Returns the raw provider JSON,
@@ -38,6 +42,156 @@ async fn proxy_vision_payload(
             Err(VisionOutcome::Failed)
         }
     }
+}
+
+/// A text delta from a streamed tutor turn, plus the terminal outcome.
+///
+/// `Delta` exists so the caller can start speaking the first complete step while the rest of the
+/// answer is still being written. `End` carries the FULL accumulated text: the streamed pieces are
+/// an accelerator, and the complete body stays the authoritative thing that gets parsed, so a
+/// malformed stream degrades to exactly the buffered behaviour instead of a broken answer.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub(crate) enum TutorStreamMsg {
+    Delta { text: String },
+    End { full: String },
+    Error { message: String },
+}
+
+/// How much of a partially-received byte buffer can be decoded right now.
+enum Decodable {
+    /// The first `n` bytes are complete, valid UTF-8. Anything after them is a character still
+    /// arriving, so it stays buffered.
+    Upto(usize),
+    /// The buffer contains bytes that are not valid UTF-8 and no later chunk can repair.
+    Invalid,
+}
+
+/// Split a stream buffer into "decodable now" and "still in flight".
+///
+/// The distinction that matters is `error_len()`: `None` means the buffer merely ENDS mid-character
+/// and the remainder is still on the wire, while `Some(_)` means genuinely invalid bytes. Treating
+/// the second case as the first is what made a corrupt stream unrecoverable — `valid_up_to()` stuck
+/// at zero, every later chunk piled into the buffer undecoded, and the turn still returned whatever
+/// text had arrived before the bad byte as if it were the whole answer.
+fn decodable_prefix(pending: &[u8]) -> Decodable {
+    match std::str::from_utf8(pending) {
+        Ok(_) => Decodable::Upto(pending.len()),
+        Err(error) if error.error_len().is_none() => Decodable::Upto(error.valid_up_to()),
+        Err(_) => Decodable::Invalid,
+    }
+}
+
+/// Streamed twin of `openai_vision_chat`. Emits text deltas as they arrive and returns the same
+/// `VisionOutcome` the buffered call would have returned.
+///
+/// Streaming is proxy-only. Every shipped build proxies; the direct-key dev path would need its
+/// own streaming request and is not worth a second code path for a debugging-only route, so
+/// callers fall back to the buffered call there.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn openai_vision_chat_streaming(
+    app: &AppHandle,
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+    media_type: &str,
+    model: &str,
+    effort: &str,
+    timeout: Duration,
+    on_chunk: &tauri::ipc::Channel<TutorStreamMsg>,
+) -> VisionOutcome {
+    let data_url = format!("data:{media_type};base64,{image_base64}");
+    let body = json!({
+        "model": model,
+        "reasoning": { "effort": effort },
+        "instructions": system_prompt,
+        "input": [{
+            "role": "user",
+            "content": [
+                { "type": "input_text", "text": user_text },
+                { "type": "input_image", "image_url": data_url }
+            ]
+        }],
+        "max_output_tokens": constants::ANTHROPIC_VISION_MAX_TOKENS,
+    });
+    crate::klog!(tutor, info, provider = "openai", model = %model, effort = %effort, "openai vision (answer+box) stream request");
+    let _t = crate::klog::timer("tutor", "openai_vision_stream");
+
+    let mut response = match crate::proxy::vision_tutor_stream(app, "openai", body, timeout).await {
+        Ok(response) => response,
+        Err(crate::proxy::ProxyError::QuotaExceeded) => return VisionOutcome::QuotaExceeded,
+        Err(error) => {
+            crate::klog!(grounding, warn, provider = "openai", model = %model, error_class = error.class(), status = ?error.status(), "vision stream via proxy failed");
+            return VisionOutcome::Failed;
+        }
+    };
+
+    let mut reader = crate::sse::SseTextReader::new();
+    let mut full = String::new();
+    let mut deltas: u32 = 0;
+    // Raw bytes that arrived mid-character. A chunk boundary can land inside a multi-byte
+    // sequence — an em dash or a curly quote is enough, and the tutor's prose is full of both —
+    // so the tail is carried forward rather than decoded. Dropping it silently truncated the
+    // answer, and because a truncated body simply fails to parse and falls back to the buffered
+    // turn, the corruption produced a correct answer and left no trace.
+    let mut pending: Vec<u8> = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(bytes)) => {
+                pending.extend_from_slice(&bytes);
+                let valid_upto = match decodable_prefix(&pending) {
+                    Decodable::Upto(n) => n,
+                    Decodable::Invalid => {
+                        crate::klog!(tutor, warn, provider = "openai", model = %model, chars = full.chars().count(), "tutor stream carried invalid utf-8");
+                        return VisionOutcome::Failed;
+                    }
+                };
+                if valid_upto == 0 {
+                    continue; // Nothing complete yet; wait for the rest of the character.
+                }
+                let text: String = String::from_utf8_lossy(&pending[..valid_upto]).into_owned();
+                pending.drain(..valid_upto);
+                for delta in reader.push(&text) {
+                    full.push_str(&delta);
+                    deltas += 1;
+                    if on_chunk
+                        .send(TutorStreamMsg::Delta { text: delta })
+                        .is_err()
+                    {
+                        // Frontend dropped the channel (a newer ask superseded this one). Do NOT
+                        // fall back — that would pay for a second vision call nobody will hear.
+                        crate::klog!(
+                            tutor,
+                            info,
+                            deltas = deltas,
+                            "tutor stream abandoned by the consumer; not retrying"
+                        );
+                        return VisionOutcome::Abandoned;
+                    }
+                }
+            }
+            Ok(None) => {
+                // EOF with bytes still held back means the body stopped mid-character. The answer
+                // is truncated, so it must not be returned as one — the caller retries buffered.
+                if !pending.is_empty() {
+                    crate::klog!(tutor, warn, provider = "openai", model = %model, held = pending.len(), chars = full.chars().count(), "tutor stream ended mid-character");
+                    return VisionOutcome::Failed;
+                }
+                break;
+            }
+            Err(error) => {
+                crate::klog!(tutor, warn, provider = "openai", model = %model, error_class = crate::proxy::request_error_class(&error), chars = full.chars().count(), "tutor stream read failed");
+                // Partial text cannot be trusted as an answer; the caller retries buffered.
+                return VisionOutcome::Failed;
+            }
+        }
+    }
+
+    crate::klog!(tutor, info, provider = "openai", model = %model, deltas = deltas, chars = full.chars().count(), "tutor stream complete");
+    if full.trim().is_empty() {
+        return VisionOutcome::Failed;
+    }
+    VisionOutcome::Answer(full)
 }
 
 fn grounding_timeout() -> Duration {
@@ -508,8 +662,43 @@ fn extract_openai_click_point(payload: &Value) -> Option<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_openai_click_point;
+    use super::{decodable_prefix, extract_openai_click_point, Decodable};
     use serde_json::json;
+
+    #[test]
+    fn a_character_split_across_chunks_is_held_then_decoded() {
+        // "…" is three bytes; a chunk boundary lands after the first one.
+        let full = "step…".as_bytes();
+        let split = full.len() - 2;
+
+        match decodable_prefix(&full[..split]) {
+            Decodable::Upto(n) => assert_eq!(n, split - 1, "the incomplete tail stays buffered"),
+            Decodable::Invalid => panic!("an incomplete trailing sequence is not invalid"),
+        }
+        match decodable_prefix(full) {
+            Decodable::Upto(n) => assert_eq!(n, full.len(), "the rest arrived; decode all of it"),
+            Decodable::Invalid => panic!("a complete buffer is valid"),
+        }
+    }
+
+    #[test]
+    fn genuinely_invalid_bytes_are_rejected_rather_than_buffered_forever() {
+        // 0xff can never begin a UTF-8 sequence, so no later chunk can repair this.
+        assert!(matches!(
+            decodable_prefix(&[0xff, 0x41]),
+            Decodable::Invalid
+        ));
+        // Invalid bytes AFTER valid text are still invalid — not a short read.
+        assert!(matches!(
+            decodable_prefix(&[b'h', b'i', 0xc3, 0x28]),
+            Decodable::Invalid
+        ));
+    }
+
+    #[test]
+    fn an_empty_buffer_decodes_to_nothing() {
+        assert!(matches!(decodable_prefix(&[]), Decodable::Upto(0)));
+    }
 
     #[test]
     fn extracts_click_from_actions_array() {

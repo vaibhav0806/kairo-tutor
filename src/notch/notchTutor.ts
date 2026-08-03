@@ -4,6 +4,10 @@ import { createTutorOrchestrator } from '../core/orchestrator';
 import { createRuntimeTutorPlanner, type RuntimeTutorProvider } from '../core/runtimePlanner';
 import { createTutorRuntimeErrorResponse } from '../core/tutorErrors';
 import { klog } from '../core/logger';
+import { shouldSuppressVisualTargets } from '../core/captureContext';
+import { createStreamingClip } from './streamingTts';
+import { beginPrewarmTurn, discardPrewarmedClip, setPrewarmedClip } from './clipPrewarm';
+import { STEP_SYNTH_TIMEOUT_MS } from './notchConstants';
 import type { TutorStep, UserAnnotation, VisualTarget } from '../core/types';
 import type {
   NativeBridge,
@@ -71,10 +75,25 @@ export async function askTutorFromNotch({
 }: AskTutorFromNotchOptions): Promise<AskTutorResult> {
   try {
     const mockPlanner = createMockTutorPlanner();
+    // Any clip left warm by an earlier ask belongs to an answer that is now superseded. The token
+    // also fences late callbacks from that ask out of this one's slot.
+    const prewarmTurn = beginPrewarmTurn();
     const planner = createRuntimeTutorPlanner({
       aiProvider,
       nativeBridge,
-      mockPlanner
+      mockPlanner,
+      // Start synthesizing the FIRST step the moment its text is complete, while the model is
+      // still writing the rest. Playback used to run these back to back — wait for the whole
+      // answer, then spend 1.5-3s synthesizing step one — and this overlaps the second with the
+      // tail of the first. Only step one: later steps are prefetched during playback, and a
+      // barge-in must not leave us paying for speech nobody hears.
+      onEarlyStep: (step, index) => {
+        if (index !== 0) return;
+        const say = typeof (step as { say?: unknown })?.say === 'string' ? (step as { say: string }).say.trim() : '';
+        if (!say) return;
+        klog('tutor', 'info', 'prewarming first step audio', { chars: say.length });
+        setPrewarmedClip(say, createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS), prewarmTurn);
+      }
     });
     const orchestrator = createTutorOrchestrator({ planner });
     // Use the fast voice-start screenshot when there are no annotations. If the
@@ -122,7 +141,27 @@ export async function askTutorFromNotch({
     // whole batch (all four corner radii, both paddings) while filling it in. Without the
     // flag a single box glides from target to target, exactly as before.
     const shownBoxes: TutorStep['visualTargets'] = [];
+
+    // A step is revealed seconds after the screenshot it was computed from. If the user moved to
+    // another app in that gap, the coordinates now describe a window that is not in front, so the
+    // box would confidently point at the wrong thing. Drop the visuals, keep the spoken answer.
+    const targetsWouldMiss = async (): Promise<boolean> => {
+      const current = await nativeBridge.getActiveApp().catch(() => null);
+      const suppress = shouldSuppressVisualTargets(activeApp, current);
+      if (suppress) {
+        klog('tutor', 'info', 'visual target suppressed: frontmost app changed since capture', {
+          capturedBundleId: activeApp.bundleId ?? '',
+          currentBundleId: current?.bundleId ?? ''
+        });
+      }
+      return suppress;
+    };
+
     const revealStep = async (step: TutorStep, transition: RevealTransition = 'draw') => {
+      if (await targetsWouldMiss()) {
+        await nativeBridge.hideOverlay();
+        return;
+      }
       if (step.visualTargets.length > 0 && displayBounds && response.keepBoxes) {
         const newBox = step.visualTargets.find((t) => t.kind === 'highlight_box');
         const pointer = step.visualTargets.find((t) => t.kind !== 'highlight_box');
@@ -155,6 +194,10 @@ export async function askTutorFromNotch({
         await revealStep(steps[0]);
         return;
       }
+      if (await targetsWouldMiss()) {
+        await nativeBridge.hideOverlay();
+        return;
+      }
       if (response.visualTargets.length > 0 && displayBounds) {
         await routeVisualTargets(nativeBridge, response.visualTargets, displayBounds);
       } else if (annotations.length > 0 && displayBounds) {
@@ -183,6 +226,8 @@ export async function askTutorFromNotch({
       displayBounds: displayBounds ?? null
     };
   } catch (error) {
+    // The turn failed after a step may already have been warmed; nothing will claim it now.
+    discardPrewarmedClip();
     const response = createTutorRuntimeErrorResponse({
       skillSlug,
       error

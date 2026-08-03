@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
+import { isProNow } from '../billing/service';
 
 /** Seed the two per-user rows on signup (called from the Better Auth after-create hook). */
 export async function ensureUserRows(userId: string) {
@@ -19,9 +20,15 @@ export async function reserve(userId: string, askId: string): Promise<boolean> {
     );
     if (dup.rows.length === 0) return true; // replay of an already-counted ask -> allow
 
+    // A Pro turn must not spend a free credit. It used to: the counter incremented for pro too,
+    // so a subscriber quietly burned through their 10 and had none left the moment they cancelled
+    // — someone who had used 5 before subscribing came back to 0, not 5. Pro is unmetered, so
+    // record the ask for idempotency and leave the counter alone.
+    if (await isEntitledToPro(userId, await readSubscription(userId))) return true;
+
     const upd = await tx.execute(
       sql`UPDATE usage_counter SET used_free = used_free + 1, updated_at = now()
-          WHERE user_id = ${userId} AND (plan = 'pro' OR used_free < free_limit)
+          WHERE user_id = ${userId} AND used_free < free_limit
           RETURNING used_free`,
     );
     return upd.rows.length > 0;
@@ -43,22 +50,82 @@ export async function isOnboarding(userId: string): Promise<boolean> {
 }
 
 /**
- * Fast paywall check (no reserve): true when the user is out of their CURRENT budget and not
- * pro — the tutorial cap while onboarding, else the 10-free limit. A missing counter row reads
- * as NOT paywalled so a setup hiccup never blocks a legit user; the atomic reserves on the
- * vision route are the real ceilings regardless.
+ * Whether this user is entitled to Pro right now, derived from the subscription itself.
+ *
+ * `usage_counter.plan` is a CACHE written by webhooks and reconciliation, never the authority. If
+ * it were the authority, a webhook that never arrived would grant Pro forever — which is exactly
+ * what a cancelled-then-lapsed subscription used to do. Entitlement is recomputed from the
+ * subscription row and the clock on every check, so it expires on time whether or not a message
+ * ever reaches us.
  */
-export async function isPaywalled(userId: string): Promise<boolean> {
+export type SubscriptionSnapshot = {
+  status: string;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean;
+};
+
+/** One read of the subscription row, so a request can evaluate entitlement without re-querying. */
+export async function readSubscription(userId: string): Promise<SubscriptionSnapshot | null> {
   const r = await db.execute(sql`
-    SELECT uc.plan, uc.used_free, uc.free_limit, uc.onboarding_used,
+    SELECT status, current_period_end, cancel_at_period_end
+      FROM subscription WHERE user_id = ${userId}`);
+  const row = r.rows[0] as
+    | { status: string; current_period_end: string | null; cancel_at_period_end: boolean | null }
+    | undefined;
+  if (!row) return null;
+  return {
+    status: row.status,
+    currentPeriodEnd: row.current_period_end ? new Date(row.current_period_end) : null,
+    cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
+  };
+}
+
+/** True when the subscription entitles Pro right now. Pass a snapshot to avoid a second read. */
+export async function isEntitledToPro(
+  userId: string,
+  snapshot?: SubscriptionSnapshot | null,
+): Promise<boolean> {
+  const sub = snapshot === undefined ? await readSubscription(userId) : snapshot;
+  return sub ? isProNow(sub) : false;
+}
+
+/**
+ * True when we still hold a Pro-shaped subscription that no longer entitles Pro.
+ *
+ * The boundary has to be `isProNow`, not `currentPeriodEnd`, or the two disagree for the length of
+ * the renewal grace window: a still-entitled subscriber whose period end has just passed would look
+ * "lapsed" here and send `requireCredits` to the provider on their credit-gated requests, for a
+ * record that is working exactly as intended.
+ */
+export function hasLapsedProRecord(sub: SubscriptionSnapshot | null): boolean {
+  if (!sub || !sub.currentPeriodEnd) return false;
+  if (!['active', 'on_hold'].includes(sub.status)) return false;
+  return !isProNow(sub);
+}
+
+/**
+ * Fast paywall check (no reserve): true when the user is out of their CURRENT budget and not
+ * entitled to Pro — the tutorial cap while onboarding, else the 10-free limit. A missing counter
+ * row reads as NOT paywalled so a setup hiccup never blocks a legit user; the atomic reserves on
+ * the vision route are the real ceilings regardless.
+ */
+export async function isPaywalled(
+  userId: string,
+  snapshot?: SubscriptionSnapshot | null,
+): Promise<boolean> {
+  const r = await db.execute(sql`
+    SELECT uc.used_free, uc.free_limit, uc.onboarding_used,
            (p.onboarding_completed_at IS NULL) AS onboarding
     FROM usage_counter uc
     LEFT JOIN profile p ON p.user_id = uc.user_id
     WHERE uc.user_id = ${userId}`);
   const row = r.rows[0] as
-    | { plan: string; used_free: number; free_limit: number; onboarding_used: number; onboarding: boolean }
+    | { used_free: number; free_limit: number; onboarding_used: number; onboarding: boolean }
     | undefined;
-  if (!row || row.plan === 'pro') return false;
+  if (!row) return false;
+
+  if (await isEntitledToPro(userId, snapshot)) return false;
+
   return row.onboarding
     ? Number(row.onboarding_used) >= ONBOARDING_VISION_CAP
     : Number(row.used_free) >= Number(row.free_limit);
@@ -90,8 +157,14 @@ export async function refund(userId: string, askId: string) {
     sql`UPDATE usage_event SET counted = false WHERE ask_id = ${askId} AND counted = true RETURNING ask_id`,
   );
   if (r.rows.length === 0) return;
+  // Refund exactly what `reserve` charged, which means asking the same question it asked: the
+  // SUBSCRIPTION, not `usage_counter.plan`. Gating this on the cache instead let the two disagree
+  // in the one direction that costs the user money — a subscriber whose `plan` still read `free`
+  // because a webhook never landed had their Pro turn skipped by `reserve`, then handed back a
+  // free credit here for a turn that never spent one, growing their free balance on every failure.
+  if (await isEntitledToPro(userId)) return;
   await db.execute(
-    sql`UPDATE usage_counter SET used_free = GREATEST(used_free - 1, 0) WHERE user_id = ${userId} AND plan <> 'pro'`,
+    sql`UPDATE usage_counter SET used_free = GREATEST(used_free - 1, 0) WHERE user_id = ${userId}`,
   );
 }
 

@@ -483,6 +483,25 @@ pub(crate) async fn vision_tutor(
     proxy_post_json(app, "/v1/vision/tutor", &body, Some(ask_id), timeout).await
 }
 
+/// The same metered vision turn, streamed. Returns the raw SSE response for the caller to read.
+///
+/// Deliberately a different backend route from `vision_tutor`, not a flag on it: the buffered
+/// route stays untouched as the fallback for when a stream dies partway.
+pub(crate) async fn vision_tutor_stream(
+    app: &AppHandle,
+    provider_hint: &str,
+    mut body: Value,
+    timeout: Duration,
+) -> Result<reqwest::Response, ProxyError> {
+    if let Some(object) = body.as_object_mut() {
+        object.insert(
+            "_provider".to_string(),
+            Value::String(provider_hint.to_string()),
+        );
+    }
+    proxy_stream_request(app, "/v1/vision/tutor/stream", &body, timeout).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{backend_url_for_target, ProxyError};

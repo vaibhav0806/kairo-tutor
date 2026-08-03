@@ -35,8 +35,18 @@ refuse any endpoint other than Kairo's mapped development or production branch.
 Start the contributor database before migrating:
 
 ```bash
-docker run --name kairo-local-db -e POSTGRES_DB=kairo_local -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:5432:5432 -d postgres:17-alpine
+# Port 5433, so it runs alongside the test database on 5432 (see Test below).
+# Re-runnable: starts the existing container, or creates it the first time.
+docker start kairo-local-db 2>/dev/null || docker run --name kairo-local-db \
+  -e POSTGRES_DB=kairo_local -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:5433:5432 -d postgres:17-alpine
+```
+
+If you created `kairo-local-db` under the earlier instructions it is still bound to 5432, and
+`docker start` keeps that old mapping. Recreate it once, then run the command above:
+
+```bash
+docker rm -f kairo-local-db
 ```
 
 Kairo maintainers can set `KAIRO_DATABASE_TARGET=neon` with the pooled guarded `dev` URL instead.
@@ -55,7 +65,8 @@ Kairo maintainers can set `KAIRO_DATABASE_TARGET=neon` with the pooled guarded `
 ## Test
 
 ```bash
-docker run --name kairo-test-db \
+# Re-runnable: starts the existing container, or creates it the first time.
+docker start kairo-test-db 2>/dev/null || docker run --name kairo-test-db \
   -e POSTGRES_DB=kairo_test \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \

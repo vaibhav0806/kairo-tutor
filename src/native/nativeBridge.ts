@@ -96,6 +96,13 @@ export type NativeTtsStreamMsg =
   | { type: 'end' }
   | { type: 'error'; message: string };
 
+// A message on the streaming tutor channel (mirrors the Rust `TutorStreamMsg` enum). Rust tags the
+// variant as `kind`, so this does NOT use the `type` discriminator the TTS channel uses.
+export type NativeTutorStreamMsg =
+  | { kind: 'delta'; text: string }
+  | { kind: 'end'; full: string }
+  | { kind: 'error'; message: string };
+
 export type NativeOverlayPayload = {
   mode?: 'visual' | 'annotate' | 'annotation_preview' | 'gesture';
   displayBounds: NativeOverlayDisplayBounds;
@@ -204,7 +211,18 @@ export type NativeBridge = {
   getUserName(): Promise<string>;
   // Cache the user display name (persisted natively; '' clears it).
   setUserName(name: string): Promise<void>;
+  // Rename the user on the ACCOUNT, then refresh the native cache from what the server saved.
+  // Use this for a user-initiated rename — setUserName alone is overwritten by the next /v1/me
+  // sync. Returns the saved name ('' when cleared back to the Google account name).
+  saveDisplayName(name: string): Promise<string>;
   runTutorTurn(input: TutorTurnInput): Promise<string>;
+  /**
+   * The same turn, streamed. `onDelta` receives answer text as it is written, so the caller can
+   * speak the first complete step while the rest is still arriving. Resolves with the SAME full
+   * response `runTutorTurn` returns — the deltas are an accelerator, never the source of truth,
+   * and native silently falls back to the buffered turn when streaming is unavailable.
+   */
+  runTutorTurnStream(input: TutorTurnInput, onDelta: (text: string) => void): Promise<string>;
   // Text-only "do I need to look at the screen?" gate. Returns raw JSON
   // { needsScreen: boolean, voiceText: string }.
   runGateTurn(input: NativeGateInput): Promise<string>;
@@ -685,8 +703,24 @@ export function createNativeBridge(invokeCommand?: NativeInvoke): NativeBridge {
       }
     },
 
+    async saveDisplayName(name) {
+      // Deliberately NOT swallowed: a rename that silently fails is exactly the bug this
+      // replaced, so the caller must be able to tell the user it did not save.
+      return await invoke<string>('save_display_name', { name });
+    },
+
     async runTutorTurn(input) {
       return invoke<string>('run_tutor_turn', { input });
+    },
+
+    async runTutorTurnStream(input, onDelta) {
+      const channel = new Channel<NativeTutorStreamMsg>();
+      channel.onmessage = (msg) => {
+        // `end` carries the full body and is what the promise resolves with, so replaying it here
+        // would duplicate the entire answer into the caller's accumulator.
+        if (msg.kind === 'delta') onDelta(msg.text);
+      };
+      return invoke<string>('run_tutor_turn_stream', { input, onChunk: channel });
     },
 
     async runGateTurn(input) {

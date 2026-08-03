@@ -334,7 +334,39 @@ fn quota_gate_response() -> String {
 #[tauri::command]
 pub(crate) async fn run_tutor_turn(
     app: tauri::AppHandle,
+    input: TutorTurnInput,
+) -> Result<String, String> {
+    run_tutor_turn_inner(app, input, None).await
+}
+
+/// The streamed twin. Identical work and identical return value — the channel is an accelerator
+/// that lets the caller speak the first complete step while the rest is still being written.
+/// Falls back to the buffered call whenever streaming is unavailable for this turn.
+#[tauri::command]
+pub(crate) async fn run_tutor_turn_stream(
+    app: tauri::AppHandle,
+    input: TutorTurnInput,
+    on_chunk: tauri::ipc::Channel<crate::grounding::TutorStreamMsg>,
+) -> Result<String, String> {
+    let result = run_tutor_turn_inner(app, input, Some(&on_chunk)).await;
+    // Always terminate the channel so the frontend never waits on a stream that ended.
+    match &result {
+        Ok(full) => {
+            let _ = on_chunk.send(crate::grounding::TutorStreamMsg::End { full: full.clone() });
+        }
+        Err(message) => {
+            let _ = on_chunk.send(crate::grounding::TutorStreamMsg::Error {
+                message: message.clone(),
+            });
+        }
+    }
+    result
+}
+
+async fn run_tutor_turn_inner(
+    app: tauri::AppHandle,
     mut input: TutorTurnInput,
+    on_chunk: Option<&tauri::ipc::Channel<crate::grounding::TutorStreamMsg>>,
 ) -> Result<String, String> {
     let _t = crate::klog::timer("tutor", "tutor_turn");
     // Unique id per ask → one metered unit (the backend's usage_event.ask_id is a uuid
@@ -432,18 +464,54 @@ pub(crate) async fn run_tutor_turn(
                     provider_env("OPENAI_TUTOR_MODEL", constants::OPENAI_TUTOR_MODEL);
                 let effort = provider_env("OPENAI_VISION_EFFORT", constants::OPENAI_VISION_EFFORT);
                 crate::klog!(tutor, info, provider = "openai", model = %openai_model, effort = %effort, media_type = media_type, question = %crate::klog::transcript_field(&input.user_query), "single-call vision turn (answer + box)");
-                openai_vision_chat(
-                    &app,
-                    &ask_id,
-                    &system_prompt,
-                    &user_text,
-                    image_base64,
-                    media_type,
-                    &openai_model,
-                    &effort,
-                    timeout,
-                )
-                .await
+                // Streaming is proxy-only; the direct dev path has no streaming request, and a
+                // stream that fails for any reason must land on the buffered call rather than on
+                // a broken answer, so this is a strict upgrade with the old path as the floor.
+                let streamed = match (on_chunk, crate::proxy::proxy_enabled()) {
+                    (Some(channel), true) => Some(
+                        crate::grounding::openai_vision_chat_streaming(
+                            &app,
+                            &system_prompt,
+                            &user_text,
+                            image_base64,
+                            media_type,
+                            &openai_model,
+                            &effort,
+                            timeout,
+                            channel,
+                        )
+                        .await,
+                    ),
+                    _ => None,
+                };
+                match streamed {
+                    Some(VisionOutcome::Answer(raw)) => VisionOutcome::Answer(raw),
+                    Some(VisionOutcome::QuotaExceeded) => VisionOutcome::QuotaExceeded,
+                    // Superseded: stop here rather than paying for a buffered retry.
+                    Some(VisionOutcome::Abandoned) => VisionOutcome::Abandoned,
+                    // Failed OR not attempted → the buffered call decides the turn.
+                    _ => {
+                        if on_chunk.is_some() {
+                            crate::klog!(
+                                tutor,
+                                warn,
+                                "tutor stream unavailable or incomplete; using buffered turn"
+                            );
+                        }
+                        openai_vision_chat(
+                            &app,
+                            &ask_id,
+                            &system_prompt,
+                            &user_text,
+                            image_base64,
+                            media_type,
+                            &openai_model,
+                            &effort,
+                            timeout,
+                        )
+                        .await
+                    }
+                }
             } else {
                 let tutor_model =
                     provider_env("ANTHROPIC_VISION_MODEL", constants::TUTOR_VISION_MODEL);
@@ -489,6 +557,9 @@ pub(crate) async fn run_tutor_turn(
                         "free request limit reached; returning upgrade prompt"
                     );
                     return Ok(quota_exceeded_turn());
+                }
+                VisionOutcome::Abandoned => {
+                    return Err("Tutor turn superseded by a newer ask.".to_string());
                 }
                 VisionOutcome::Failed => {
                     crate::klog!(
@@ -754,7 +825,7 @@ pub(crate) async fn run_gate_turn(
     if !crate::proxy::proxy_enabled() && provider_env_optional("OPENROUTER_API_KEY").is_none() {
         return Ok(look());
     }
-    let model = provider_env("OPENROUTER_MODEL", constants::OPENROUTER_MODEL);
+    let model = provider_env("GATE_MODEL", constants::GATE_MODEL);
     let timeout = Duration::from_millis(constants::GATE_TIMEOUT_MS);
 
     let app = input.active_app.unwrap_or_else(|| "unknown".to_string());

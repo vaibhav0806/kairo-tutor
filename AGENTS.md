@@ -79,9 +79,14 @@ for maximum detail from our code, `KAIRO_LOG=debug` to include dependencies, or 
 per-subsystem filter such as `KAIRO_LOG=info,kairo::vision=trace`. Set
 `KAIRO_LOG_STDERR=true` to mirror to stderr when running from a terminal.
 
-Redaction is compile-time and defaults to off: `constants::LOG_TRANSCRIPTS` for
-transcript and answer text, `constants::LOG_PROVIDER_BODIES` for provider error
-bodies. Enable one locally while debugging, rebuild, and never ship it enabled.
+Redaction is compile-time. `constants::LOG_TRANSCRIPTS` (transcript and answer text)
+follows the backend target automatically: a build compiled for the LOCAL backend logs
+the text, and any other build cannot. So `npm run app:local` and `npm run local` give
+you full transcripts with no flag to set and no flag to forget, while `npm run app`
+and every released DMG are compiled without it and have no path to the text at all.
+
+`constants::LOG_PROVIDER_BODIES` (provider error bodies) is still a manual switch —
+enable it locally while debugging, rebuild, and never ship it enabled.
 
 ## Commit discipline
 
@@ -115,11 +120,16 @@ user will be asked to grant.
 Kairo handles microphone recordings, screenshots, transcripts, and model responses.
 Read [`PRIVACY.md`](./PRIVACY.md) before changing capture or provider flows.
 
-- Never log secrets, authorization data, PII, raw audio, screenshot data, window
-  titles, transcripts, questions, answers, or raw provider bodies.
+- Never log secrets, authorization data, PII, raw audio, or screenshot data — in any
+  build, without exception.
+- Window titles, transcripts, questions, answers, and raw provider bodies are never
+  logged by a hosted or released build. A LOCAL-backend build may log transcript and
+  answer text, because it is a developer's own machine talking to their own server
+  about their own data; see the compile-time switches above.
 - Log metadata such as byte counts, dimensions, duration, status, and text length.
-- Full-text logging must remain disabled in distributable builds
-  (`src-tauri/src/constants.rs::LOG_TRANSCRIPTS`).
+- Full-text logging must remain impossible in distributable builds. Keep
+  `constants::LOG_TRANSCRIPTS` keyed to the compile-time backend target rather than to a
+  hand-edited boolean, so shipping it on is not a mistake anyone can make.
 - Preserve the sensitive-application capture check and the frontmost-application
   recheck around screen capture.
 - Minimize data sent to external providers and update `PRIVACY.md` when that data flow

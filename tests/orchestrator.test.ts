@@ -31,10 +31,11 @@ describe('tutor orchestrator', () => {
       byteLength: 6
     });
     expect(input.skillSlug).toBe('first-figma-motion-tutorial');
-    expect(input.constraints).toContain('Return one short tutor step.');
-    expect(input.constraints).toContain(
-      'Do not invent app state that is not visible in the provided context.'
-    );
+    // No prompt text may travel from the frontend. It used to send a `constraints` array that
+    // was appended LAST in the system prompt, so it got the final word over the step-count rules
+    // — "Return one short tutor step." capped every walkthrough to a single highlight. The prompt
+    // now lives solely in src-tauri/prompts/tutor-system.md, and this field no longer exists.
+    expect('constraints' in input).toBe(false);
   });
 
   test('carries the skill slug through verbatim (routing lives in Rust, not here)', () => {

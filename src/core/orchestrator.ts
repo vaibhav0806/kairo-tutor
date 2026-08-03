@@ -17,7 +17,6 @@ export type TutorTurnInput = {
   annotations: UserAnnotation[];
   screen: TutorScreenInput;
   skillSlug: string;
-  constraints: string[];
   // Preformatted recent conversation for continuity (last N turns). Optional.
   recentContext?: string;
   // The line the gate already spoke aloud this turn — continue from it, don't re-greet.
@@ -66,10 +65,6 @@ export function buildTutorTurnInput({
           reason: 'No screen capture is available for this turn.'
         },
     skillSlug: skillSlug ?? '',
-    constraints: [
-      'Return one short tutor step.',
-      'Do not invent app state that is not visible in the provided context.'
-    ],
     ...(recentContext && recentContext.trim() ? { recentContext } : {}),
     ...(spokenIntro && spokenIntro.trim() ? { spokenIntro } : {}),
     ...(userName && userName.trim() ? { userName } : {})

@@ -77,13 +77,33 @@ export async function submitNotchPrompt(query: string, emitAsk: EmitNotchAsk) {
   await emitAsk(payload);
 }
 
-export function waitForNotchPaint() {
+/**
+ * Wait for the notch to paint before continuing the turn — but never longer than `timeoutMs`.
+ *
+ * The deadline is the whole point. WebKit suspends `requestAnimationFrame` for a window it
+ * considers occluded or hidden while leaving timers running, so a frame callback is not
+ * guaranteed to fire at all. Awaiting one unconditionally deadlocked entire turns: the thinking
+ * label kept escalating on its own timer while the gate and vision calls were never reached, and
+ * nothing timed out because no request had been made yet.
+ *
+ * A paint hint is cosmetic. It must not be able to stop a turn.
+ */
+export function waitForNotchPaint(timeoutMs = 250) {
   return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    // The deadline is armed FIRST so it applies even if requestAnimationFrame never runs.
+    globalThis.setTimeout(finish, timeoutMs);
+
     if (typeof globalThis.requestAnimationFrame === 'function') {
-      globalThis.requestAnimationFrame(() => resolve());
+      globalThis.requestAnimationFrame(finish);
       return;
     }
-
-    globalThis.setTimeout(resolve, 0);
+    globalThis.setTimeout(finish, 0);
   });
 }

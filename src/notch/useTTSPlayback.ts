@@ -13,7 +13,9 @@ import type { RevealTransition } from '../overlay/targetRouting';
 import { buildAudioDataUrl } from './audioPlayback';
 import { createBufferedClip, createStreamingClip, type SpeechClip } from './streamingTts';
 import { createNativeBridge } from '../native/nativeBridge';
+import { klog } from '../core/logger';
 import { FILLER_FALLBACK, STEP_GAP_MS, STEP_SYNTH_TIMEOUT_MS } from './notchConstants';
+import { discardPrewarmedClip, takePrewarmedClip } from './clipPrewarm';
 
 type NativeBridge = ReturnType<typeof createNativeBridge>;
 
@@ -78,6 +80,9 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
     setIsSpeaking(false);
     // Any new playback supersedes a pending gate filler.
     fillerCancelRef.current = true;
+    // A clip warmed for an answer that is being superseded must never be spoken. Playback claims
+    // its own clip before reaching here, so this only ever catches genuinely orphaned audio.
+    discardPrewarmedClip();
     // Supersede anything queued behind the filler (see playAnswerAudio).
     playbackEpochRef.current += 1;
     // Also stop any in-flight follow-along step speech so a new turn's audio never
@@ -262,11 +267,24 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
       const prefetch = (index: number) => {
         if (index < steps.length && clips[index] === undefined) {
           const say = steps[index].say.trim();
-          clips[index] = say ? createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS) : null;
+          if (!say) {
+            clips[index] = null;
+            return;
+          }
+          // The streamed turn may already have synthesized this while the model was still
+          // writing later steps. A miss is not a failure — it just synthesizes now, as before.
+          const warm = takePrewarmedClip(say);
+          if (warm) {
+            klog('notch', 'info', 'using prewarmed step audio', { index });
+          }
+          clips[index] = warm ?? createStreamingClip(nativeBridge, say, STEP_SYNTH_TIMEOUT_MS);
         }
       };
       prefetch(0);
       prefetch(1);
+      // Whatever is left warm belongs to no step in this turn (a stream that produced a step the
+      // final parse dropped, say). Release it so it cannot be claimed by a later answer.
+      discardPrewarmedClip();
 
       // Queue behind the "let me look" filler (mirror playAnswerAudio).
       const epoch = playbackEpochRef.current;
@@ -288,6 +306,12 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
       const playEpoch = playbackEpochRef.current;
 
       let firstSpoken = false;
+      // Instrumentation for the inter-step stall: how long a step waited for its own audio after
+      // the previous one finished. STEP_GAP_MS of that is a deliberate pause, so anything close to
+      // it is healthy; a much larger number means synthesis did not keep up and the user heard
+      // silence mid-answer. This is the number that decides whether prewarming step one costs more
+      // than it saves.
+      let previousEndedAt = 0;
       // The first box a walkthrough shows is drawn; once it's on screen, later
       // steps glide the same box to the next target instead of re-popping it.
       let boxOnScreen = false;
@@ -316,7 +340,9 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
         const clip = clips[i] ?? null;
 
         if (!clip) {
-          // No audio (empty step): still reveal the step briefly.
+          // No audio (empty step): still reveal the step briefly. Clear the marker so the next
+          // step's wait is not reported as synthesis stall — this pause is deliberate.
+          previousEndedAt = 0;
           startStep(i);
           await new Promise<void>((resolve) => setTimeout(resolve, 900));
         } else {
@@ -331,11 +357,21 @@ export function useTTSPlayback(nativeBridge: NativeBridge): TTSPlayback {
             };
             clip.onplay = () => {
               setIsSpeaking(true);
+              if (previousEndedAt > 0) {
+                const waited = Date.now() - previousEndedAt;
+                klog('notch', 'info', 'step audio gap', {
+                  step: i,
+                  waited_ms: waited,
+                  intended_ms: STEP_GAP_MS,
+                  stalled_ms: Math.max(0, waited - STEP_GAP_MS)
+                });
+              }
               startStep(i);
               void emit('cursor:speaking', {});
             };
             clip.onended = () => {
               setIsSpeaking(false);
+              previousEndedAt = Date.now();
               finish();
             };
             // stopAnswerPlayback (a new turn / interruption) pauses the clip, which

@@ -53,6 +53,13 @@ export const subscription = pgTable('subscription', {
   currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
   cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
   lastEventAt: timestamp('last_event_at', { withTimezone: true }),
+  /**
+   * When we last asked Dodo for authoritative state on the paywall path. Entitlement is written
+   * only by a webhook or an explicit sync, so a single missed delivery leaves a paying user on
+   * `free` forever. The paywall re-checks with Dodo before refusing, and this column is the
+   * cooldown that keeps a genuinely-free user from calling Dodo on every blocked request.
+   */
+  lastReconcileAt: timestamp('last_reconcile_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

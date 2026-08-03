@@ -179,11 +179,10 @@ impl Drop for Timer {
     }
 }
 
-/// Format a transcript for logging. Returns metadata-only (`len=N`) by default, or
-/// the full text when a local developer explicitly enables
-/// `constants::LOG_TRANSCRIPTS` and rebuilds. Never enable full-text logging in a
-/// distributed build. Never log raw audio, screenshot pixels/base64, or secrets —
-/// pass byte/size counts instead.
+/// Format a transcript for logging. Returns metadata-only (`len=N`) unless this build was
+/// compiled for the LOCAL backend, which only a developer's own machine ever is
+/// (`constants::LOG_TRANSCRIPTS`). A hosted or released build has no path to the text at all.
+/// Never log raw audio, screenshot pixels/base64, or secrets — pass byte/size counts instead.
 /// Format a provider error body for logging. Returns `off` unless a local developer explicitly
 /// enables `constants::LOG_PROVIDER_BODIES` and rebuilds; log the length separately, which is
 /// always safe. Never enable full bodies in a distributed build.
@@ -230,13 +229,30 @@ mod tests {
         assert!(!field.contains("private prompt"));
     }
 
+    /// The invariant, asserted in BOTH build configurations rather than only the shipped one:
+    /// transcript text is readable exactly when this binary was compiled for the local backend.
+    /// Written this way so `npm run local -- --check`, which builds with the flag set, proves the
+    /// dev half of the guarantee instead of failing on it.
     #[test]
-    fn transcript_field_redacts_text_by_default() {
+    fn transcripts_follow_the_backend_target_exactly() {
+        let local_build = matches!(option_env!("KAIRO_BACKEND_TARGET"), Some("local"));
+
+        assert_eq!(crate::constants::LOG_TRANSCRIPTS, local_build);
+    }
+
+    #[test]
+    fn transcript_field_shows_text_only_on_a_local_build() {
         let transcript = "private spoken question";
 
         let field = super::transcript_field(transcript);
 
-        assert_eq!(field, "len=23");
-        assert!(!field.contains(transcript));
+        if crate::constants::LOG_TRANSCRIPTS {
+            // A developer's own machine, talking to their own server, about their own data.
+            assert_eq!(field, transcript);
+        } else {
+            // How a released build is compiled: metadata only, and the text is unreachable.
+            assert_eq!(field, "len=23");
+            assert!(!field.contains(transcript));
+        }
     }
 }
