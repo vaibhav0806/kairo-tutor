@@ -42,6 +42,13 @@ docker start kairo-local-db 2>/dev/null || docker run --name kairo-local-db \
   -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:5433:5432 -d postgres:17-alpine
 ```
 
+If you created `kairo-local-db` under the earlier instructions it is still bound to 5432, and
+`docker start` keeps that old mapping. Recreate it once, then run the command above:
+
+```bash
+docker rm -f kairo-local-db
+```
+
 Kairo maintainers can set `KAIRO_DATABASE_TARGET=neon` with the pooled guarded `dev` URL instead.
 
 ## Endpoints
@@ -57,17 +64,7 @@ Kairo maintainers can set `KAIRO_DATABASE_TARGET=neon` with the pooled guarded `
 
 ## Test
 
-```
-
-> If you created `kairo-local-db` under the earlier instructions it is still bound to 5432, and
-> `docker start` keeps that old mapping. Recreate it once:
->
-> ```bash
-> docker rm -f kairo-local-db
-> ```
->
-> then run the command above.
-bash
+```bash
 # Re-runnable: starts the existing container, or creates it the first time.
 docker start kairo-test-db 2>/dev/null || docker run --name kairo-test-db \
   -e POSTGRES_DB=kairo_test \

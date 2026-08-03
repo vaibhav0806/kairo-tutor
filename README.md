@@ -189,19 +189,16 @@ Neon modes retain strict environment guards, and Dodo always stays in test mode 
      -d postgres:17-alpine
    ```
 
-2. Copy the example configuration:
+   If you created `kairo-local-db` under the earlier instructions it is still bound to 5432, and
+   `docker start` keeps that old mapping. Recreate it once, then run the command above:
 
+   ```bash
+   docker rm -f kairo-local-db
    ```
 
-> If you created `kairo-local-db` under the earlier instructions it is still bound to 5432, and
-> `docker start` keeps that old mapping. Recreate it once:
->
-> ```bash
-> docker rm -f kairo-local-db
-> ```
->
-> then run the command above.
-bash
+2. Copy the example configuration:
+
+   ```bash
    cp server/.env.example server/.env
    ```
 
