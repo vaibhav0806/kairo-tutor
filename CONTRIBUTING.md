@@ -46,6 +46,27 @@ Use the issue forms for reproducible bugs and feature requests. General usage qu
 the support channels listed in [SUPPORT.md](./SUPPORT.md). Report vulnerabilities privately as
 described in [SECURITY.md](./SECURITY.md).
 
+## Sign your commits (DCO)
+
+Every commit must carry a `Signed-off-by:` trailer. It is checked by CI, and it is the only
+paperwork this project asks for.
+
+```bash
+git commit -s          # adds the trailer for you
+```
+
+The trailer certifies the [Developer Certificate of Origin](https://developercertificate.org):
+that you wrote the change, or otherwise have the right to submit it under this project's licence.
+It is **not** a copyright assignment — you keep the copyright in what you write, and the
+maintainers get nothing beyond the inbound licence below.
+
+Forgot on commits you already pushed:
+
+```bash
+git rebase --signoff origin/main
+git push --force-with-lease
+```
+
 ## License and CLA
 
 Kairo Tutor is licensed under the [MIT License](./LICENSE). No Contributor License Agreement is
