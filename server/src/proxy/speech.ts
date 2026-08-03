@@ -5,7 +5,7 @@ import { providers } from '../config/providers';
 import { enabledTtsProviders } from '../config/env';
 import { requireAuth } from '../plugins/auth-verify';
 import { requireCredits } from '../plugins/require-credits';
-import { rateLimit } from '../lib/ratelimit';
+import { consume } from '../lib/budget';
 import { streamPassthrough } from './stream';
 import {
   SARVAM_STT_LANGUAGE_CODE,
@@ -145,7 +145,7 @@ export async function speechRoutes(app: FastifyInstance) {
   app.post('/v1/voices/preview', { preHandler: requireAuth }, async (req, reply) => {
     const parsed = PreviewBody.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: 'bad_request', code: 'bad_request' });
-    if (!rateLimit(`preview:${req.userId}`, 30, 60_000)) {
+    if (!(await consume(`preview:${req.userId}`, 30, 60_000))) {
       return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
     }
 

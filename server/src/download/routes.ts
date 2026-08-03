@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { isInvited } from '../access/service';
 import { env } from '../config/env';
-import { rateLimit } from '../lib/ratelimit';
+import { clientBucket, consume } from '../lib/budget';
 import {
   issueDownloadToken,
   looksLikeEmail,
@@ -24,7 +24,7 @@ const DownloadQuery = z.object({ token: z.string().min(10).max(512) });
 export async function downloadRoutes(app: FastifyInstance) {
   // "Am I allowed to download?" — the only public entry point.
   app.post<{ Body: { email?: string } }>('/v1/download/request', async (req, reply) => {
-    if (!rateLimit(`dlreq:${req.ip}`, 10, 60_000)) {
+    if (!(await consume(`dlreq:${clientBucket(req.ip)}`, 10, 60_000))) {
       return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
     }
     const parsed = RequestBody.safeParse(req.body);

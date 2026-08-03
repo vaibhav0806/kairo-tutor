@@ -1,4 +1,5 @@
-import { describe, it, expect, afterAll, vi } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll, vi } from 'vitest';
+import { sql } from 'drizzle-orm';
 
 // Mock the provider forwarder + streamer so no real upstream call happens.
 vi.mock('../src/proxy/forward', () => ({
@@ -11,11 +12,18 @@ vi.mock('../src/proxy/stream', () => ({
 }));
 
 import { buildApp } from '../src/app';
-import { pool } from '../src/db/client';
+import { db, pool } from '../src/db/client';
 
 const app = await buildApp();
 
+// The limiter is durable now, so counts outlive the process. Without this the vision budget below
+// would still be spent from the previous run and the suite would fail on its second execution.
+beforeAll(async () => {
+  await db.execute(sql`DELETE FROM rate_counter`);
+});
+
 afterAll(async () => {
+  await db.execute(sql`DELETE FROM rate_counter`);
   await app.close();
   await pool.end();
 });

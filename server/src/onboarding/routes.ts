@@ -4,7 +4,7 @@ import { requireAuth } from '../plugins/auth-verify';
 import { providers } from '../config/providers';
 import { forwardJson } from '../proxy/forward';
 import { streamPassthrough } from '../proxy/stream';
-import { rateLimit } from '../lib/ratelimit';
+import { clientBucket, consume, withinDailyBudget } from '../lib/budget';
 import { guardOnboardingChat, guardOnboardingVision } from '../proxy/model-guard';
 import { SARVAM_DEFAULT_VOICE_ID } from '../speech/catalog';
 import { sarvamTtsBody, streamTarget, TTS_TEXT_LIMIT } from '../speech/synthesis';
@@ -12,6 +12,54 @@ import { saveProfile } from './service';
 
 /** Onboarding always speaks in Kairo's default voice — the scripted lines are tuned to it. */
 const ONBOARDING_VOICE_ID = SARVAM_DEFAULT_VOICE_ID;
+
+/**
+ * Per-route limits for the unauthenticated onboarding surface.
+ *
+ * Two numbers per route, doing different jobs. `perIp` keeps one caller from being a nuisance and
+ * is sized so a real person completing onboarding — including retries and a stumble or two — never
+ * meets it. `daily` is the number that actually matters: it is the ceiling on what EVERY caller
+ * together can spend in a day, because IP addresses are cheap and per-caller limits alone have
+ * never stopped anyone determined.
+ *
+ * Vision is the expensive call, so it gets the tight budget; the text and speech routes cost
+ * fractions of a cent and are bounded mostly to keep the bill legible.
+ */
+const POLICY = {
+  tts: { perIp: [40, 60_000], daily: 2_000 },
+  extract: { perIp: [40, 60_000], daily: 2_000 },
+  chat: { perIp: [40, 60_000], daily: 2_000 },
+  stt: { perIp: [40, 60_000], daily: 2_000 },
+  gate: { perIp: [40, 60_000], daily: 2_000 },
+  vision: { perIp: [12, 10 * 60_000], daily: 150 },
+  ttsStream: { perIp: [60, 60_000], daily: 3_000 },
+} as const satisfies Record<string, { perIp: readonly [number, number]; daily: number }>;
+
+/**
+ * Charge a request against both limits. Returns false once a reply has been sent.
+ *
+ * The order matters: the per-caller check runs first so a single script cannot burn the shared
+ * daily allowance on its own before anyone else gets a turn.
+ */
+async function admit(
+  req: import('fastify').FastifyRequest,
+  reply: import('fastify').FastifyReply,
+  route: keyof typeof POLICY,
+): Promise<boolean> {
+  const { perIp, daily } = POLICY[route];
+  if (!(await consume(`${route}:${clientBucket(req.ip)}`, perIp[0], perIp[1]))) {
+    await reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    return false;
+  }
+  if (!(await withinDailyBudget(route, daily))) {
+    // Loud on purpose: this is the ceiling being reached, which is either an attack or a signal
+    // that the real numbers have outgrown the policy. Either way someone should look.
+    req.log.error({ route, cap: daily }, 'onboarding daily budget exhausted; refusing');
+    await reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
+    return false;
+  }
+  return true;
+}
 
 /** Drop the `_provider` routing hint before forwarding to the vision provider. */
 function dropProviderHint(body: unknown): unknown {
@@ -39,7 +87,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
   // Unauthenticated onboarding voice — the flow talks to the user BEFORE they sign in.
   // IP-rate-limited to bound abuse. TTS speaks a scripted line:
   app.post<{ Body: { text?: string } }>('/v1/onboarding/tts', async (req, reply) => {
-    if (!rateLimit(`tts:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!(await admit(req, reply, 'tts'))) return reply;
     if (!providers.sarvam.key) return reply.status(503).send({ error: 'tts_unavailable', code: 'provider_error' });
     const text = (req.body?.text ?? '').slice(0, 600);
     // Identical body to the product's buffered synthesis — same speaker, model, sample rate and
@@ -56,7 +104,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
   // Extract a clean field value from a spoken answer with a fast, no-reasoning model.
   // e.g. "hey, my name is Kairo" -> "Kairo". Same cheap Gemini as the gate; reasoning disabled.
   app.post<{ Body: { transcript?: string; field?: 'name' | 'source' } }>('/v1/onboarding/extract', async (req, reply) => {
-    if (!rateLimit(`ex:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!(await admit(req, reply, 'extract'))) return reply;
     if (!providers.openrouter.key) return reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
     const transcript = (req.body?.transcript ?? '').slice(0, 300).trim();
     if (!transcript) return { value: '' };
@@ -86,7 +134,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
   // plain assistant persona instead of the needsScreen gate prompt. The desktop app speaks
   // the reply via Sarvam. Unauthenticated (runs mid-onboarding) + IP-rate-limited.
   app.post<{ Body: { transcript?: string; name?: string } }>('/v1/onboarding/chat', async (req, reply) => {
-    if (!rateLimit(`chat:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!(await admit(req, reply, 'chat'))) return reply;
     if (!providers.openrouter.key) return reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
     const transcript = (req.body?.transcript ?? '').slice(0, 400).trim();
     if (!transcript) return { reply: '' };
@@ -112,7 +160,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
 
   // STT for a spoken onboarding answer (name / source).
   app.post('/v1/onboarding/stt', async (req, reply) => {
-    if (!rateLimit(`stt:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!(await admit(req, reply, 'stt'))) return reply;
     const p = providers.sarvam;
     if (!p.key) return reply.status(503).send({ error: 'stt_unavailable', code: 'provider_error' });
     const mp = await req.file();
@@ -133,7 +181,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
   // Onboarding "point" GATE — the unauthenticated, unmetered sibling of /v1/llm/chat. The demo
   // point turn runs PRE-sign-in, so it can't use the authed gate route. IP-rate-limited.
   app.post('/v1/onboarding/gate', async (req, reply) => {
-    if (!rateLimit(`obgate:${req.ip}`, 40, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!(await admit(req, reply, 'gate'))) return reply;
     // Guarded, not forwarded: this route has no user, no meter and no credit gate, so an
     // unvalidated body is an open LLM proxy billed to us. See `model-guard.ts`.
     const { json } = await forwardJson('openrouter', '/chat/completions', guardOnboardingChat(req.body));
@@ -144,7 +192,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
   // Vision is the expensive call, so this gets a TIGHT per-IP budget (the demo makes ~1-2 calls;
   // headroom left for retries). Provider routing mirrors the metered route.
   app.post('/v1/onboarding/vision', async (req, reply) => {
-    if (!rateLimit(`obvis:${req.ip}`, 12, 10 * 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!(await admit(req, reply, 'vision'))) return reply;
     const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
     const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
     // Same reasoning as the gate, and it matters more here: vision is the expensive call.
@@ -156,7 +204,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
   // Pinned to the default engine + voice: onboarding runs before sign-in, so there is no user row
   // to hold a preference, and the scripted lines are tuned against this voice.
   app.post<{ Body: { text?: string } }>('/v1/onboarding/tts/stream', async (req, reply) => {
-    if (!rateLimit(`obtts:${req.ip}`, 60, 60_000)) return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
+    if (!(await admit(req, reply, 'ttsStream'))) return reply;
     const text = (req.body?.text ?? '').slice(0, TTS_TEXT_LIMIT).trim();
     if (!text) return reply.status(400).send({ error: 'bad_text', code: 'bad_request' });
     const target = streamTarget(text, { provider: 'sarvam', voiceId: ONBOARDING_VOICE_ID });
