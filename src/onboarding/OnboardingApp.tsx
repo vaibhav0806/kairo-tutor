@@ -8,7 +8,6 @@ import { STEPS } from './copy';
 import { FrontDoor } from './acts/FrontDoor';
 import { Act3Hearing } from './acts/Act3Hearing';
 import { Act4Permissions } from './acts/Act4Permissions';
-import { Act2SignIn } from './acts/Act2SignIn';
 import { Act6Source } from './acts/Act6Source';
 import { Act7Ending } from './acts/Act7Ending';
 import './onboarding.css';
@@ -27,25 +26,68 @@ import './onboarding.css';
 // betrayal. And it leaves the run to the peak uninterrupted — the practice beats now land last
 // before the ending, with no credential step between the "whoa" and the close.
 const ACT = {
-  WELCOME: 0, // the "front door" (hero → color in one card) — first-impression only, NEVER a resume target
-  SIGNIN: 1,
-  HEARING: 2,
-  PERMISSIONS: 3,
-  PRACTICE: 4, // legacy STEPS wizard, now just point + circle
-  SOURCE: 5,
-  ENDING: 6
+  // The "front door": hero → colour → sign-in, three panels of ONE card. Sign-in lives inside it
+  // rather than as an act of its own, so those beats read as a single first impression instead of
+  // a credential screen dropped into the middle of the flow. First-impression only, and never a
+  // resume target — a relaunch must not replay it.
+  WELCOME: 0,
+  HEARING: 1,
+  PERMISSIONS: 2,
+  PRACTICE: 3, // legacy STEPS wizard, now just point + circle
+  SOURCE: 4,
+  ENDING: 5
 } as const;
-const ACT_COUNT = 7;
+const ACT_COUNT = 6;
 
 // index = act (WELCOME:0 … ENDING:6); value = chapter (0..3). Chapters (internal names; the notch dots
 // show NO text): Welcome / Set up / Try it / Wrap up. Drives the notch progress dots (Phase D).
-const actToChapter = [0, 0, 1, 1, 2, 3, 3] as const;
+const actToChapter = [0, 1, 1, 2, 3, 3] as const;
 const CHAPTER_TOTAL = 4;
 
 // Whether the window must catch clicks for that act (front door / sign-in / chips), or stay
 // click-through so the desktop + pet + System Settings receive input. Hearing and practice are
 // notch + chord driven, so they stay click-through — the user acts on the REAL screen.
-const INTERACTIVE = [true, true, false, false, false, true, false];
+const INTERACTIVE = [true, false, false, false, true, false];
+
+
+/**
+ * Disk marker per resumable act. Named, never numbered: this string is persisted, so renumbering
+ * the acts must never be able to silently point a resume at the wrong place.
+ */
+const ACT_MARKERS: Record<number, string | undefined> = {
+  [ACT.HEARING]: 'hearing',
+  [ACT.PERMISSIONS]: 'permissions',
+  [ACT.PRACTICE]: 'practice',
+  [ACT.SOURCE]: 'source',
+  [ACT.ENDING]: 'ending'
+};
+
+/** Which act a saved marker resumes to, or null to start from the front door. */
+function resumeIndex(saved: string): number | null {
+  // 'act3' is the legacy spelling of the permissions marker, written by earlier builds. Kept so an
+  // onboarding already in flight resumes instead of restarting.
+  if (saved === 'permissions' || saved === 'act3') return ACT.PERMISSIONS;
+  if (saved === 'hearing') return ACT.HEARING;
+  if (saved === 'source') return ACT.SOURCE;
+  if (saved === 'ending') return ACT.ENDING;
+  // The practice wizard keeps its own STEPS id as the marker and resumes itself from there.
+  if (saved === 'practice' || STEPS.some((step) => step.id === saved)) return ACT.PRACTICE;
+  return null;
+}
+
+/**
+ * One read of the marker for the whole page, shared by every mount.
+ *
+ * The onboarding webview mounts more than once on a relaunch. A per-mount read let a later mount
+ * start at WELCOME and race its own request, discarding the resolved target — the front door
+ * reappearing after granting Screen Recording. Resolving once, at module scope, removes the race
+ * rather than trying to win it.
+ */
+let resumeRead: Promise<string> | null = null;
+function resumeTarget(): Promise<string> {
+  resumeRead ??= invoke<string>('get_onboarding_step').catch(() => '');
+  return resumeRead;
+}
 
 /** Root of the full-screen, transparent, click-through onboarding orchestrator (#/onboarding). */
 export function OnboardingApp() {
@@ -92,24 +134,38 @@ export function OnboardingApp() {
     void emit('onboarding:progress', { chapter, total: CHAPTER_TOTAL }).catch(() => {});
   }, [actIndex]);
 
-  // Resume after a permission-triggered relaunch (Screen Recording forces quit+reopen). Land on the
-  // right macro-step BEFORE rendering anything; the live status drives Act 3's sub-step and
-  // OnboardingFlow's own resume.
+  // Persist the furthest act reached, so ANY relaunch resumes in the right place — not just the
+  // Screen-Recording one. Previously only the permissions act wrote a marker, so a restart anywhere
+  // else replayed the front door. WELCOME is deliberately never written: it is the first impression,
+  // and replaying it after a relaunch is exactly the bug this guards against.
+  useEffect(() => {
+    if (!hasNativeBridge || !resolved) return;
+    const marker = ACT_MARKERS[actIndex];
+    if (!marker) return;
+    void invoke('set_onboarding_step', { step: marker }).catch(() => {});
+  }, [actIndex, resolved]);
+
+  // Resume after a relaunch. Resolve the target act BEFORE rendering anything.
+  //
+  // The read is a MODULE-level promise, not a per-mount one. The onboarding webview mounts more
+  // than once during a relaunch, and a per-mount read meant the second mount started at WELCOME
+  // with its own in-flight request — so the resume result was resolved correctly and then thrown
+  // away, which is precisely why the front door reappeared after granting Screen Recording.
   useEffect(() => {
     if (!hasNativeBridge) return;
-    void invoke<string>('get_onboarding_step')
+    let alive = true;
+    void resumeTarget()
       .then((saved) => {
-        klog('onboarding', 'info', 'resume', { saved });
-        // Resume only ever lands on PERMISSIONS or PRACTICE (a STEPS id). WELCOME(0) is a
-        // first-impression-only act and is intentionally NEVER a resume target, so a Screen-Recording
-        // quit+reopen never replays the front door. A fresh run (no marker) keeps useState(0) = WELCOME.
-        // 'act3' is the legacy spelling of this marker, written by builds from before sign-in
-        // moved. Accepted so an onboarding already in flight resumes instead of restarting.
-        if (saved === 'permissions' || saved === 'act3') setActIndex(ACT.PERMISSIONS);
-        else if (saved && STEPS.some((s) => s.id === saved)) setActIndex(ACT.PRACTICE);
+        if (!alive) return;
+        const target = resumeIndex(saved);
+        klog('onboarding', 'info', 'resume', { saved, target });
+        if (target !== null) setActIndex(target);
       })
       .catch(() => {})
-      .finally(() => setResolved(true));
+      .finally(() => alive && setResolved(true));
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const finish = () => {
@@ -125,12 +181,9 @@ export function OnboardingApp() {
   let body: React.ReactNode;
   switch (actIndex) {
     case ACT.WELCOME:
-      body = <FrontDoor onComplete={advance} />;
-      break;
-    case ACT.SIGNIN:
       body = (
-        <Act2SignIn
-          onSignedIn={(name) => {
+        <FrontDoor
+          onComplete={(name: string) => {
             setObName(name);
             advance();
           }}

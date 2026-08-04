@@ -22,13 +22,8 @@ export function Act4Permissions({ name, onAdvance }: ActProps) {
   const spoke = useRef<Record<string, boolean>>({});
   const advanced = useRef(false);
 
-  // Persist the resume marker: granting Screen Recording forces a macOS quit+reopen, and the
-  // orchestrator resumes to whatever the marker says (mapped in OnboardingApp).
-  useEffect(() => {
-    // Named, not numbered: this marker is persisted to disk, so an act renumber must not be able
-    // to silently point a resume at the wrong place.
-    void invoke('set_onboarding_step', { step: 'permissions' }).catch(() => {});
-  }, []);
+  // The resume marker is written by the orchestrator for EVERY act, not here for this one — a
+  // relaunch during any act must resume where it happened, not just this one.
 
   // Live status is the source of truth (idempotent across the relaunch). Poll → pick the sub-step.
   useEffect(() => {

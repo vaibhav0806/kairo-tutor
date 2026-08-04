@@ -3,23 +3,24 @@ import { klog } from '../../core/logger';
 import { useCoach } from '../useCoach';
 import { getAuthStatus, onAuthChanged, onAuthRejected, startGoogleAuth } from '../authClient';
 import { syncUserName } from '../userName';
-import { TempPanel } from './TempPanel';
-import { KairoLockup } from '../../components/KairoMark';
 import { InlineNotice } from '../../components/InlineNotice';
 
 /**
- * Act 2 — sign in, immediately after the colour step and before anything costs money.
+ * The front door's third panel: sign in, before anything in the product costs money.
  *
- * Silent by design. Every other act speaks, but this one is a credential step sharing the front
- * door's card, and being talked at while reaching for a password reads as pushy — so it says what
- * it needs in text and gets out of the way. There is deliberately no spoken line and no cached
- * audio for it.
+ * Deliberately part of the same card as the hero and the colour step rather than an act of its own.
+ * Those three beats are one continuous first impression, and dropping a separate credential card
+ * into the middle of the flow read as an interruption. The card collapses into the pet only once
+ * this succeeds, so Kairo's first spoken line lands on a real account.
+ *
+ * Silent by design. Everything else in onboarding speaks; being talked at while reaching for a
+ * password reads as pushy, so this panel says what it needs in text. There is no cached audio.
  *
  * The Google button opens the system browser; on the deep-link return the orchestrator window
- * regains focus. Once signed in we pull the user's name from `/v1/me` and cache it, then advance —
- * the resolved name is held by the orchestrator for the warm ending and the account save.
+ * regains focus. Once signed in we pull the user's name from `/v1/me` and cache it, then hand it
+ * back for the warm ending and the account save.
  */
-export function Act2SignIn({ onSignedIn }: { onSignedIn: (name: string) => void }) {
+export function SignInPanel({ onSignedIn }: { onSignedIn: (name: string) => void }) {
   const { clear, bridge } = useCoach('');
   const [signedIn, setSignedIn] = useState(false);
   const [rejected, setRejected] = useState<string | null>(null);
@@ -65,9 +66,7 @@ export function Act2SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
   }, [signedIn]);
 
   return (
-    <TempPanel>
-      <div className="ob-signin">
-        <KairoLockup className="ob-signin-mark" />
+    <div className="ob-signin">
         {signedIn ? (
           <span className="ob-signin-done">Signed in — one sec…</span>
         ) : (
@@ -94,8 +93,7 @@ export function Act2SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
               <span>Continue with Google</span>
             </button>
           </>
-        )}
-      </div>
-    </TempPanel>
+      )}
+    </div>
   );
 }

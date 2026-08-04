@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { DEFAULT_ACCENT, applyAccent, clampAccent, getAccent } from '../../core/accent';
 import { klog } from '../../core/logger';
+import { SignInPanel } from './SignInPanel';
 import { playChime, playSound } from '../../core/sound';
 import { useCoach } from '../useCoach';
 import { ACT_LINES, HERO_COPY } from '../copy';
@@ -65,12 +66,16 @@ function buildHeroBurst(svg: SVGSVGElement) {
 //
 // AUDIO-UNLOCK GOTCHA: the hero is the first screen, before any gesture, so it's SILENT. The first cue
 // (playSound('morph')) rides the "Get started" CLICK, which also unlocks the shared AudioContext.
-export function FrontDoor({ onComplete }: { onComplete: () => void }) {
+export function FrontDoor({ onComplete }: { onComplete: (name: string) => void }) {
   const { say, clear } = useCoach('');
-  const [phase, setPhase] = useState<'hero' | 'color'>('hero');
+  const [phase, setPhase] = useState<'hero' | 'color' | 'signin'>('hero');
   const [hex, setHex] = useState<string>(DEFAULT_ACCENT);
   // Non-null once the card is imploding toward the pet; holds the translate delta (card center → pet).
   const [collapse, setCollapse] = useState<{ dx: number; dy: number } | null>(null);
+  // Where the user last clicked, so the card implodes toward their hand rather than the screen
+  // centre. Captured on the colour confirm and reused when sign-in finishes.
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const nameRef = useRef('');
   const cardRef = useRef<HTMLDivElement | null>(null);
   const cursorWakeTimerRef = useRef<number | null>(null);
   // Right-side looping demo (Blender tile → ink connector → "Kairo sees Blender" streaming note).
@@ -137,24 +142,39 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
         klog('onboarding', 'warn', 'accent persistence failed', { error: String(error) });
       });
       playChime('confirm'); // satisfying two-note rise on lock-in
-      // Kick off the collapse: the pet wakes to "catch" the card, and framer-motion implodes it toward
-      // the click point. onCollapseDone (onAnimationComplete) drives the rest.
-      const rect = cardRef.current?.getBoundingClientRect();
-      const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
-      const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
-      setCollapse({ dx: point.x - cx, dy: point.y - cy });
-      // Cross-fade the actual cursor into the card's last small, still-visible frame. This makes the
-      // physical hand-off read as one object changing form, not a window disappearing and a pet
-      // independently appearing nearby.
-      const wake = () => {
-        klog('onboarding', 'info', 'card handed off to cursor');
-        void emit('cursor:entrance');
-      };
-      if (reduce) wake();
-      else cursorWakeTimerRef.current = window.setTimeout(wake, 430);
+      // The card does NOT collapse here any more. Sign-in is the third panel of this same card, so
+      // the hero → colour → sign-in run reads as one continuous first impression, and the collapse
+      // (plus Kairo's first spoken line) waits until there is an account behind it.
+      lastPointRef.current = point;
+      setPhase('signin');
+      playSound('morph');
     },
-    [hex, reduce]
+    [hex]
   );
+
+  /**
+   * Collapse the card into the pet. Moved off colour-confirm to sign-in-success, so nothing
+   * expensive — and nothing spoken — happens before the user has an account.
+   */
+  const startCollapse = useCallback(() => {
+    const point = lastPointRef.current ?? {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2
+    };
+    const rect = cardRef.current?.getBoundingClientRect();
+    const cx = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const cy = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+    setCollapse({ dx: point.x - cx, dy: point.y - cy });
+    // Cross-fade the actual cursor into the card's last small, still-visible frame. This makes the
+    // physical hand-off read as one object changing form, not a window disappearing and a pet
+    // independently appearing nearby.
+    const wake = () => {
+      klog('onboarding', 'info', 'card handed off to cursor');
+      void emit('cursor:entrance');
+    };
+    if (reduce) wake();
+    else cursorWakeTimerRef.current = window.setTimeout(wake, 430);
+  }, [reduce]);
 
   // Fired when the framer-motion card animation finishes. Only acts on the COLLAPSE (not the entrance):
   // settle cue, the pet-is-alive wake line on the real desktop, then advance to Act 2.
@@ -163,7 +183,7 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
     playSound('settle');
     await say([ACT_LINES.act1_wake], { onStart: () => void emit('cursor:celebrate') });
     await clear();
-    onComplete();
+    onComplete(nameRef.current);
   }, [collapse, say, clear, onComplete]);
 
   // The right-side demo: paint the corner burst once, then loop origin→ink-draw→note→type reply.
@@ -278,7 +298,23 @@ export function FrontDoor({ onComplete }: { onComplete: () => void }) {
         >
         <div className="ob-hero-left">
           <AnimatePresence mode="sync" initial={false}>
-            {phase === 'hero' ? (
+            {phase === 'signin' ? (
+              <motion.div
+                key="signin"
+                className="ob-front-signin"
+                initial={reduce ? false : { opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <KairoLockup className="ob-hero-mark" label={HERO_COPY.wordmark} />
+                <SignInPanel
+                  onSignedIn={(name: string) => {
+                    nameRef.current = name;
+                    startCollapse();
+                  }}
+                />
+              </motion.div>
+            ) : phase === 'hero' ? (
               <motion.div
                 key="hero"
                 className="ob-front-hero"

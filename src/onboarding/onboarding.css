@@ -200,6 +200,20 @@ body.onboarding-document {
 }
 /* This act is silent, so the card carries the whole message: a line that says what happens next,
    and a quieter one that says why. The title takes the weight the spoken line used to. */
+.ob-front-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+}
+/* Inside the front-door card the panel is left-aligned like the hero and colour panels, rather
+   than centred the way the standalone card used to be. */
+.ob-front-signin .ob-signin {
+  align-items: flex-start;
+  text-align: left;
+}
 .ob-signin-title {
   margin-bottom: 2px;
   font-size: 17px;

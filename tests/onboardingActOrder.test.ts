@@ -15,6 +15,7 @@ import { join } from 'node:path';
  * a comment to stay true.
  */
 const source = readFileSync(join(__dirname, '../src/onboarding/OnboardingApp.tsx'), 'utf8');
+const frontDoor = readFileSync(join(__dirname, '../src/onboarding/acts/FrontDoor.tsx'), 'utf8');
 
 function actIndex(name: string): number {
   const match = source.match(new RegExp(`\\b${name}:\\s*(\\d+)`));
@@ -23,17 +24,26 @@ function actIndex(name: string): number {
 }
 
 describe('onboarding act order', () => {
-  it('puts sign-in before every act that can spend money', () => {
-    const signin = actIndex('SIGNIN');
-    // HEARING runs the push-to-talk drill (speech-to-text); PRACTICE runs the real vision turns.
-    expect(signin).toBeLessThan(actIndex('HEARING'));
-    expect(signin).toBeLessThan(actIndex('PRACTICE'));
+  it('signs the user in inside the front door, before any act that spends money', () => {
+    // Sign-in is the front door's third panel, not an act of its own. What matters for cost is that
+    // the card cannot be left until it succeeds: HEARING runs speech-to-text and PRACTICE runs the
+    // real vision turns, and both sit after WELCOME.
+    expect(frontDoor).toContain("'hero' | 'color' | 'signin'");
+    expect(frontDoor).toContain('SignInPanel');
+    expect(actIndex('WELCOME')).toBeLessThan(actIndex('HEARING'));
+    expect(actIndex('WELCOME')).toBeLessThan(actIndex('PRACTICE'));
   });
 
-  it('keeps the free front door first, so the ask is not the very first thing', () => {
-    // The hero and colour step are baked audio plus a colour wheel — no provider call at all — so
-    // they can stay ahead of the account ask without costing anything.
-    expect(actIndex('WELCOME')).toBeLessThan(actIndex('SIGNIN'));
+  it('only leaves the front door once sign-in has succeeded', () => {
+    // The collapse is what ends the card and advances the flow. It must be reachable from the
+    // sign-in success path and NOT from the colour confirm, or the paid acts open up early.
+    const signInHandler = frontDoor.slice(frontDoor.indexOf('onSignedIn={'));
+    expect(signInHandler).toContain('startCollapse()');
+    const confirmBody = frontDoor.slice(
+      frontDoor.indexOf('const confirm = useCallback'),
+      frontDoor.indexOf('const startCollapse'),
+    );
+    expect(confirmBody).not.toContain('setCollapse(');
   });
 
   it('leaves the run to the peak uninterrupted', () => {
@@ -43,7 +53,7 @@ describe('onboarding act order', () => {
     expect(actIndex('SOURCE')).toBeLessThan(actIndex('ENDING'));
   });
 
-  it('has no spoken line or cached audio for the silent sign-in act', () => {
+  it('has no spoken line or cached audio for the silent sign-in panel', () => {
     const copy = readFileSync(join(__dirname, '../src/onboarding/copy.ts'), 'utf8');
     expect(copy).not.toContain('ACT5_SIGNIN');
     expect(copy).not.toContain('act5_signin');
