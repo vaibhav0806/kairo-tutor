@@ -59,3 +59,15 @@ describe('onboarding act order', () => {
     expect(copy).not.toContain('act5_signin');
   });
 });
+
+describe('the client never calls a route the server deleted', () => {
+  it('has no fetch left pointing at the unauthenticated onboarding routes', () => {
+    // These 404'd silently in a real walk-through and stalled the point turn before vision was
+    // ever issued. The server-side deletion and the client-side callers have to move together.
+    const client = readFileSync(join(__dirname, '../src/onboarding/backendClient.ts'), 'utf8');
+    const liveCalls = client
+      .split('\n')
+      .filter((line) => line.includes('/v1/onboarding/') && line.includes('backendUrl'));
+    expect(liveCalls).toEqual([]);
+  });
+});
