@@ -400,9 +400,13 @@ async fn run_tutor_turn_inner(
         );
     }
 
-    let api_key = provider_env_optional("OPENROUTER_API_KEY").ok_or_else(|| {
-        "OPENROUTER_API_KEY is required for native OpenRouter tutor turns.".to_string()
-    })?;
+    // The OpenRouter key is needed only by the DIRECT fallback call below, and only when the proxy
+    // is off. It used to be demanded here, at the top of the function, before this turn had decided
+    // whether it needs OpenRouter at all — so a shipped build, which deliberately holds no provider
+    // keys, refused every tutor turn in under a millisecond and never reached the vision path that
+    // would have gone through the proxy to OpenAI or Anthropic. Resolve it lazily, and require it
+    // only where it is actually used.
+    let api_key = provider_env_optional("OPENROUTER_API_KEY");
     let model = provider_env("OPENROUTER_MODEL", constants::OPENROUTER_MODEL);
     let vision_model = provider_env_optional("OPENROUTER_VISION_MODEL")
         .map(|value| value.trim().to_string())
@@ -583,6 +587,12 @@ async fn run_tutor_turn_inner(
     // FALLBACK (a text-only turn, or the single-call vision path above fell through):
     // the OpenRouter answer call. OpenAI pointing, when selected, still runs in parallel.
     let answer_future = async {
+        // Only this path talks to OpenRouter directly, so this is where a missing key is fatal.
+        let api_key = api_key.clone().ok_or_else(|| {
+            "OPENROUTER_API_KEY is required for the direct OpenRouter tutor turn (set it, or run \
+             against the backend proxy, which holds the provider keys)."
+                .to_string()
+        })?;
         let request_body = {
             let (request_model, include_screenshot) =
                 select_openrouter_request_model(&input, &model, &vision_model);

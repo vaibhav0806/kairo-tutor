@@ -1,3 +1,4 @@
+import { klog } from './logger';
 import { createMockTutorPlanner } from './mockTutor';
 import type { TutorPlannerAdapter, TutorTurnInput } from './orchestrator';
 import { createTutorRuntimeErrorResponse } from './tutorErrors';
@@ -94,16 +95,26 @@ function runTurn(
   onEarlyStep?: (step: unknown, index: number) => void
 ): Promise<string> {
   if (!onEarlyStep || !nativeBridge.runTutorTurnStream) {
-    return nativeBridge.runTutorTurn(input);
+    return nativeBridge.runTutorTurn(input).catch((error) => {
+      // Keep this: a turn that fails instantly used to be silent, which made a provider error
+      // indistinguishable from a hang.
+      klog('tutor', 'error', 'tutor turn failed', { error: String(error) });
+      throw error;
+    });
   }
   const reader = new StepStreamReader();
   let accumulated = '';
   let announced = 0;
-  return nativeBridge.runTutorTurnStream(input, (text) => {
-    accumulated += text;
-    for (const step of reader.read(accumulated)) {
-      onEarlyStep(step, announced);
-      announced += 1;
-    }
-  });
+  return nativeBridge
+    .runTutorTurnStream!(input, (text) => {
+      accumulated += text;
+      for (const step of reader.read(accumulated)) {
+        onEarlyStep!(step, announced);
+        announced += 1;
+      }
+    })
+    .catch((error) => {
+      klog('tutor', 'error', 'tutor turn failed', { error: String(error) });
+      throw error;
+    });
 }
