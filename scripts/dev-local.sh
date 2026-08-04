@@ -71,7 +71,12 @@ if curl -fsS --max-time 1 "$HEALTH" >/dev/null 2>&1; then
 else
   echo "▸ Starting the local server (npm run server:dev)…"
   # Own process group so Ctrl-C can take the whole watch tree down, not just tsx.
-  npm run server:dev &
+  # Tee the server's own log to a file. Without this it goes to this terminal's stdout and is
+  # gone the moment the wrapper exits — which left us unable to answer "did the request even
+  # reach the server?", the one question that separates a client hang from a server hang.
+  SERVER_LOG="${TMPDIR:-/tmp}/kairo-server-dev.log"
+  : > "$SERVER_LOG"
+  npm run server:dev > >(tee -a "$SERVER_LOG") 2>&1 &
   SERVER_PID=$!
 
   cleanup() {

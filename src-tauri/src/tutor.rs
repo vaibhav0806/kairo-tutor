@@ -711,6 +711,11 @@ async fn openrouter_text_chat(
         // thinking adds seconds for zero benefit and sits on the critical path.
         // Disable it (OpenRouter maps effort:none → Gemini's thinkingLevel off).
         "reasoning": { "effort": "none" },
+        // Route to the fastest endpoint serving this model rather than OpenRouter's default
+        // (price-weighted) pick. Both of these turns sit between the user finishing a sentence and
+        // hearing anything back, so endpoint choice is felt directly — the onboarding helper routes
+        // already did this and these, the ones actually on the critical path, did not.
+        "provider": { "sort": "throughput" },
     });
     // The gate parses strict JSON; the ack is a plain sentence and must NOT be
     // forced into json_object mode.
