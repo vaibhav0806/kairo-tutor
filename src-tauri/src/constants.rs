@@ -135,6 +135,16 @@ pub(crate) const OPENROUTER_REQUEST_TIMEOUT_MS: u64 = 45_000;
 // and defaulted to "look at the screen", producing screen-flavored answers to plain
 // questions. 12s gives the gate model room to answer.
 pub(crate) const GATE_TIMEOUT_MS: u64 = 12_000;
+/// How long to let the external `screencapture` process run before giving up on it.
+///
+/// It normally returns in well under a second. It can also block indefinitely: macOS 15 asks for
+/// screen-recording consent again periodically ("bypass the system private window picker"), and
+/// while that dialog is up the process just waits. Without a deadline the whole turn waited with
+/// it — the notch sat on its thinking word forever, with no answer and no error.
+///
+/// Generous on purpose: someone who is reading that dialog and about to click Allow should still
+/// get their answer, so this is sized for a human reaction, not for the capture itself.
+pub(crate) const SCREENCAPTURE_TIMEOUT_MS: u64 = 15_000;
 pub(crate) const GROUNDING_TIMEOUT_MS: u64 = 15_000;
 // Cap on an STT transcription round-trip (only enforced on the backend-proxy path;
 // the direct path uses the shared client's default). A short voice clip is quick.
