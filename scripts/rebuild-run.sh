@@ -47,9 +47,23 @@ codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 echo "▸ Entitlements:"
 codesign -d --entitlements :- "${APP_PATH}" 2>/dev/null || true
 
-# --- 4. relaunch -------------------------------------------------------------
-echo "▸ Launching ${APP_NAME}…"
-open "${APP_PATH}"
+# --- 4. install to /Applications, then relaunch ------------------------------
+#
+# Install rather than launch in place, because macOS reopens an app by BUNDLE ID, not by path.
+# Granting Screen Recording force-quits and reopens Kairo, and LaunchServices resolves
+# com.kairo.tutor to whatever copy it knows about — which, if a released build was ever installed,
+# is /Applications. The dev loop would then build one binary and the relaunch would silently run
+# another: onboarding appeared to ignore fixes that were never actually running after the restart.
+#
+# Keeping exactly one copy, where a real install lives, makes the relaunch deterministic.
+INSTALL_PATH="/Applications/${APP_NAME}.app"
+echo "▸ Installing to ${INSTALL_PATH}…"
+rm -rf "${INSTALL_PATH}"
+ditto "${APP_PATH}" "${INSTALL_PATH}"
 
-echo "✓ Done. Rebuilt, signed, verified, launched."
+echo "▸ Launching ${APP_NAME}…"
+open "${INSTALL_PATH}"
+
+echo "✓ Done. Rebuilt, signed, verified, installed, launched."
+echo "  App : ${INSTALL_PATH}"
 echo "  Logs: tail -F ${LOG}"

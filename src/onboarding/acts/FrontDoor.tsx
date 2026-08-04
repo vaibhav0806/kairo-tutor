@@ -141,7 +141,6 @@ export function FrontDoor({ onComplete }: { onComplete: (name: string) => void }
       void invoke('set_accent', { hex: clamped }).catch((error) => {
         klog('onboarding', 'warn', 'accent persistence failed', { error: String(error) });
       });
-      playChime('confirm'); // satisfying two-note rise on lock-in
       // The card does NOT collapse here any more. Sign-in is the third panel of this same card, so
       // the hero → colour → sign-in run reads as one continuous first impression, and the collapse
       // (plus Kairo's first spoken line) waits until there is an account behind it.
@@ -157,6 +156,10 @@ export function FrontDoor({ onComplete }: { onComplete: (name: string) => void }
    * expensive — and nothing spoken — happens before the user has an account.
    */
   const startCollapse = useCallback(() => {
+    // The lock-in chime belongs HERE, not on the colour confirm. It marks the card handing itself
+    // to the pet, so it has to land with the collapse — firing it two panels earlier left a
+    // celebratory sound attached to a step that is still mid-flow.
+    playChime('confirm');
     const point = lastPointRef.current ?? {
       x: window.innerWidth / 2,
       y: window.innerHeight / 2

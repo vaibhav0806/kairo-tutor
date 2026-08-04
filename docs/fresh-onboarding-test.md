@@ -77,6 +77,22 @@ TCC and the state directory, so step 3 is belt-and-braces.
 
 Apply migrations first if the branch adds any: `npm run db:migrate`.
 
+## Gotcha: only ever have ONE copy of the app
+
+macOS reopens an app by **bundle id**, not by path. Granting Screen Recording force-quits and
+reopens Kairo, and LaunchServices resolves `com.kairo.tutor` to whatever copy it knows about — so a
+leftover `/Applications/Kairo Tutor.app` from a release build will win, and the relaunch runs THAT
+binary instead of the one you just built.
+
+The symptom is nasty because it looks like a logic bug: the first launch behaves correctly, then
+after the permission restart the app behaves like an older version and appears to ignore your
+fixes. `npm run local` now installs to `/Applications` and launches from there, so there is exactly
+one copy. If you ever launch a build by hand, check which binary is actually running:
+
+```bash
+ps -o comm= -p $(pgrep -x kairo-tutor)
+```
+
 ## 5. Confirm the environment before testing
 
 ```bash
