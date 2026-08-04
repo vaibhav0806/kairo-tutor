@@ -8,6 +8,8 @@
 //! notarized build, revisit the Keychain + a `keychain-access-groups` entitlement (prompt-free then).
 
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -63,6 +65,7 @@ pub(crate) fn read_session(app: &AppHandle) -> Option<String> {
 }
 
 pub(crate) fn clear_session(app: &AppHandle) {
+    clear_cached_jwt();
     if let Some(path) = session_path(app) {
         let _ = std::fs::remove_file(path);
     }
@@ -254,11 +257,65 @@ pub async fn get_backend_jwt(app: AppHandle) -> Option<String> {
     fetch_jwt(&app).await
 }
 
+/// Cached JWT and the instant we stop trusting it.
+static JWT_CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+
+/// Stop reusing a token this long before it actually expires, so one is never presented mid-flight
+/// with seconds left on it.
+const JWT_REFRESH_MARGIN: Duration = Duration::from_secs(60);
+
+/// Fall back to this when the token carries no readable `exp`. Well under the 15 minutes the
+/// backend issues, so a misread claim costs an extra mint rather than a 401.
+const JWT_ASSUMED_LIFETIME: Duration = Duration::from_secs(5 * 60);
+
+/// Seconds-until-expiry from a JWT's `exp` claim, without verifying it.
+///
+/// Verification is the server's job — this only decides when to ask for a new one, so a malformed
+/// token simply falls back to the conservative default.
+fn jwt_lifetime(token: &str) -> Duration {
+    use base64::Engine;
+    let claims = token.split('.').nth(1).and_then(|payload| {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    });
+    let exp = claims.and_then(|c| c.get("exp").and_then(serde_json::Value::as_i64));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    match exp {
+        Some(exp) if exp > now => Duration::from_secs((exp - now) as u64),
+        _ => JWT_ASSUMED_LIFETIME,
+    }
+}
+
+/// Drop any cached JWT. Called on sign-out, so a stale token cannot outlive the session.
+pub(crate) fn clear_cached_jwt() {
+    if let Ok(mut cache) = JWT_CACHE.lock() {
+        *cache = None;
+    }
+}
+
 /// Fetch a short-lived JWT from the backend using the stored session token (for the proxy path).
+///
+/// Cached until shortly before it expires. Every authenticated call used to mint a fresh one, so a
+/// single ask paid for several round trips to `/api/auth/token` before any of its real work
+/// started — one per gate, vision, speech-to-text and text-to-speech call. The tokens last fifteen
+/// minutes; almost all of that minting was buying nothing.
 pub(crate) async fn fetch_jwt(app: &AppHandle) -> Option<String> {
+    if let Ok(cache) = JWT_CACHE.lock() {
+        if let Some((token, expires_at)) = cache.as_ref() {
+            if Instant::now() < *expires_at {
+                return Some(token.clone());
+            }
+        }
+    }
+
     let session = read_session(app)?;
     let url = format!("{}/api/auth/token", crate::proxy::backend_url());
-    let res = reqwest::Client::new()
+    let res = crate::tutor::shared_http_client()
         .get(&url)
         .bearer_auth(&session)
         .send()
@@ -268,11 +325,51 @@ pub(crate) async fn fetch_jwt(app: &AppHandle) -> Option<String> {
         return None;
     }
     let v = res.json::<serde_json::Value>().await.ok()?;
-    v.get("token").and_then(|t| t.as_str()).map(str::to_string)
+    let token = v
+        .get("token")
+        .and_then(|t| t.as_str())
+        .map(str::to_string)?;
+
+    let ttl = jwt_lifetime(&token).saturating_sub(JWT_REFRESH_MARGIN);
+    if let Ok(mut cache) = JWT_CACHE.lock() {
+        *cache = Some((token.clone(), Instant::now() + ttl));
+    }
+    Some(token)
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_token_is_reused_until_shortly_before_it_expires() {
+        // Every authed call used to mint a fresh JWT — one round trip to /api/auth/token in front
+        // of every gate, vision, STT and TTS call — while the tokens themselves last 15 minutes.
+        use base64::Engine;
+        let exp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+            + 900;
+        let payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(r#"{{"exp":{exp}}}"#));
+        let token = format!("header.{payload}.signature");
+
+        let ttl = super::jwt_lifetime(&token);
+        assert!(
+            ttl > std::time::Duration::from_secs(800),
+            "should read exp: {ttl:?}"
+        );
+        assert!(ttl <= std::time::Duration::from_secs(900));
+    }
+
+    #[test]
+    fn an_unreadable_token_falls_back_to_a_short_lifetime() {
+        // A misread claim must cost an extra mint, never a request carrying an expired token.
+        let ttl = super::jwt_lifetime("not-a-jwt");
+        assert_eq!(ttl, super::JWT_ASSUMED_LIFETIME);
+        assert!(ttl < std::time::Duration::from_secs(15 * 60));
+    }
+
     use super::{consume_pending_auth_state, consume_pending_auth_state_at, parse_auth_callback};
     use std::{fs, path::PathBuf};
 
