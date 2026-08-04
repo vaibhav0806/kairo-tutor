@@ -71,7 +71,9 @@ export async function llmRoutes(app: FastifyInstance) {
     const askId = randomUUID();
     const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
     const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
-    // Clamp BEFORE reserving: a payload we will refuse must not cost the user a credit.
+    // Charge and clamp BEFORE reserving: a call we will refuse must not cost the user a credit.
+    // This is what bounds a Pro account, which the meter deliberately does not touch.
+    await chargeAccount(req, 'vision');
     const visionBody = guardVision(req, stripMeta(req.body));
 
     // Onboarding "tutorial" turns draw a SEPARATE capped budget — NOT billed against the 10
@@ -111,6 +113,7 @@ export async function llmRoutes(app: FastifyInstance) {
    */
   app.post('/v1/vision/tutor/stream', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
     const askId = randomUUID();
+    await chargeAccount(req, 'vision');
     const { provider, path } = providerFor(req.body);
     const body = guardVision(req, streamingBody(req.body));
 

@@ -1,54 +1,88 @@
 import type { FastifyRequest } from 'fastify';
-import { consume } from '../lib/budget';
-import { QuotaExceededError } from './error-handler';
+import { consumeDetailed } from '../lib/budget';
+import { RateLimitedError } from './error-handler';
 
 /**
- * Per-account ceilings for the routes the meter does not charge for.
+ * Per-account limits, applied to everyone — Pro included.
  *
- * `usage_event` records the turns that cost a credit — the two vision routes — because that is
- * what billing needs. Everything else authenticated (the gate, pointing, speech-to-text, both
- * text-to-speech routes) is credit-gated but unmetered, which until now meant *unrecorded and
- * unbounded*. For a Pro subscriber, who is unmetered by design, that made "one subscription" and
- * "unlimited speech and text inference" the same thing, with no trace of it anywhere.
+ * "Unmetered" was doing two jobs it should never have done together: not billed, and not bounded.
+ * A subscription buys unlimited *questions*, not unlimited *request rate*, and the difference is
+ * the whole attack surface once someone has any valid account. A stolen token, a client stuck in a
+ * retry loop, or a resold login all look identical to a very fast user, and none of them should be
+ * able to run all night.
  *
- * These limits are deliberately far above real use — a person working through a lesson does not
- * approach them, and hitting one means something is wrong: a client stuck in a retry loop, or an
- * account being shared or resold. They exist to make "unmetered" mean "not billed" rather than
- * "unbounded", and to leave a row behind that says who did it.
+ * Two windows, because they answer different questions:
  *
- * The identity is the user id, which is the whole reason sign-in moved ahead of the paid calls.
- * Bucketing by address was never a real identity: one office shares an address, and one attacker
- * rents thousands.
+ *   burst (per minute) — "is this a human working, or a script?" Sized so someone using Kairo hard
+ *                        never sees it, and a loop hits it within seconds rather than after hours.
+ *   daily             — "has something been wrong all day?" Far above real use; reaching it means
+ *                        a retry loop or a shared account, and leaves a row saying who.
+ *
+ * Both refuse with 429 and `Retry-After`, never 402. 402 means "buy more", which is the wrong thing
+ * to say to someone who already pays.
+ *
+ * The identity is the user id. That is the point of moving sign-in ahead of the paid calls: an
+ * address was never a caller, because one office shares one and one attacker rents thousands.
  */
-export const ACCOUNT_DAILY_LIMITS = {
-  // The every-ask routing decision plus text turns. Two or three per ask.
-  'llm-chat': 2_000,
+const LIMITS = {
+  // The routing decision on every ask, plus text turns. A human asks a handful a minute.
+  'llm-chat': { burst: 60, daily: 2_000 },
+  // The expensive one. Metered for free users; this is what bounds a Pro account.
+  vision: { burst: 20, daily: 1_000 },
   // Pointing runs at most once per ask, alongside a vision turn.
-  'vision-point': 1_000,
+  'vision-point': { burst: 30, daily: 1_000 },
   // One transcription per spoken question.
-  stt: 1_500,
+  stt: { burst: 30, daily: 1_500 },
   // One or more spoken replies per answer; streaming is the common path.
-  tts: 4_000,
+  tts: { burst: 60, daily: 4_000 },
   // Auditioning voices in Settings. Cached per voice, so this is generous already.
-  'voice-preview': 200,
-} as const satisfies Record<string, number>;
+  'voice-preview': { burst: 20, daily: 200 },
+} as const satisfies Record<string, { burst: number; daily: number }>;
 
-export const ACCOUNT_WINDOW_MS = 24 * 60 * 60_000;
+export const ACCOUNT_LIMITS = LIMITS;
+export const BURST_WINDOW_MS = 60_000;
+export const DAILY_WINDOW_MS = 24 * 60 * 60_000;
+
+export type AccountRoute = keyof typeof LIMITS;
 
 /**
- * Charge one call against this account's daily allowance for `route`.
+ * Charge one call against this account's burst and daily allowances for `route`.
  *
- * Throws `QuotaExceededError` (402) when exhausted, matching what the desktop already understands
- * from the free-request path. A database failure allows the call: this bounds an anomaly, and it
- * must not become a dependency that can take the product down.
+ * Burst is checked first: it is the cheaper refusal and the one a runaway client will hit, so a
+ * loop is stopped in seconds instead of quietly eating the day's allowance first.
  */
-export async function chargeAccount(req: FastifyRequest, route: keyof typeof ACCOUNT_DAILY_LIMITS): Promise<void> {
+export async function chargeAccount(req: FastifyRequest, route: AccountRoute): Promise<void> {
   const userId = req.userId;
   if (!userId) return; // requireAuth runs first; nothing to charge without it.
 
-  const limit = ACCOUNT_DAILY_LIMITS[route];
-  if (!(await consume(`acct:${route}:${userId}`, limit, ACCOUNT_WINDOW_MS))) {
-    req.log.error({ route, limit }, 'account exceeded its daily allowance for an unmetered route');
-    throw new QuotaExceededError('daily limit reached');
+  const { burst, daily } = LIMITS[route];
+
+  const perMinute = await consumeDetailed(`acct:${route}:${userId}`, burst, BURST_WINDOW_MS);
+  if (!perMinute.allowed) {
+    req.log.warn({ route, limit: burst }, 'account exceeded its per-minute allowance');
+    throw new RateLimitedError(
+      'Too many requests. Please wait a moment.',
+      secondsUntil(perMinute.resetAt),
+      burst,
+      perMinute.resetAt,
+    );
   }
+
+  const perDay = await consumeDetailed(`acctd:${route}:${userId}`, daily, DAILY_WINDOW_MS);
+  if (!perDay.allowed) {
+    // Loud: nobody using the product normally reaches this, so it is a retry loop or a shared
+    // account, and either way someone should look.
+    req.log.error({ route, limit: daily }, 'account exhausted its daily allowance');
+    throw new RateLimitedError(
+      'Daily limit reached. Please try again tomorrow.',
+      secondsUntil(perDay.resetAt),
+      daily,
+      perDay.resetAt,
+    );
+  }
+}
+
+/** Whole seconds until `resetAt`, floored at 1 so a client never retries instantly. */
+function secondsUntil(resetAt: number): number {
+  return Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
 }

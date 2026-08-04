@@ -83,6 +83,10 @@ pub(crate) enum ProxyError {
     NoAuth,
     /// A metered route returned 402 — the free-request limit is reached.
     QuotaExceeded,
+    /// The backend returned 429 — too many requests, too fast. Deliberately NOT `QuotaExceeded`:
+    /// that drives the upgrade prompt, and a subscriber who tripped an anti-abuse limit has
+    /// nothing to upgrade to. `retry_after` is the server's `Retry-After`, in seconds.
+    RateLimited { retry_after: Option<u64> },
     /// Network / non-2xx / parse failure.
     Failed {
         class: &'static str,
@@ -99,6 +103,10 @@ impl ProxyError {
         match self {
             ProxyError::NoAuth => "signed out (no session token)".to_string(),
             ProxyError::QuotaExceeded => "free request limit reached".to_string(),
+            ProxyError::RateLimited {
+                retry_after: Some(seconds),
+            } => format!("rate limited (retry after {seconds}s)"),
+            ProxyError::RateLimited { retry_after: None } => "rate limited".to_string(),
             ProxyError::Failed {
                 class,
                 status: Some(status),
@@ -114,6 +122,7 @@ impl ProxyError {
         match self {
             ProxyError::NoAuth => "auth",
             ProxyError::QuotaExceeded => "quota",
+            ProxyError::RateLimited { .. } => "rate_limited",
             ProxyError::Failed { class, .. } => class,
         }
     }
@@ -121,6 +130,7 @@ impl ProxyError {
     pub(crate) fn status(&self) -> Option<u16> {
         match self {
             ProxyError::Failed { status, .. } => *status,
+            ProxyError::RateLimited { .. } => Some(429),
             ProxyError::NoAuth | ProxyError::QuotaExceeded => None,
         }
     }
@@ -153,11 +163,21 @@ async fn authed_post(
         .timeout(timeout))
 }
 
-/// Map a proxy response's status to a `ProxyError` (402 → QuotaExceeded), or pass it through.
+/// Map a proxy response's status to a `ProxyError` (402 → QuotaExceeded, 429 → RateLimited),
+/// or pass it through.
 async fn check_status(response: reqwest::Response) -> Result<reqwest::Response, ProxyError> {
     let status = response.status();
     if status.as_u16() == 402 {
         return Err(ProxyError::QuotaExceeded);
+    }
+    if status.as_u16() == 429 {
+        // Honour the server's own backoff rather than inventing one.
+        let retry_after = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<u64>().ok());
+        return Err(ProxyError::RateLimited { retry_after });
     }
     if !status.is_success() {
         return Err(ProxyError::failed("http", Some(status.as_u16())));
@@ -515,6 +535,22 @@ mod tests {
             super::billing_error_message("provider_error", "start checkout"),
             "start checkout is temporarily unavailable. Please try again."
         );
+    }
+
+    #[test]
+    fn rate_limiting_is_not_reported_as_a_quota_problem() {
+        // 402 drives the upgrade prompt. A subscriber who tripped an anti-abuse limit has nothing
+        // to upgrade to, so 429 must stay a distinct thing all the way to the UI.
+        let limited = ProxyError::RateLimited {
+            retry_after: Some(30),
+        };
+        assert_eq!(limited.class(), "rate_limited");
+        assert_eq!(limited.status(), Some(429));
+        assert_eq!(limited.describe(), "rate limited (retry after 30s)");
+
+        let unknown = ProxyError::RateLimited { retry_after: None };
+        assert_eq!(unknown.describe(), "rate limited");
+        assert_eq!(ProxyError::QuotaExceeded.class(), "quota");
     }
 
     #[test]

@@ -23,6 +23,24 @@ export class AuthError extends Error {
   code = 'unauthenticated' as const;
 }
 /**
+ * Too many requests, too fast. Distinct from `QuotaExceededError` on purpose: 402 means "you are
+ * out of the allowance you can buy more of", and telling a paying subscriber that would put an
+ * upgrade prompt in front of someone who already upgraded. This is 429 — slow down, come back.
+ */
+export class RateLimitedError extends Error {
+  code = 'bad_request' as const;
+
+  constructor(
+    message: string,
+    readonly retryAfterSeconds: number,
+    readonly limit: number,
+    readonly resetAt: number,
+  ) {
+    super(message);
+  }
+}
+
+/**
  * A request we refuse to forward. The message is ours, never the caller's input echoed back, so it
  * is safe to return — a rejected payload must not become a way to get our server to repeat text.
  */
@@ -70,6 +88,17 @@ export function registerErrorHandler(app: FastifyInstance) {
     }
     if (err instanceof AuthError) {
       return reply.status(401).send({ error: 'unauthenticated', code: 'unauthenticated' } satisfies ErrorEnvelope);
+    }
+    if (err instanceof RateLimitedError) {
+      // `Retry-After` is the one every client already understands (RFC 9110). The RateLimit-*
+      // trio is the IETF draft shape, so a well-behaved client can back off before being refused.
+      reply.header('Retry-After', String(err.retryAfterSeconds));
+      reply.header('RateLimit-Limit', String(err.limit));
+      reply.header('RateLimit-Remaining', '0');
+      reply.header('RateLimit-Reset', String(err.retryAfterSeconds));
+      return reply
+        .status(429)
+        .send({ error: 'rate_limited', code: 'bad_request', message: err.message } satisfies ErrorEnvelope);
     }
     if (err instanceof BadRequestError) {
       // Logged at info: on the unauthenticated routes this fires for every probe, and a stranger
