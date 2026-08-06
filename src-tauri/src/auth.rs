@@ -49,9 +49,19 @@ fn write_private_file(path: &PathBuf, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Store a session token, dropping any JWT minted from the previous one.
+///
+/// The clear belongs here rather than at the call sites. Today the only way to reach a sign-in is
+/// through a sign-out, which already clears the cache — but that makes correctness a property of
+/// the caller. A path that stores a session without one first (a silent re-auth, a switch-account
+/// button, a refresh) would inherit the previous session's JWT for the rest of its ~15 minutes and
+/// send every proxied call as the wrong user: their quota, their data. Clearing at the single
+/// write point makes that unrepresentable instead of merely unreachable.
 pub(crate) fn store_session(app: &AppHandle, token: &str) -> Result<(), String> {
     let path = session_path(app).ok_or("no config dir")?;
-    write_private_file(&path, token)
+    write_private_file(&path, token)?;
+    clear_cached_jwt();
+    Ok(())
 }
 
 pub(crate) fn read_session(app: &AppHandle) -> Option<String> {
@@ -368,6 +378,19 @@ mod tests {
         let ttl = super::jwt_lifetime("not-a-jwt");
         assert_eq!(ttl, super::JWT_ASSUMED_LIFETIME);
         assert!(ttl < std::time::Duration::from_secs(15 * 60));
+    }
+
+    #[test]
+    fn clearing_the_cache_drops_a_token_that_has_not_expired() {
+        // The case that matters is a token with plenty of life left: an expired one would be
+        // refreshed anyway, so a clear that only worked on those would protect nothing. This is
+        // what stops a new session inheriting the previous user's JWT.
+        *super::JWT_CACHE.lock().unwrap() = Some((
+            "previous-session-token".to_string(),
+            std::time::Instant::now() + std::time::Duration::from_secs(15 * 60),
+        ));
+        super::clear_cached_jwt();
+        assert!(super::JWT_CACHE.lock().unwrap().is_none());
     }
 
     use super::{consume_pending_auth_state, consume_pending_auth_state_at, parse_auth_callback};
