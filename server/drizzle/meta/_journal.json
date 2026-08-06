@@ -71,6 +71,13 @@
       "when": 1785522081266,
       "tag": "0009_spooky_young_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785765647881,
+      "tag": "0010_sweet_zeigeist",
+      "breakpoints": true
     }
   ]
 }

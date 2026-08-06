@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, boolean, timestamp, jsonb, uuid, pgEnum, index } from 'drizzle-orm/pg-core';
 import { user } from './auth';
 
 export const planT = pgEnum('plan_t', ['free', 'pro']);
@@ -135,6 +135,35 @@ export const userPreference = pgTable('user_preference', {
   ttsVoiceId: text('tts_voice_id'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Fixed-window counters for anything that must hold across restarts and processes.
+ *
+ * The in-memory limiter it replaces was a `Map` in one process: a deploy reset every window, and a
+ * second instance would have doubled every allowance. That is fine for a nuisance and useless for
+ * the thing it actually guards — unauthenticated routes that spend provider money. A row per
+ * (key, window) with an atomic upsert is enough, needs no new infrastructure, and one round trip
+ * is noise next to the provider call it protects.
+ *
+ * Carries two kinds of key, deliberately in one table because they are the same mechanism:
+ *   - `rl:<route>:<client>:<window>` — per-caller rate limit.
+ *   - `budget:<route>:<day>`         — the global daily ceiling, which is just a rate limit whose
+ *                                      key ignores who is calling.
+ */
+export const rateCounter = pgTable(
+  'rate_counter',
+  {
+    bucket: text('bucket').primaryKey(),
+    hits: integer('hits').notNull().default(0),
+    // Rows are disposable once the window closes; `expiresAt` is what the sweep deletes on.
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    // The sweep deletes on this column. Small table, but a seq scan every ten minutes for the
+    // lifetime of the service is a silly thing to leave behind for the sake of one line.
+    index('rate_counter_expires_idx').on(t.expiresAt),
+  ],
+);
 
 /** Onboarding answers + waitlist state (one row per user, written when onboarding completes). */
 export const profile = pgTable('profile', {
