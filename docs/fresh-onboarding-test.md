@@ -102,6 +102,12 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8787/v1/vision
 tail -F ~/Library/Logs/Kairo/kairo-latest.log
 ```
 
+Two logs, and you want both. `kairo-latest.log` is the app — Rust and every WebView.
+`kairo-server-latest.log` is the local server, teed there by `npm run local`. Only the second one
+can answer "did the request reach the server at all", which is what separates a client-side hang
+from a server-side one. Both are dated and appended, so a previous run's evidence survives the
+next one.
+
 ## What a correct run looks like
 
 1. Hero → colour → **sign-in, all in one card**. No spoken line on the sign-in panel.
