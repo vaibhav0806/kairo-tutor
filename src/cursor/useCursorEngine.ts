@@ -638,14 +638,14 @@ export function useCursorEngine(): CursorEngineRefs {
         }
         applyVisibility();
       }),
-      // Signature "come to life" wake-up (onboarding Act 1; reusable in-product).
+      // Signature "come to life" wake-up (played on leaving the front door; reusable in-product).
       listen('cursor:entrance', () => {
         if (!isMounted) {
           return;
         }
         runBeat('entrance');
       }),
-      // The Act 4a peak flourish — a delightful pop + accent burst on the first real point.
+      // The PRACTICE peak flourish — a delightful pop + accent burst on the first real point.
       listen('cursor:celebrate', () => {
         if (!isMounted) {
           return;

@@ -19,7 +19,7 @@ export const STEPS: StepDef[] = [
   {
     // Interactive: the user asks Kairo to point at something on their real screen (gate → vision).
     // Acts 1-3 (arrival/color, hearing, permissions) run BEFORE this; sign-in/source/ending are the
-    // Act 5-6 components AFTER. So the legacy STEPS wizard is now just the two practice beats.
+    // the SOURCE and ENDING components AFTER. So the legacy STEPS wizard is now just the two practice beats.
     id: 'learn_point',
     title: () => 'I point, you act',
     speech: [
@@ -66,11 +66,11 @@ export const ACT_LINES: Record<string, Segment> = {
   act2_empty: { cacheKey: 'act2_empty', text: () => "Hmm, didn't catch that — give it another go." }
 } satisfies Record<string, Segment>;
 
-/** The seeded-prompt chip shown during the Act 2 say-hi drill (master spec §8). */
+/** The seeded-prompt chip shown during the HEARING say-hi drill (master spec §8). */
 export const ACT2_CHIP = "try: 'hey Kairo, what's up?'";
 
-/** Act 0 — the split "front door" hero. Locked copy (v2 spec §6). Strings live here so the founder
- *  can tweak wording without touching layout/logic. `confirm` is also the color-step CTA (Act 1). */
+/** The split "front door" hero. Locked copy (v2 spec §6). Strings live here so the founder
+ *  can tweak wording without touching layout/logic. `confirm` is also the colour-step CTA. */
 export const HERO_COPY = {
   wordmark: 'Kairo',
   h1: 'Meet Kairo',
@@ -78,11 +78,11 @@ export const HERO_COPY = {
   value: 'Points right at what you need.', // serif, over the demo
   cta: 'Get started →',
   legal: 'By continuing you agree to our Terms and Privacy Policy.',
-  confirm: "Let's get started", // color-step lock-in CTA (Act 1)
+  confirm: "Let's get started", // colour-step lock-in CTA
 } as const;
 
 /**
- * Act 3 — "Earn the Eyes". Two separate moments, each: why + benefit + honest privacy line.
+ * PERMISSIONS — "Earn the Eyes". Two separate moments, each: why + benefit + honest privacy line.
  * Screen Recording is spoken first (it forces the relaunch); Accessibility is reframed as
  * "steer the pointer", never "control your Mac".
  */
@@ -130,17 +130,17 @@ export const PRACTICE_RETRY: Record<'empty' | 'no_target', Segment[]> = {
   ]
 };
 
-/** Act 5a — sign in (temp panel). Static line, cached. */
+/** Sign in. Static line, cached. */
 /** Spoken once the Google name is known (dynamic — synthesized live). */
 export const act5Greeting = (name: string): Segment[] =>
   name ? [{ text: () => `Nice to meet you, ${name}.` }] : [];
 
-/** Act 5b — source chips. Static line, cached. */
+/** SOURCE — source chips. Static line, cached. */
 export const ACT5_SOURCE: Segment[] = [
   { cacheKey: 'act5_source', text: () => "Last thing, I'm curious — where'd you hear about me?" }
 ];
 
-/** Act 6 — warm ending. First line personalized (live), second cached. */
+/** ENDING — warm ending. First line personalized (live), second cached. */
 export const act6Ending = (name: string): Segment[] => [
   { text: () => (name ? `You're all set, ${name}.` : "You're all set.") },
   { cacheKey: 'act6_ending', text: () => "Hold Option and Control any time — I'll be right here." }
@@ -151,11 +151,11 @@ export const CACHED_LINES: { key: string; text: string }[] = [
   ...STEPS.flatMap((s) => s.speech)
     .filter((seg) => seg.cacheKey)
     .map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
-  // Act 1-2 coach lines (Phase 3).
+  // Front-door and HEARING coach lines (Phase 3).
   ...Object.values(ACT_LINES).map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),
-  // Act 3 permission lines (Phase 4).
+  // PERMISSIONS lines (Phase 4).
   ...Object.entries(ACT3_LINES).map(([key, text]) => ({ key, text })),
-  // Act 5-6 lines (Phase 6) — spoken outside the STEPS wizard.
+  // SOURCE and ENDING lines (Phase 6) — spoken outside the STEPS wizard.
   ...[...ACT5_SOURCE, ...act6Ending('')]
     .filter((seg) => seg.cacheKey)
     .map((seg) => ({ key: seg.cacheKey as string, text: seg.text('') })),

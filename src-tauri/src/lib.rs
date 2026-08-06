@@ -389,7 +389,7 @@ fn cursor_active(app: tauri::AppHandle, active: bool) -> Result<(), String> {
         .map_err(|error| format!("Failed to emit cursor active: {error}"))
 }
 
-// One-shot "come to life" beat for the companion cursor (onboarding Act 1 wake-up;
+// One-shot "come to life" beat for the companion cursor (onboarding wake-up on leaving the front door;
 // reusable in-product). Broadcast via app.emit so it reaches the cursor WebView reliably.
 #[tauri::command]
 fn cursor_entrance(app: tauri::AppHandle) -> Result<(), String> {
@@ -398,7 +398,7 @@ fn cursor_entrance(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Failed to emit cursor entrance: {error}"))
 }
 
-// One-shot celebratory flourish (onboarding Act 4a peak; used sparingly so it stays special).
+// One-shot celebratory flourish (onboarding PRACTICE peak; used sparingly so it stays special).
 #[tauri::command]
 fn cursor_celebrate(app: tauri::AppHandle) -> Result<(), String> {
     klog!(cursor, debug, "celebrate beat → cursor");
@@ -457,7 +457,7 @@ fn restart_app(app: tauri::AppHandle) {
 }
 
 /// Bring the Kairo onboarding window back to the front. Used after the OAuth browser hand-off so
-/// Kairo isn't narrating the next step while the user is still looking at the browser (Act 5).
+/// Kairo isn't narrating the next step while the user is still looking at the browser (SOURCE).
 #[tauri::command]
 fn focus_onboarding(app: tauri::AppHandle) {
     #[cfg(target_os = "macos")]
@@ -466,7 +466,7 @@ fn focus_onboarding(app: tauri::AppHandle) {
     let _ = app;
 }
 
-/// Quit System Settings so only the desktop + Kairo remain after a permission grant (Act 3). No-op
+/// Quit System Settings so only the desktop + Kairo remain after a permission grant (PERMISSIONS). No-op
 /// if it isn't running.
 #[cfg(target_os = "macos")]
 #[tauri::command]
@@ -500,7 +500,7 @@ fn activate_frontmost(app: &tauri::AppHandle) {
         let mut is_active = false;
         if let Some(mtm) = objc2::MainThreadMarker::new() {
             let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
-            // FOCUS = come to front ONLY. NEVER hideOtherApplications: — Act 3 needs System Settings
+            // FOCUS = come to front ONLY. NEVER hideOtherApplications: — PERMISSIONS needs System Settings
             // visible while the pet points at the real toggle. Front this app; never minimize the world.
             // Modern (macOS 14+) — the documented replacement; works for the current app.
             ns_app.activate();
@@ -998,7 +998,7 @@ pub fn run() {
             }
             // Push-to-talk detects ⌥⌃ by POLLING the modifier state (CGEventSourceFlagsState), NOT a
             // keyboard CGEventTap — so it needs NO Input Monitoring and never shows the "Keystroke
-            // Receiving" prompt. Onboarded users start it at launch; first-run users start it in Act 2
+            // Receiving" prompt. Onboarded users start it at launch; first-run users start it in HEARING
             // (start_ptt) alongside the mic. Idempotent either way.
             if crate::onboarding::is_onboarded(app.handle()) {
                 spawn_ptt(app.handle());
@@ -1009,7 +1009,7 @@ pub fn run() {
                 klog!(app, error, "failed to create menu bar tray: {error}");
             }
             // Sequoia periodically resets Screen Recording. Only heads-up when already onboarded
-            // (during onboarding, Act 3 owns Screen Recording); the notch shows a friendly line.
+            // (during onboarding, PERMISSIONS owns Screen Recording); the notch shows a friendly line.
             if crate::onboarding::is_onboarded(app.handle())
                 && detect_screen_recording_reset(app.handle())
             {

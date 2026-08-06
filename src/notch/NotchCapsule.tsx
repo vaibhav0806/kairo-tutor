@@ -34,7 +34,7 @@ type NotchCapsuleProps = {
   onPointerDown: () => void;
   // Onboarding chapter progress (Phase D). null outside onboarding → no dots rendered.
   progress?: { chapter: number; total: number } | null;
-  // When true, the coach caption shows the live mic meter (Phase F — Act 2 drill).
+  // When true, the coach caption shows the live mic meter (Phase F — HEARING drill).
   meter?: boolean;
 };
 
@@ -155,7 +155,7 @@ function renderModeContent(mode: NotchCapsuleMode, props: NotchCapsuleProps) {
         {props.detail ? (
           <>
             <span className="kairo-capsule-caption-row">
-              {/* Kairo's eyes beside the caption — or the live mic meter during Act 2's say-hi drill. */}
+              {/* Kairo's eyes beside the caption — or the live mic meter during HEARING's say-hi drill. */}
               {props.meter ? <MicMeter /> : <KairoEyes />}
               <FadingStreamText text={props.detail} />
             </span>

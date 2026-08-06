@@ -218,7 +218,7 @@ pub(crate) fn focus_onboarding_window(app: &tauri::AppHandle) {
 /// Create + show the full-screen, transparent, click-through onboarding orchestrator — it covers the
 /// whole monitor and renders nothing most of the time (the desktop / pet / overlay show through). The
 /// frontend flips it interactive (native `set_onboarding_click_through`) only while a temporary panel
-/// (color wheel in Act 1, Google sign-in in Act 5) is mounted. The caller sets Regular activation
+/// (the front door's colour wheel and Google sign-in) is mounted. The caller sets Regular activation
 /// policy so it can take keyboard focus.
 pub(crate) fn show_onboarding_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("onboarding") {
@@ -278,7 +278,7 @@ fn fit_onboarding_to_screen(win: &tauri::WebviewWindow) {
 
 /// Toggle whether the full-screen onboarding orchestrator catches clicks. Click-through by default
 /// (desktop / pet / overlay stay interactive); the frontend flips it OFF while a temporary panel
-/// (color wheel in Act 1, Google sign-in in Act 5) is mounted so that panel's controls are clickable.
+/// (the front door's colour wheel and Google sign-in) is mounted so that panel's controls are clickable.
 #[tauri::command]
 pub(crate) fn set_onboarding_click_through(app: tauri::AppHandle, click_through: bool) {
     if let Some(win) = app.get_webview_window("onboarding") {
@@ -309,8 +309,8 @@ pub(crate) fn finish_onboarding(app: tauri::AppHandle) {
         let _ = std::fs::remove_file(path);
     }
     crate::input::ONBOARDING_PTT.store(false, Ordering::SeqCst);
-    // Make sure the ⌥⌃ tap is running for the live product (idempotent — a no-op if Act 2 already
-    // started it). Covers the edge where onboarding finished without the Act 2 primer starting it.
+    // Make sure the ⌥⌃ tap is running for the live product (idempotent — a no-op if HEARING already
+    // started it). Covers the edge where onboarding finished without the HEARING primer starting it.
     crate::input::spawn_ptt(&app);
     if let Some(win) = app.get_webview_window("onboarding") {
         let _ = win.close();

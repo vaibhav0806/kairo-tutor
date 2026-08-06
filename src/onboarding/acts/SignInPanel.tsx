@@ -56,7 +56,7 @@ export function SignInPanel({ onSignedIn }: { onSignedIn: (name: string) => void
   useEffect(() => {
     if (!signedIn) return;
     void syncUserName().then((name) => {
-      klog('onboarding', 'info', 'act5 signed in', { name_len: name.length });
+      klog('onboarding', 'info', 'front door: signed in', { name_len: name.length });
       // Pull focus back to Kairo from the OAuth browser BEFORE the next step starts talking.
       void bridge.focusOnboarding();
       void clear();

@@ -10,7 +10,7 @@ import type { ActProps } from './actTypes';
 
 const MIC_PROMPT_DELAY_MS = 1200;
 
-// Act 2 — "Can you hear me?" (master spec §4). Primes the mic (Screen Recording + Input Monitoring
+// HEARING — "Can you hear me?" (master spec §4). Primes the mic (Screen Recording + Input Monitoring
 // are NOT needed here — the ⌥⌃ tap watches modifier keys only, which are exempt), then the
 // hold-⌥⌃-say-hi drill: the chord is the ONLY Next. Renders null — the notch caption + the live pet
 // halo are the whole UI.
@@ -38,7 +38,7 @@ export function Act3Hearing({ name, onAdvance }: ActProps) {
           onReply: (reply) => void caption(reply)
         }));
       } catch (error) {
-        klog('onboarding', 'error', 'act2 talk turn failed', { error: String(error) });
+        klog('onboarding', 'error', 'hearing: talk turn failed', { error: String(error) });
       }
       if (transcriptLen === 0) {
         // heard nothing — retry
@@ -47,7 +47,7 @@ export function Act3Hearing({ name, onAdvance }: ActProps) {
       }
       doneRef.current = true; // one successful reply → advance
       void emit('cursor:celebrate'); // Phase 2 subtle celebration
-      klog('onboarding', 'info', 'act2 first wow');
+      klog('onboarding', 'info', 'hearing: first wow');
       await new Promise((r) => setTimeout(r, 900));
       await clear();
       onAdvance();
@@ -57,7 +57,7 @@ export function Act3Hearing({ name, onAdvance }: ActProps) {
 
   // 2a — primer, ONE permission at a time (spec: mic FIRST, wait until it's actually granted, THEN
   // open Input Monitoring + ask). Reliable step detection = poll the live grant, never advance until
-  // it's really on. Never asks for Screen Recording (that's Act 3).
+  // it's really on. Never asks for Screen Recording (that's PERMISSIONS).
   useEffect(() => {
     if (phase !== 'primer') return;
     let cancelled = false;
@@ -87,7 +87,7 @@ export function Act3Hearing({ name, onAdvance }: ActProps) {
         const requestPrompt = () => {
           if (promptPromise) return promptPromise;
           promptStartedAt = performance.now();
-          klog('onboarding', 'info', 'act2 mic prompt requested');
+          klog('onboarding', 'info', 'hearing: mic prompt requested');
           promptPromise = bridge.requestMicrophone();
           return promptPromise;
         };
@@ -101,13 +101,13 @@ export function Act3Hearing({ name, onAdvance }: ActProps) {
         if (isCancelled()) return;
         if (promptTimer !== null) window.clearTimeout(promptTimer);
         await requestPrompt();
-        klog('onboarding', 'debug', 'act2 mic prompt resolved', {
+        klog('onboarding', 'debug', 'hearing: mic prompt resolved', {
           ms: Math.round(performance.now() - promptStartedAt)
         });
         // Leave the SPOKEN mic line up while we wait (no unspoken "waiting…" text — mandate §).
         await waitUntil(micGranted);
         if (isCancelled()) return;
-        klog('onboarding', 'info', 'act2 mic granted');
+        klog('onboarding', 'info', 'hearing: mic granted');
       }
 
       // STEP 2 — start the ⌥⌃ tap and go. The push-to-talk tap only watches MODIFIER keys
@@ -116,7 +116,7 @@ export function Act3Hearing({ name, onAdvance }: ActProps) {
       // no "flip me on" dead-end, no blocking on a permission the drill doesn't need.
       await bridge.startPtt();
       if (isCancelled()) return;
-      klog('onboarding', 'info', 'act2 → drill (ptt tap started; input monitoring not required)');
+      klog('onboarding', 'info', 'hearing → drill (ptt tap started; input monitoring not required)');
       if (!cancelled) setPhase('drill');
     })();
 
@@ -139,7 +139,7 @@ export function Act3Hearing({ name, onAdvance }: ActProps) {
       const active = Boolean(e.payload?.active);
       recordingRef.current = active;
       playRecordingCue(active);
-      klog('mic', 'info', 'act2 mic meter', { active });
+      klog('mic', 'info', 'hearing: mic meter', { active });
       if (active) {
         voice.stop(); // grabbed the chord mid-line → cut Kairo off so it isn't talking over them
         // Silent sticky nudge while they hold — no spoken line, so `guide` (not `say`). The 4th arg

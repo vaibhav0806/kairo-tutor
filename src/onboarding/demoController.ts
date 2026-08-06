@@ -30,7 +30,7 @@ export type DemoCallbacks = {
   // The reply's first audio is playing (drop the "thinking" state, show "speaking").
   onSpeaking?: () => void;
   // The reply text, delivered exactly when its audio starts — so a caller can show it in the notch
-  // in sync with the voice (never before). Used by the Act 2 say-hi drill.
+  // in sync with the voice (never before). Used by the HEARING say-hi drill.
   onReply?: (text: string) => void;
   // Any line Kairo speaks (gate filler, each answer step), delivered welded to its audio start — the
   // caller mirrors it into the notch so the caption is NEVER stale during a practice turn.

@@ -11,7 +11,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // the box appears while the user is still hearing the why — they can act immediately, not after ~15s.
 const BOX_DELAY_MS = 4000;
 
-// Act 3 — "Earn the Eyes". Two permission moments (Screen Recording, then Accessibility). Each: start
+// PERMISSIONS — "Earn the Eyes". Two permission moments (Screen Recording, then Accessibility). Each: start
 // the spoken line, then fire the ONE native OS prompt ~2.5s in. The prompt does double duty — it
 // registers Kairo in the Settings list AND is the gateway to the toggle (its own "Open System
 // Settings" button). We deliberately do NOT open System Settings ourselves. Status-driven, so it's
@@ -36,7 +36,7 @@ export function Act4Permissions({ name, onAdvance }: ActProps) {
         if (!advanced.current) {
           advanced.current = true;
           void bridge.closeSettings(); // clean stage: quit System Settings → only desktop + Kairo
-          klog('onboarding', 'info', 'act3 done');
+          klog('onboarding', 'info', 'permissions: done');
           onAdvance();
         }
         return;
@@ -81,7 +81,7 @@ export function Act4Permissions({ name, onAdvance }: ActProps) {
       if (stop()) return;
       await bridge.requestAccessibility(); // the OS pop-up (the only window)
     })().catch((e) =>
-      klog('onboarding', 'error', 'act3 sub-step failed', { sub, error: String(e) })
+      klog('onboarding', 'error', 'permissions: sub-step failed', { sub, error: String(e) })
     );
 
     return () => {

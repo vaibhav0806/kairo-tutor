@@ -13,7 +13,7 @@ import blenderShot from '../../assets/onboarding/blender-viewport.webp';
 import { KairoLockup, KairoMark } from '../../components/KairoMark';
 import { DraggableSurface } from './DraggableSurface';
 
-// The fixed hero violet (landing accent). Act 0 shows BEFORE the color step, so the hero is
+// The fixed hero violet (landing accent). The hero shows BEFORE the colour step, so the hero is
 // deliberately decoupled from the user's chosen accent — it always reads in this violet.
 const HERO_VIOLET = '#665cff';
 // The looping demo's reply (mirrors the landing's Blender beat). Kept here so the founder can tweak.
@@ -180,7 +180,7 @@ export function FrontDoor({ onComplete }: { onComplete: (name: string) => void }
   }, [reduce]);
 
   // Fired when the framer-motion card animation finishes. Only acts on the COLLAPSE (not the entrance):
-  // settle cue, the pet-is-alive wake line on the real desktop, then advance to Act 2.
+  // settle cue, the pet-is-alive wake line on the real desktop, then advance to HEARING.
   const onCardAnimationComplete = useCallback(async () => {
     if (!collapse) return;
     playSound('settle');

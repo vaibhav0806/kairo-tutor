@@ -39,7 +39,7 @@ const ACT = {
 } as const;
 const ACT_COUNT = 6;
 
-// index = act (WELCOME:0 … ENDING:6); value = chapter (0..3). Chapters (internal names; the notch dots
+// index = act (WELCOME:0 … ENDING:5); value = chapter (0..3). Chapters (internal names; the notch dots
 // show NO text): Welcome / Set up / Try it / Wrap up. Drives the notch progress dots (Phase D).
 const actToChapter = [0, 1, 1, 2, 3, 3] as const;
 const CHAPTER_TOTAL = 4;
@@ -95,11 +95,11 @@ export function OnboardingApp() {
   const [obName, setObName] = useState('');
   const [obSource, setObSource] = useState('');
   // Hold ALL rendering until we've read the resume marker. Otherwise a relaunch (Screen Recording
-  // forces quit+reopen) flashes Act 1 — firing its "Hey, I'm Kairo…" wake line — before the async
-  // resume switches to Act 3. Gate on this so the intro never replays on a mid-onboarding reopen.
+  // forces quit+reopen) flashes HEARING — firing its "Hey, I'm Kairo…" wake line — before the async
+  // resume switches to the saved act. Gate on this so the intro never replays on a mid-onboarding reopen.
   const [resolved, setResolved] = useState(!hasNativeBridge);
 
-  // Make the webview transparent for the WHOLE onboarding (Acts 1-3/5-6 don't mount OnboardingFlow,
+  // Make the webview transparent for the WHOLE onboarding (every act but PRACTICE mounts no OnboardingFlow,
   // which used to add this) — otherwise the body keeps its default light background and the
   // full-screen window paints white over the real desktop.
   useEffect(() => {
@@ -111,7 +111,7 @@ export function OnboardingApp() {
     };
   }, []);
 
-  // Stable identity so acts' effects (e.g. Act 3's status poll keyed on onAdvance) don't re-run
+  // Stable identity so acts' effects (e.g. PERMISSIONS' status poll keyed on onAdvance) don't re-run
   // every render.
   const advance = useCallback(() => {
     setActIndex((i) => Math.min(ACT_COUNT - 1, i + 1));
@@ -175,7 +175,7 @@ export function OnboardingApp() {
     if (hasNativeBridge) void invoke('finish_onboarding').catch(() => {});
   };
 
-  // Nothing until the resume marker is read (prevents the Act 1 flash on reopen).
+  // Nothing until the resume marker is read (prevents the HEARING flash on reopen).
   if (!resolved) return <div className="ob-orchestrator" />;
 
   let body: React.ReactNode;
