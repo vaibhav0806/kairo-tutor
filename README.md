@@ -13,7 +13,8 @@ Kairo never clicks or types on the user's behalf. Product direction lives in
 
 - macOS 14.2 or newer is required. Windows is planned but is not implemented.
 - The desktop app is React 19 inside Tauri v2, with native behavior in Rust.
-- The backend is a Fastify service backed by PostgreSQL (Neon in Kairo-hosted environments). It
+- The backend is a Fastify service backed by PostgreSQL (Neon for maintainer development and a
+  dedicated PostgreSQL database in Kairo-hosted environments). It
   owns authentication, provider credentials, usage metering, and billing.
 - Google is currently the only sign-in provider.
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { env } from '../src/config/env';
 import { assertStaticEnvironment } from '../src/config/targets';
-import { localPostgresConnection } from '../src/db/connection';
+import { hostedPostgresConnection, localPostgresConnection } from '../src/db/connection';
 import { assertDatabaseTarget } from '../src/db/environment';
 
 describe('server environment target guard', () => {
@@ -38,6 +38,26 @@ describe('server environment target guard', () => {
         DODO_ENV: 'live_mode',
       }).neonBranchName,
     ).toBe('production');
+  });
+
+  it('accepts hosted Postgres only for the hosted production/live pairing', () => {
+    expect(
+      assertStaticEnvironment({
+        KAIRO_SERVER_TARGET: 'hosted',
+        KAIRO_DATABASE_TARGET: 'hosted-postgres',
+        PUBLIC_BASE_URL: 'https://api.meetkairo.xyz',
+        DODO_ENV: 'live_mode',
+      }).publicBaseUrl,
+    ).toBe('https://api.meetkairo.xyz');
+
+    expect(() =>
+      assertStaticEnvironment({
+        KAIRO_SERVER_TARGET: 'local',
+        KAIRO_DATABASE_TARGET: 'hosted-postgres',
+        PUBLIC_BASE_URL: 'http://localhost:8787',
+        DODO_ENV: 'test_mode',
+      }),
+    ).toThrow('KAIRO_DATABASE_TARGET=hosted-postgres requires KAIRO_SERVER_TARGET=hosted');
   });
 
   it('blocks test-mode billing on the hosted production target', () => {
@@ -88,6 +108,28 @@ describe('server environment target guard', () => {
       host: '::1',
       database: 'kairo_local',
     });
+  });
+
+  it('accepts only Kairo\'s dedicated hosted Postgres database over verified TLS', () => {
+    expect(
+      hostedPostgresConnection(
+        'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=verify-full',
+      ),
+    ).toEqual({
+      connectionString:
+        'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=verify-full',
+    });
+  });
+
+  it.each([
+    'postgresql://other:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=verify-full',
+    'postgresql://kairo_app:secret@other.example:5432/kairo?sslmode=verify-full',
+    'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/postgres?sslmode=verify-full',
+    'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=require',
+    'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=verify-full&host=other.example',
+    'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=verify-full#override',
+  ])('rejects an unsafe hosted Postgres URL: %s', (url) => {
+    expect(() => hostedPostgresConnection(url)).toThrow();
   });
 
   it.each([
@@ -211,5 +253,56 @@ describe('server environment target guard', () => {
         DATABASE_URL: 'postgresql://unused',
       }),
     ).resolves.toMatchObject({ kind: 'neon', target: 'hosted', branch: 'br-production' });
+  });
+
+  it('accepts the exact hosted Postgres database and runtime role', async () => {
+    const query = async () => ({
+      rows: [
+        {
+          database: 'kairo',
+          role: 'kairo_app',
+          address: '178.105.44.3',
+          version: '17.11',
+        },
+      ],
+    });
+
+    await expect(
+      assertDatabaseTarget({ query } as never, {
+        KAIRO_SERVER_TARGET: 'hosted',
+        KAIRO_DATABASE_TARGET: 'hosted-postgres',
+        DATABASE_URL:
+          'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=verify-full',
+      }),
+    ).resolves.toEqual({
+      kind: 'hosted-postgres',
+      target: 'hosted',
+      database: 'kairo',
+      role: 'kairo_app',
+      address: '178.105.44.3',
+      version: '17.11',
+    });
+  });
+
+  it('rejects a hosted Postgres connection that reaches the wrong database identity', async () => {
+    const query = async () => ({
+      rows: [
+        {
+          database: 'postgres',
+          role: 'team_admin',
+          address: '178.105.44.3',
+          version: '17.11',
+        },
+      ],
+    });
+
+    await expect(
+      assertDatabaseTarget({ query } as never, {
+        KAIRO_SERVER_TARGET: 'hosted',
+        KAIRO_DATABASE_TARGET: 'hosted-postgres',
+        DATABASE_URL:
+          'postgresql://kairo_app:secret@postgres.0xvaibhav.com:5432/kairo?sslmode=verify-full',
+      }),
+    ).rejects.toThrow('connected database identity was team_admin@postgres');
   });
 });

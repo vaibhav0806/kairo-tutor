@@ -40,8 +40,9 @@ in `src/config/` intact; never make a remote database acceptable to contributor 
 - Keep migrations forward-only and commit generated files under `drizzle/`.
 - Never edit an already-applied migration or auto-apply migrations during server
   startup.
-- Preserve the loopback parser in `src/db/connection.ts` and the environment mappings
-  in `src/config/targets.ts`.
+- Preserve the loopback and hosted PostgreSQL parsers in `src/db/connection.ts` and the
+  environment mappings in `src/config/targets.ts`. Hosted PostgreSQL stays pinned to the
+  dedicated Kairo host, database, runtime owner, and verified TLS.
 - Tests may use only a loopback database named `kairo_test`; the harness supplies fake
   auth and provider values and must not load secrets from `server/.env`.
 

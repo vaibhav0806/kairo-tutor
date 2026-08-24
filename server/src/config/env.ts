@@ -5,7 +5,7 @@ import { assertStaticEnvironment } from './targets';
 
 const Env = z.object({
   KAIRO_SERVER_TARGET: z.enum(['local', 'hosted']).default('local'),
-  KAIRO_DATABASE_TARGET: z.enum(['neon', 'local-postgres']).default('neon'),
+  KAIRO_DATABASE_TARGET: z.enum(['neon', 'local-postgres', 'hosted-postgres']).default('neon'),
   // Enforce the desktop OAuth correlation state. ON by default: no build without it was ever
   // distributed, so there are no legacy clients to keep alive. The shim it guards stays in the
   // code as an escape hatch — set this to false to restore un-correlated sign-in if a build
