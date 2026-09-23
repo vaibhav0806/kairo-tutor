@@ -17,7 +17,10 @@
     <script>
       (function () {
         var hash = window.location.hash || '';
-        if (/^#\/(cursor|overlay|notch)/.test(hash)) {
+        // `onboarding` belongs here too: it is a full-screen transparent window over the real
+        // desktop, so without this it paints the default light body for one frame on every launch
+        // — most visibly on the Screen-Recording relaunch, as a white flash over the whole screen.
+        if (/^#\/(cursor|overlay|notch|onboarding)/.test(hash)) {
           document.documentElement.classList.add('kairo-transparent');
         }
       })();

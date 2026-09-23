@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import { env } from '../config/env';
 import { SERVER_TARGETS } from '../config/targets';
-import { localPostgresConnection } from './connection';
+import { HOSTED_POSTGRES, hostedPostgresConnection, localPostgresConnection } from './connection';
 
 type DatabaseEnvironment = Pick<
   typeof env,
@@ -20,6 +20,14 @@ export type VerifiedDatabaseTarget =
       target: 'local';
       database: string;
       address: string;
+    }
+  | {
+      kind: 'hosted-postgres';
+      target: 'hosted';
+      database: string;
+      role: string;
+      address: string;
+      version: string;
     };
 
 /** Verify the connected local database or Neon's authoritative endpoint before startup/migration. */
@@ -46,6 +54,40 @@ export async function assertDatabaseTarget(
       target: 'local',
       database,
       address: result.rows[0]?.address ?? 'local-socket',
+    };
+  }
+
+  if (environment.KAIRO_DATABASE_TARGET === 'hosted-postgres') {
+    if (environment.KAIRO_SERVER_TARGET !== 'hosted') {
+      throw new Error('hosted Postgres is only allowed with KAIRO_SERVER_TARGET=hosted');
+    }
+    hostedPostgresConnection(environment.DATABASE_URL);
+    const result = await pool.query<{
+      database: string;
+      role: string;
+      address: string | null;
+      version: string;
+    }>(`
+      SELECT
+        current_database() AS database,
+        current_user AS role,
+        inet_server_addr()::text AS address,
+        current_setting('server_version') AS version
+    `);
+    const database = result.rows[0]?.database ?? 'unknown';
+    const role = result.rows[0]?.role ?? 'unknown';
+    if (database !== HOSTED_POSTGRES.database || role !== HOSTED_POSTGRES.user) {
+      throw new Error(
+        `hosted Postgres connected database identity was ${role}@${database}`,
+      );
+    }
+    return {
+      kind: 'hosted-postgres',
+      target: 'hosted',
+      database,
+      role,
+      address: result.rows[0]?.address ?? 'unknown',
+      version: result.rows[0]?.version ?? 'unknown',
     };
   }
 

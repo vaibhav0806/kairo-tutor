@@ -52,14 +52,42 @@ export async function consume(
   windowMs: number,
   now = Date.now(),
 ): Promise<boolean> {
-  const bucket = `rl:${key}:${windowStart(windowMs, now)}`;
-  const expiresAt = new Date(windowStart(windowMs, now) + windowMs);
+  return (await consumeDetailed(key, max, windowMs, now)).allowed;
+}
+
+/** What a caller needs to tell the client how much is left and when it resets. */
+export type ConsumeResult = {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  /** Unix epoch ms at which this window ends and the allowance returns. */
+  resetAt: number;
+};
+
+/**
+ * Count one hit and report the window state, so the response can carry standard rate-limit headers.
+ *
+ * Fixed windows, not a sliding log. The known trade is that a caller timing requests either side of
+ * a boundary can briefly reach twice the limit; for burst control that is acceptable, and it costs
+ * one row and one statement instead of retaining every request. If the boundary case ever matters,
+ * this is the function to change.
+ */
+export async function consumeDetailed(
+  key: string,
+  max: number,
+  windowMs: number,
+  now = Date.now(),
+): Promise<ConsumeResult> {
+  const start = windowStart(windowMs, now);
+  const bucket = `rl:${key}:${start}`;
+  const resetAt = start + windowMs;
   try {
-    const hits = await increment(bucket, expiresAt);
+    const hits = await increment(bucket, new Date(resetAt));
     void sweepOccasionally(now);
-    return hits <= max;
+    return { allowed: hits <= max, limit: max, remaining: Math.max(0, max - hits), resetAt };
   } catch {
-    return true;
+    // Fail open: this bounds cost, and must not become a dependency that can take the product down.
+    return { allowed: true, limit: max, remaining: max, resetAt };
   }
 }
 

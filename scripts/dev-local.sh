@@ -71,7 +71,19 @@ if curl -fsS --max-time 1 "$HEALTH" >/dev/null 2>&1; then
 else
   echo "▸ Starting the local server (npm run server:dev)…"
   # Own process group so Ctrl-C can take the whole watch tree down, not just tsx.
-  npm run server:dev &
+  # Tee the server's own log to a file. Without this it goes to this terminal's stdout and is
+  # gone the moment the wrapper exits — which left us unable to answer "did the request even
+  # reach the server?", the one question that separates a client hang from a server hang.
+  #
+  # Next to the app log, dated, and appended — the same shape the Rust logger uses. It used to
+  # live in $TMPDIR and be truncated on every start, which lost both ways: macOS clears that
+  # directory on reboot, and the next run destroyed the previous one's evidence. The run that
+  # measured 30 JWT mints against 35 authenticated calls is gone for exactly that reason, so the
+  # fix it motivated cannot be checked against the thing it was diagnosed from.
+  mkdir -p "$(dirname "$LOG")"
+  SERVER_LOG="$(dirname "$LOG")/kairo-server.$(date +%Y-%m-%d).log"
+  ln -sfn "$(basename "$SERVER_LOG")" "$(dirname "$LOG")/kairo-server-latest.log"
+  npm run server:dev > >(tee -a "$SERVER_LOG") 2>&1 &
   SERVER_PID=$!
 
   cleanup() {
@@ -114,6 +126,9 @@ echo "✓ Local stack is up."
 echo "  Server : http://localhost:${PORT}  (this terminal — Ctrl-C stops it)"
 echo "  App    : running, every request → http://localhost:${PORT}"
 echo "  Logs   : tail -F ${LOG}"
+if [[ -n "${SERVER_LOG:-}" ]]; then
+  echo "  Server log : tail -F ${SERVER_LOG}"
+fi
 echo ""
 
 # Hold the terminal on the server so its output keeps streaming here.

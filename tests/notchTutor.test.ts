@@ -56,6 +56,30 @@ function createBridge(overrides: Partial<NativeBridge> = {}): NativeBridge {
 }
 
 describe('askTutorFromNotch', () => {
+
+  test('a failed turn still speaks, instead of leaving the notch thinking forever', async () => {
+    // A provider error resolves the turn in under a millisecond with an explanation in voiceText
+    // and no steps. Everything downstream drives off steps, so an empty one played nothing and the
+    // notch kept its thinking word — an instant failure that looked exactly like a hang, and cost
+    // four test cycles being investigated as one.
+    const bridge = createBridge({
+      runTutorTurn: vi.fn(async () => {
+        throw new Error('OPENROUTER_API_KEY is required for native OpenRouter tutor turns.');
+      }),
+      runTutorTurnStream: undefined
+    });
+
+    const result = await askTutorFromNotch({
+      query: 'Where is the battery icon?',
+      nativeBridge: bridge,
+      aiProvider: 'openrouter',
+      skillSlug: ''
+    });
+
+    expect(result.steps.length).toBeGreaterThan(0);
+    expect(result.steps[0].say.trim()).not.toEqual('');
+  });
+
   test('runs a tutor turn directly from the visible notch window', async () => {
     const bridge = createBridge();
 

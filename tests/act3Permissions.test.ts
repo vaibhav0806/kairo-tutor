@@ -7,7 +7,7 @@ const status = (
   accessibility: NativePermissionStatus['accessibility']
 ): NativePermissionStatus => ({ screenRecording, accessibility, microphone: 'granted' });
 
-describe('act3 permission sub-step', () => {
+describe('PERMISSIONS sub-step', () => {
   test('screen recording is primed first', () => {
     expect(nextPermissionStep(status('not_determined', 'not_determined'))).toBe('screen');
     expect(nextPermissionStep(status('denied', 'granted'))).toBe('screen');
@@ -18,7 +18,7 @@ describe('act3 permission sub-step', () => {
     expect(nextPermissionStep(status('granted', 'denied'))).toBe('accessibility');
   });
 
-  test('both granted → done (advance to Act 4)', () => {
+  test('both granted → done (advance to PRACTICE)', () => {
     expect(nextPermissionStep(status('granted', 'granted'))).toBe('done');
   });
 });

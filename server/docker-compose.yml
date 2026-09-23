@@ -12,7 +12,7 @@ services:
     env_file: .env
     environment:
       # Non-secret selector. Runtime + migration guards verify the live Dodo mode and exact
-      # production Neon endpoint before serving or changing data.
+      # configured production database before serving or changing data.
       KAIRO_SERVER_TARGET: hosted
       # Release DMGs, mounted read-only. They are served through the email-gated download route
       # rather than from a public URL, which is what keeps the alpha closed.

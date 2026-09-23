@@ -34,7 +34,7 @@ pub(crate) const USE_BACKEND_PROXY: bool = true;
 // Which model runs the single-call answer+box turn (the one that returns the spoken
 // answer AND the pointer box together).
 //   "anthropic" = claude-opus-4-8 (Anthropic Messages).
-//   "openai"    = gpt-5.6-sol (OpenAI Responses API).
+//   "openai"    = gpt-6-sol (OpenAI Responses API).
 // Both return the SAME { steps:[{say, box?}] } JSON, so only the model call differs.
 // This is a DIFFERENT knob from POINTING_PROVIDER (that splits narration + pointing).
 // Runtime-overridable via KAIRO_TUTOR_VISION_PROVIDER (no rebuild).
@@ -91,15 +91,14 @@ pub(crate) const ANTHROPIC_VISION_EFFORT: &str = "low";
 // execute the click — the AI points, the user acts. Key = OPENAI_API_KEY in .env.
 // Model/base are overridable via the env var of the same name (default = these).
 pub(crate) const OPENAI_BASE_URL: &str = "https://api.openai.com";
-// gpt-5.6-sol is now available on our account (no longer 404s), so both the OpenAI
-// computer-use pointing path and the single-call tutor vision path use it.
+// The alternate computer-use pointing path is independent of the tutor vision model.
 pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.6-sol";
 // The single-call answer+box model when TUTOR_VISION_PROVIDER="openai" (OpenAI
 // Responses API). Overridable at runtime via OPENAI_TUTOR_MODEL.
-pub(crate) const OPENAI_TUTOR_MODEL: &str = "gpt-5.6-sol";
+pub(crate) const OPENAI_TUTOR_MODEL: &str = "gpt-6-sol";
 // Reasoning effort for the OpenAI vision paths (pointing + single-call tutor).
-// Sent as OpenAI's `reasoning.effort`; gpt-5.6-sol accepts none | low | medium | high |
-// xhigh | max (NOT "minimal"), and defaults to medium when omitted. Raised low -> medium:
+// Sent as OpenAI's `reasoning.effort`; gpt-6-sol accepts none | low | medium | high |
+// xhigh | max (NOT "minimal"). Raised low -> medium on the previous model:
 // at "low" the model was skipping boxes on steps that clearly had an on-screen target.
 // Decoupled from the Claude knob. Overridable at runtime via OPENAI_VISION_EFFORT.
 pub(crate) const OPENAI_VISION_EFFORT: &str = "medium";
@@ -135,6 +134,16 @@ pub(crate) const OPENROUTER_REQUEST_TIMEOUT_MS: u64 = 45_000;
 // and defaulted to "look at the screen", producing screen-flavored answers to plain
 // questions. 12s gives the gate model room to answer.
 pub(crate) const GATE_TIMEOUT_MS: u64 = 12_000;
+/// How long to let the external `screencapture` process run before giving up on it.
+///
+/// It normally returns in well under a second. It can also block indefinitely: macOS 15 asks for
+/// screen-recording consent again periodically ("bypass the system private window picker"), and
+/// while that dialog is up the process just waits. Without a deadline the whole turn waited with
+/// it — the notch sat on its thinking word forever, with no answer and no error.
+///
+/// Generous on purpose: someone who is reading that dialog and about to click Allow should still
+/// get their answer, so this is sized for a human reaction, not for the capture itself.
+pub(crate) const SCREENCAPTURE_TIMEOUT_MS: u64 = 15_000;
 pub(crate) const GROUNDING_TIMEOUT_MS: u64 = 15_000;
 // Cap on an STT transcription round-trip (only enforced on the backend-proxy path;
 // the direct path uses the shared client's default). A short voice clip is quick.
@@ -247,6 +256,6 @@ pub(crate) const WAIT_PAGE_LOAD_MS: u64 = 3_000;
 
 // ---------------------------------------------------------------- Accent
 // Brand-default accent — the website's `--kairo` (kairo/src/styles.css). The user overrides it
-// in onboarding (Act 1); until then this is the base tint for the pointer/box and every
+// in onboarding (the front door); until then this is the base tint for the pointer/box and every
 // accent-threaded surface. Frontend mirror: DEFAULT_ACCENT in src/core/accent.ts — keep in sync.
 pub(crate) const DEFAULT_ACCENT: &str = "#665cff";

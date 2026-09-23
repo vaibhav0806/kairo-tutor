@@ -1,6 +1,7 @@
 //! Screen capture: shells out to macOS `screencapture`, reads main-display bounds,
 //! downscales the screenshot for vision, and the `capture_screen` command.
 
+use crate::constants;
 use crate::platform::{get_active_app, is_sensitive_app};
 use crate::types::{CaptureImageGeometry, DisplayBounds, ScreenCaptureResult};
 #[cfg(target_os = "macos")]
@@ -10,12 +11,13 @@ use std::fs;
 #[cfg(target_os = "macos")]
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
-use std::process::Command;
-#[cfg(target_os = "macos")]
+use std::process::{Command, Stdio};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+#[cfg(target_os = "macos")]
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
 use block2::RcBlock;
@@ -72,6 +74,39 @@ impl Drop for TemporaryCaptureFile {
 }
 
 #[cfg(target_os = "macos")]
+/// Wait for `child`, killing it and erroring if it outlives `timeout`.
+///
+/// Exists because `Command::output()` has no deadline, and the one process on the critical path
+/// that can block indefinitely is the one sitting behind a system permission dialog.
+fn wait_with_deadline(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    // Kill it, or the orphan keeps holding the consent dialog and the temp file.
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(
+                        "macOS screencapture did not finish in time (screen-recording permission \
+                         may be waiting for approval)."
+                            .to_string(),
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                return Err(format!("Failed to wait for macOS screencapture: {error}"));
+            }
+        }
+    }
+}
+
 fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
     // Unique path per capture so concurrent activations don't clobber the same
     // temp file (which could hang or corrupt a capture).
@@ -85,13 +120,36 @@ fn capture_screen_with_screencapture() -> Result<Vec<u8>, String> {
     ));
     let capture_file = TemporaryCaptureFile::new(output_path);
 
-    let output = Command::new("screencapture")
+    // Spawned with a deadline rather than `.output()`, which waits forever.
+    //
+    // `screencapture` does not always return promptly: macOS 15 re-asks for screen-recording
+    // consent periodically, and while that dialog is up the process simply blocks. `.output()`
+    // blocked the calling turn with it — the notch sat on its thinking word with no answer and no
+    // error, indefinitely. A capture that cannot complete has to become a failure the caller can
+    // degrade on, not a turn that never ends.
+    let mut child = Command::new("screencapture")
         .args(screencapture_arguments(capture_file.path()))
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|error| format!("Failed to run macOS screencapture: {error}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let status = wait_with_deadline(
+        &mut child,
+        Duration::from_millis(constants::SCREENCAPTURE_TIMEOUT_MS),
+    )?;
+
+    if !status.success() {
+        let stderr = child
+            .stderr
+            .take()
+            .map(|mut pipe| {
+                let mut buffer = String::new();
+                let _ = std::io::Read::read_to_string(&mut pipe, &mut buffer);
+                buffer
+            })
+            .unwrap_or_default();
+        let stderr = stderr.trim().to_string();
         return Err(if stderr.is_empty() {
             "macOS screencapture failed without an error message.".to_string()
         } else {
@@ -484,6 +542,45 @@ pub(crate) fn capture_screen() -> ScreenCaptureResult {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_capture_that_never_returns_is_killed_instead_of_waited_on_forever() {
+        // The real case: macOS 15 re-asks for screen-recording consent, and `screencapture` blocks
+        // while that dialog is up. `Command::output()` blocked the whole turn with it — the notch
+        // sat on its thinking word with no answer and no error. A stalled capture must become a
+        // failure the caller can degrade on.
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+
+        let started = Instant::now();
+        let result = wait_with_deadline(&mut child, Duration::from_millis(200));
+
+        assert!(
+            result.is_err(),
+            "a process past its deadline must not report success"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the deadline must actually cut the wait short"
+        );
+        // And the child must be gone, or it keeps holding its dialog and temp file.
+        assert!(
+            child.try_wait().expect("try_wait after kill").is_some(),
+            "the timed-out child must be killed, not orphaned"
+        );
+    }
+
+    #[test]
+    fn a_capture_that_finishes_in_time_reports_its_status() {
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn true");
+        let status = wait_with_deadline(&mut child, Duration::from_secs(5)).expect("should finish");
+        assert!(status.success());
+    }
+
     use super::*;
     use crate::types::ActiveApp;
 

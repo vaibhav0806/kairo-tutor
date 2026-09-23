@@ -127,7 +127,30 @@ export async function askTutorFromNotch({
     });
 
     const displayBounds = screenCapture.displayBounds;
-    const steps = response.steps ?? [];
+    /**
+     * A failed turn still has to say something.
+     *
+     * `createTutorRuntimeErrorResponse` carries its explanation in `voiceText`/`screenText` and
+     * leaves `steps` empty, because it describes the turn rather than a sequence of instructions.
+     * Everything downstream drives off `steps`, so an empty one meant `playSteps` played nothing,
+     * the notch kept its thinking word, and the failure was indistinguishable from a hang — which
+     * is exactly how an instant provider error spent four test cycles looking like a stall.
+     *
+     * Any answer that produced no steps but did produce something to say becomes one spoken step.
+     */
+    const steps =
+      response.steps && response.steps.length > 0
+        ? response.steps
+        : response.voiceText
+          ? [
+              {
+                say: response.voiceText,
+                // Legacy/mock responses carry their targets at the top level; keep them, or a
+                // single-answer turn silently loses its box and the cursor has nothing to fly to.
+                visualTargets: response.visualTargets ?? []
+              } satisfies TutorStep
+            ]
+          : [];
     const anyTargets =
       Boolean(displayBounds) &&
       (steps.some((step) => step.visualTargets.length > 0) ||

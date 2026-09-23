@@ -18,11 +18,14 @@ The environment pairing is deliberate and guarded:
 | --- | --- | --- | --- |
 | `local` (contributor) | literal-loopback PostgreSQL | `http://localhost:8787` | test mode |
 | `local` (maintainer) | guarded Neon `dev` | `http://localhost:8787` | test mode |
-| `hosted` | guarded Neon `production` | `https://api.meetkairo.xyz` | live mode |
+| `hosted` | guarded dedicated PostgreSQL (`hosted-postgres`) | `https://api.meetkairo.xyz` | live mode |
 
 Contributor mode parses the local URL into explicit connection fields and rejects DNS names,
 remote hosts, query overrides, and hosted mode. Neon modes read runtime endpoint metadata and
-refuse any endpoint other than Kairo's mapped development or production branch.
+refuse any endpoint other than Kairo's mapped development or production branch. The hosted
+PostgreSQL mode accepts only Kairo's dedicated database and runtime owner at the configured host,
+requires `sslmode=verify-full`, and verifies the connected database and role before startup or
+migration. The guarded production Neon target remains available as a rollback path.
 
 `.env` must have (see `.env.example`):
 - `KAIRO_DATABASE_TARGET=local-postgres` and the local `kairo_local` URL from `.env.example`.
@@ -92,7 +95,8 @@ First-time setup (done — kept for the record / a fresh box):
 
 1. Clone this repo on the box (public). Compose v2 lives user-local at `~/.docker/cli-plugins/`.
 2. `server/.env` on the box holds production secrets and runtime configuration (never committed):
-   the prod-branch **pooled** `DATABASE_URL`, `PUBLIC_BASE_URL=https://api.meetkairo.xyz`, a fresh
+   `KAIRO_DATABASE_TARGET=hosted-postgres`, the dedicated `kairo_app` `DATABASE_URL` with
+   `sslmode=verify-full`, `PUBLIC_BASE_URL=https://api.meetkairo.xyz`, a fresh
    `BETTER_AUTH_SECRET`, Google client, provider keys, live-mode Dodo credentials, and an absolute
    `KAIRO_RELEASE_DIR` host path for the private download volume.
 3. Add the prod redirect URI `https://api.meetkairo.xyz/api/auth/callback/google` to the Google

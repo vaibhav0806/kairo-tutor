@@ -155,19 +155,19 @@ export type NativeBridge = {
   getPermissionStatus(): Promise<NativePermissionStatus>;
   requestRequiredPermissions(): Promise<NativePermissionStatus>;
   openPermissionSettings(permission: NativePermissionKey): Promise<void>;
-  // Act 2 primers — Mic ONLY (never Screen Recording) + Input Monitoring (separate grant).
+  // HEARING primers — Mic ONLY (never Screen Recording) + Input Monitoring (separate grant).
   requestMicrophone(): Promise<NativePermissionStatus>;
   requestInputMonitoring(): Promise<void>;
   getInputMonitoringStatus(): Promise<NativePermissionState>;
-  // Start the ⌥⌃ tap on demand (Act 2, after priming) so the Keystroke prompt fires here, not at launch.
+  // Start the ⌥⌃ tap on demand (HEARING, after priming) so the Keystroke prompt fires here, not at launch.
   startPtt(): Promise<void>;
-  // Act 3 — fire ONE OS prompt at a time (Screen Recording, then Accessibility; never batched).
+  // PERMISSIONS — fire ONE OS prompt at a time (Screen Recording, then Accessibility; never batched).
   requestScreenRecording(): Promise<NativePermissionState>;
   requestAccessibility(): Promise<NativePermissionState>;
   restartApp(): Promise<void>;
   // Bring the Kairo onboarding window back to the foreground (e.g. after the OAuth browser hand-off).
   focusOnboarding(): Promise<void>;
-  // Quit System Settings so only the desktop + Kairo remain after a permission grant (Act 3).
+  // Quit System Settings so only the desktop + Kairo remain after a permission grant (PERMISSIONS).
   closeSettings(): Promise<void>;
   // True when the signed-in user is out of free requests (proxy mode). The notch calls this
   // on push-to-talk release BEFORE transcribing, to skip STT/gate/vision + play the cached

@@ -1,78 +1,24 @@
 import type { FastifyInstance } from 'fastify';
 import type { OnboardingBody } from '@kairo/shared';
 import { requireAuth } from '../plugins/auth-verify';
-import { providers } from '../config/providers';
-import { forwardJson } from '../proxy/forward';
-import { streamPassthrough } from '../proxy/stream';
-import { clientBucket, consume, withinDailyBudget } from '../lib/budget';
-import { guardOnboardingChat, guardOnboardingVision } from '../proxy/model-guard';
-import { SARVAM_DEFAULT_VOICE_ID } from '../speech/catalog';
-import { sarvamTtsBody, streamTarget, TTS_TEXT_LIMIT } from '../speech/synthesis';
 import { saveProfile } from './service';
 
-/** Onboarding always speaks in Kairo's default voice — the scripted lines are tuned to it. */
-const ONBOARDING_VOICE_ID = SARVAM_DEFAULT_VOICE_ID;
-
 /**
- * Per-route limits for the unauthenticated onboarding surface.
+ * Onboarding's server surface is now a single authenticated route.
  *
- * Two numbers per route, doing different jobs. `perIp` keeps one caller from being a nuisance and
- * is sized so a real person completing onboarding — including retries and a stumble or two — never
- * meets it. `daily` is the number that actually matters: it is the ceiling on what EVERY caller
- * together can spend in a day, because IP addresses are cheap and per-caller limits alone have
- * never stopped anyone determined.
+ * There used to be seven more: unauthenticated `/v1/onboarding/*` siblings for TTS, STT, chat,
+ * extract, gate and vision, existing only because onboarding ran before sign-in and those turns
+ * still needed a provider. No user, no meter, no credit gate — the caller's request was forwarded
+ * to OpenRouter or Anthropic on our account. Everything we built around them (model allowlists,
+ * token clamps, per-IP buckets, a global daily fuse) was scaffolding to make an open door
+ * survivable rather than to close it.
  *
- * Vision is the expensive call, so it gets the tight budget; the text and speech routes cost
- * fractions of a cent and are bounded mostly to keep the bill legible.
+ * Sign-in now happens immediately after the colour step, before anything costs money, so the door
+ * is simply gone. Every provider call in the product is authenticated, attributable to a user, and
+ * subject to the ordinary quota. Nothing here needs rate limiting because nothing here spends.
  */
-const POLICY = {
-  tts: { perIp: [40, 60_000], daily: 2_000 },
-  extract: { perIp: [40, 60_000], daily: 2_000 },
-  chat: { perIp: [40, 60_000], daily: 2_000 },
-  stt: { perIp: [40, 60_000], daily: 2_000 },
-  gate: { perIp: [40, 60_000], daily: 2_000 },
-  vision: { perIp: [12, 10 * 60_000], daily: 150 },
-  ttsStream: { perIp: [60, 60_000], daily: 3_000 },
-} as const satisfies Record<string, { perIp: readonly [number, number]; daily: number }>;
-
-/**
- * Charge a request against both limits. Returns false once a reply has been sent.
- *
- * The order matters: the per-caller check runs first so a single script cannot burn the shared
- * daily allowance on its own before anyone else gets a turn.
- */
-async function admit(
-  req: import('fastify').FastifyRequest,
-  reply: import('fastify').FastifyReply,
-  route: keyof typeof POLICY,
-): Promise<boolean> {
-  const { perIp, daily } = POLICY[route];
-  if (!(await consume(`${route}:${clientBucket(req.ip)}`, perIp[0], perIp[1]))) {
-    await reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
-    return false;
-  }
-  if (!(await withinDailyBudget(route, daily))) {
-    // Loud on purpose: this is the ceiling being reached, which is either an attack or a signal
-    // that the real numbers have outgrown the policy. Either way someone should look.
-    req.log.error({ route, cap: daily }, 'onboarding daily budget exhausted; refusing');
-    await reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
-    return false;
-  }
-  return true;
-}
-
-/** Drop the `_provider` routing hint before forwarding to the vision provider. */
-function dropProviderHint(body: unknown): unknown {
-  if (body && typeof body === 'object') {
-    const clone = { ...(body as Record<string, unknown>) };
-    delete clone._provider;
-    return clone;
-  }
-  return body;
-}
-
 export async function onboardingRoutes(app: FastifyInstance) {
-  // Save onboarding answers (authed) — runs after Google sign-in.
+  // Save onboarding answers. Authed, like everything else now.
   app.post<{ Body: OnboardingBody }>('/v1/onboarding', { preHandler: requireAuth }, async (req, reply) => {
     const displayName = (req.body?.displayName ?? '').trim().slice(0, 80);
     const source = (req.body?.source ?? '').trim().slice(0, 120);
@@ -82,132 +28,5 @@ export async function onboardingRoutes(app: FastifyInstance) {
     if (!displayName) return reply.status(400).send({ error: 'name_required', code: 'bad_request' });
     await saveProfile(req.userId!, displayName, source, accent);
     return { ok: true };
-  });
-
-  // Unauthenticated onboarding voice — the flow talks to the user BEFORE they sign in.
-  // IP-rate-limited to bound abuse. TTS speaks a scripted line:
-  app.post<{ Body: { text?: string } }>('/v1/onboarding/tts', async (req, reply) => {
-    if (!(await admit(req, reply, 'tts'))) return reply;
-    if (!providers.sarvam.key) return reply.status(503).send({ error: 'tts_unavailable', code: 'provider_error' });
-    const text = (req.body?.text ?? '').slice(0, 600);
-    // Identical body to the product's buffered synthesis — same speaker, model, sample rate and
-    // codec. This route used to ask for 44.1kHz with an explicit pace, which made the onboarding
-    // and gate lines audibly different from every answer the product speaks afterwards.
-    const { json } = await forwardJson(
-      'sarvam',
-      '/text-to-speech',
-      sarvamTtsBody(text, ONBOARDING_VOICE_ID, 'wav'),
-    );
-    return json;
-  });
-
-  // Extract a clean field value from a spoken answer with a fast, no-reasoning model.
-  // e.g. "hey, my name is Kairo" -> "Kairo". Same cheap Gemini as the gate; reasoning disabled.
-  app.post<{ Body: { transcript?: string; field?: 'name' | 'source' } }>('/v1/onboarding/extract', async (req, reply) => {
-    if (!(await admit(req, reply, 'extract'))) return reply;
-    if (!providers.openrouter.key) return reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
-    const transcript = (req.body?.transcript ?? '').slice(0, 300).trim();
-    if (!transcript) return { value: '' };
-    const instruction =
-      req.body?.field === 'name'
-        ? "Extract ONLY the speaker's own first name from the text. Reply with just the name in normal capitalization — first letter uppercase, the rest lowercase (e.g. \"Prasad\", never \"PRASAD\"). Nothing else. If there is no name, reply with an empty string."
-        : 'Extract the concise answer from the text (a few words max). Reply with just the answer.';
-    const { json } = await forwardJson('openrouter', '/chat/completions', {
-      model: 'google/gemini-2.5-flash-lite', // measured fastest for this tiny task
-      messages: [
-        { role: 'system', content: instruction },
-        { role: 'user', content: transcript },
-      ],
-      max_tokens: 10, // a first name is tiny
-      temperature: 0,
-      reasoning: { enabled: false }, // no thinking — instant
-      provider: { sort: 'throughput' }, // route to the fastest endpoint
-    });
-    const value = String((json as any)?.choices?.[0]?.message?.content ?? '')
-      .trim()
-      .replace(/^["'.\s]+|["'.\s]+$/g, '');
-    return { value };
-  });
-
-  // Onboarding "talk to me" practice: the user says anything and Kairo replies for real.
-  // Fully dynamic (never scripted) — same fast, no-reasoning Gemini as the gate, but with a
-  // plain assistant persona instead of the needsScreen gate prompt. The desktop app speaks
-  // the reply via Sarvam. Unauthenticated (runs mid-onboarding) + IP-rate-limited.
-  app.post<{ Body: { transcript?: string; name?: string } }>('/v1/onboarding/chat', async (req, reply) => {
-    if (!(await admit(req, reply, 'chat'))) return reply;
-    if (!providers.openrouter.key) return reply.status(503).send({ error: 'unavailable', code: 'provider_error' });
-    const transcript = (req.body?.transcript ?? '').slice(0, 400).trim();
-    if (!transcript) return { reply: '' };
-    const name = (req.body?.name ?? '').slice(0, 40).trim();
-    const persona =
-      `You are Kairo, a warm, upbeat screen-native AI assistant. This is the user's first-ever chat with you during onboarding${name ? `, and their name is ${name}` : ''}. ` +
-      'Reply naturally and conversationally to what they said, in ONE or at most TWO short spoken sentences. ' +
-      'Sound friendly and human, never robotic. Do not use emojis, markdown, or lists — this will be read aloud. Keep it brief.';
-    const { json } = await forwardJson('openrouter', '/chat/completions', {
-      model: 'google/gemini-2.5-flash-lite', // same fast model as the gate
-      messages: [
-        { role: 'system', content: persona },
-        { role: 'user', content: transcript },
-      ],
-      max_tokens: 90, // one or two short sentences
-      temperature: 0.7, // a little warmth, still fast
-      reasoning: { enabled: false }, // no thinking — instant
-      provider: { sort: 'throughput' }, // route to the fastest endpoint
-    });
-    const text = String((json as any)?.choices?.[0]?.message?.content ?? '').trim();
-    return { reply: text };
-  });
-
-  // STT for a spoken onboarding answer (name / source).
-  app.post('/v1/onboarding/stt', async (req, reply) => {
-    if (!(await admit(req, reply, 'stt'))) return reply;
-    const p = providers.sarvam;
-    if (!p.key) return reply.status(503).send({ error: 'stt_unavailable', code: 'provider_error' });
-    const mp = await req.file();
-    if (!mp) return reply.status(400).send({ error: 'no_file', code: 'bad_request' });
-    const buf = await mp.toBuffer();
-    const form = new FormData();
-    form.append('file', new Blob([buf]), mp.filename || 'audio.wav');
-    const fields = mp.fields as Record<string, { value?: string } | undefined> | undefined;
-    for (const key of ['model', 'mode', 'language_code'] as const) {
-      const value = fields?.[key]?.value;
-      if (value) form.append(key, value);
-    }
-    const res = await fetch(`${p.baseUrl}/speech-to-text`, { method: 'POST', headers: { ...p.authHeader(p.key) }, body: form });
-    reply.status(res.status);
-    return res.status === 204 ? null : await res.json().catch(() => ({}));
-  });
-
-  // Onboarding "point" GATE — the unauthenticated, unmetered sibling of /v1/llm/chat. The demo
-  // point turn runs PRE-sign-in, so it can't use the authed gate route. IP-rate-limited.
-  app.post('/v1/onboarding/gate', async (req, reply) => {
-    if (!(await admit(req, reply, 'gate'))) return reply;
-    // Guarded, not forwarded: this route has no user, no meter and no credit gate, so an
-    // unvalidated body is an open LLM proxy billed to us. See `model-guard.ts`.
-    const { json } = await forwardJson('openrouter', '/chat/completions', guardOnboardingChat(req.body));
-    return json;
-  });
-
-  // Onboarding VISION (answer + box) — the unauthenticated, unmetered sibling of /v1/vision/tutor.
-  // Vision is the expensive call, so this gets a TIGHT per-IP budget (the demo makes ~1-2 calls;
-  // headroom left for retries). Provider routing mirrors the metered route.
-  app.post('/v1/onboarding/vision', async (req, reply) => {
-    if (!(await admit(req, reply, 'vision'))) return reply;
-    const provider = (req.body as { _provider?: string })?._provider === 'anthropic' ? 'anthropic' : 'openai';
-    const path = provider === 'anthropic' ? '/v1/messages' : '/v1/responses';
-    // Same reasoning as the gate, and it matters more here: vision is the expensive call.
-    const { json } = await forwardJson(provider, path, guardOnboardingVision(dropProviderHint(req.body)));
-    return json;
-  });
-
-  // Onboarding streaming TTS — the unauthenticated sibling of /v1/tts/stream (demo voice replies).
-  // Pinned to the default engine + voice: onboarding runs before sign-in, so there is no user row
-  // to hold a preference, and the scripted lines are tuned against this voice.
-  app.post<{ Body: { text?: string } }>('/v1/onboarding/tts/stream', async (req, reply) => {
-    if (!(await admit(req, reply, 'ttsStream'))) return reply;
-    const text = (req.body?.text ?? '').slice(0, TTS_TEXT_LIMIT).trim();
-    if (!text) return reply.status(400).send({ error: 'bad_text', code: 'bad_request' });
-    const target = streamTarget(text, { provider: 'sarvam', voiceId: ONBOARDING_VOICE_ID });
-    await streamPassthrough(target.providerId, target.path, target.body, reply);
   });
 }

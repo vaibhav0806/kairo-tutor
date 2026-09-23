@@ -32,9 +32,9 @@ afterEach(async () => {
 
 describe('streamed tutor turn', () => {
   it('asks the provider to stream while preserving the rest of the body', () => {
-    const body = streamingBody({ _provider: 'openai', model: 'gpt-5.6-sol', input: [{ role: 'user' }] });
+    const body = streamingBody({ _provider: 'openai', model: 'gpt-6-sol', input: [{ role: 'user' }] });
 
-    expect(body).toMatchObject({ model: 'gpt-5.6-sol', stream: true });
+    expect(body).toMatchObject({ model: 'gpt-6-sol', stream: true });
     // The routing hint is ours, not the provider's — it must never be forwarded.
     expect(body).not.toHaveProperty('_provider');
   });

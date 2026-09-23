@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Switch } from '@base-ui/react/switch';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { hasManageableSubscription, type MeResponse } from '@kairo/shared';
 import { createNativeBridge, type NativePermissionStatus, type NativePermissionKey } from '../native/nativeBridge';
 import { getAuthStatus, onAuthChanged, onAuthRejected, signOut, startGoogleAuth } from '../onboarding/authClient';
+import { syncUserName } from '../onboarding/userName';
 import { getAccent, setAccent, DEFAULT_ACCENT } from '../core/accent';
 import { klog } from '../core/logger';
 import { notify, notifySaving } from '../core/notify';
@@ -57,11 +58,6 @@ export function SettingsView() {
     });
   }, []);
 
-  // The main window is the big permission-recovery window; shrink it to hug the settings card.
-  useEffect(() => {
-    void getCurrentWindow().setSize(new LogicalSize(460, 720)).catch(() => {});
-  }, []);
-
   const refresh = useCallback(async (): Promise<MeResponse | null> => {
     const status = await getAuthStatus();
     setSignedIn(status.signed_in);
@@ -77,6 +73,10 @@ export function SettingsView() {
     setLoading(false);
     return null;
   }, [bridge]);
+
+  useEffect(() => {
+    if (signedIn) void syncUserName();
+  }, [signedIn]);
 
   const loadExtras = useCallback(async () => {
     const storedAccent = await getAccent().catch(() => DEFAULT_ACCENT);
@@ -146,7 +146,10 @@ export function SettingsView() {
     }).then((u) => unsubs.push(u));
     // Re-fetch whenever the window regains focus — the plan can change out-of-band (checkout in the
     // browser, a webhook landing) so the Upgrade/Manage state must never show a stale cache.
-    const onFocus = () => void refresh();
+    const onFocus = () => {
+      void refresh();
+      void bridge.getPermissionStatus().then(setPerms).catch(() => {});
+    };
     window.addEventListener('focus', onFocus);
     unsubs.push(() => window.removeEventListener('focus', onFocus));
     return () => unsubs.forEach((u) => u());
@@ -163,6 +166,7 @@ export function SettingsView() {
       )
     : '';
   const planNotice = billingNotice(me, billingReturnStatus);
+  const missingPermissions = perms ? PERMISSIONS.filter(({ key }) => perms[key] !== 'granted') : [];
 
   const applyAccent = async (hex: string) => {
     setAccentState(hex);
@@ -290,6 +294,30 @@ export function SettingsView() {
           <KairoLockup className="settings-brand" />
           <span className="settings-title">Settings</span>
         </div>
+
+        {missingPermissions.length > 0 && (
+          <section className="s-section s-permission-alert" aria-label="Permissions needed">
+            <strong>Kairo needs permission to work</strong>
+            <p className="settings-muted">
+              Grant {missingPermissions.map(({ label }) => label).join(', ')} below, then restart
+              Kairo if macOS still shows them as missing.
+            </p>
+            <div className="settings-row">
+              <KButton
+                variant="ghost"
+                busy={busy}
+                onClick={withBusy(async () => {
+                  setPerms(await bridge.requestRequiredPermissions());
+                }, "Couldn't request permissions")}
+              >
+                Grant permissions
+              </KButton>
+              <KButton variant="ghost" onClick={() => void bridge.restartApp()}>
+                Restart Kairo
+              </KButton>
+            </div>
+          </section>
+        )}
 
         {/* Account */}
         <section className="s-section">

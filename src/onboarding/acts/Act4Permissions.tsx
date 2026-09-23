@@ -11,22 +11,20 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // the box appears while the user is still hearing the why — they can act immediately, not after ~15s.
 const BOX_DELAY_MS = 4000;
 
-// Act 3 — "Earn the Eyes". Two permission moments (Screen Recording, then Accessibility). Each: start
+// PERMISSIONS — "Earn the Eyes". Two permission moments (Screen Recording, then Accessibility). Each: start
 // the spoken line, then fire the ONE native OS prompt ~2.5s in. The prompt does double duty — it
 // registers Kairo in the Settings list AND is the gateway to the toggle (its own "Open System
 // Settings" button). We deliberately do NOT open System Settings ourselves. Status-driven, so it's
 // idempotent across the Screen-Recording quit+reopen.
-export function Act3Permissions({ name, onAdvance }: ActProps) {
+export function Act4Permissions({ name, onAdvance }: ActProps) {
   const { say, bridge } = useCoach(name);
   const [sub, setSub] = useState<Act3SubStep | null>(null);
   const spoke = useRef<Record<string, boolean>>({});
   const advanced = useRef(false);
+  const lastStatus = useRef('');
 
-  // Persist the resume marker: granting Screen Recording forces a macOS quit+reopen, and the
-  // orchestrator resumes to whatever the marker says (mapped in OnboardingApp).
-  useEffect(() => {
-    void invoke('set_onboarding_step', { step: 'act3' }).catch(() => {});
-  }, []);
+  // The resume marker is written by the orchestrator for EVERY act, not here for this one — a
+  // relaunch during any act must resume where it happened, not just this one.
 
   // Live status is the source of truth (idempotent across the relaunch). Poll → pick the sub-step.
   useEffect(() => {
@@ -34,12 +32,20 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
     const tick = async () => {
       const status = await bridge.getPermissionStatus();
       if (cancelled) return;
+      const snapshot = `${status.screenRecording}/${status.accessibility}`;
+      if (snapshot !== lastStatus.current) {
+        lastStatus.current = snapshot;
+        klog('onboarding', 'info', 'permissions observed', {
+          screenRecording: status.screenRecording,
+          accessibility: status.accessibility
+        });
+      }
       const next = nextPermissionStep(status);
       if (next === 'done') {
         if (!advanced.current) {
           advanced.current = true;
           void bridge.closeSettings(); // clean stage: quit System Settings → only desktop + Kairo
-          klog('onboarding', 'info', 'act3 done');
+          klog('onboarding', 'info', 'permissions: done');
           onAdvance();
         }
         return;
@@ -84,7 +90,7 @@ export function Act3Permissions({ name, onAdvance }: ActProps) {
       if (stop()) return;
       await bridge.requestAccessibility(); // the OS pop-up (the only window)
     })().catch((e) =>
-      klog('onboarding', 'error', 'act3 sub-step failed', { sub, error: String(e) })
+      klog('onboarding', 'error', 'permissions: sub-step failed', { sub, error: String(e) })
     );
 
     return () => {

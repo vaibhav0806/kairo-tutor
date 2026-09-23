@@ -487,12 +487,12 @@ fn spawn_ptt_controller(app: tauri::AppHandle, rx: Receiver<PttEvent>) {
 }
 
 // True once the PTT controller + tap have been spawned, so `spawn_ptt` is idempotent — it can be
-// called at startup (onboarded users), from Act 2 (first-run, after the mic/IM primer), and from
+// called at startup (onboarded users), from HEARING (first-run, after the mic/IM primer), and from
 // finish_onboarding without ever creating a second controller/tap.
 static PTT_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 // Start push-to-talk: a controller (timing/state) fed by a modifier-state POLL (no keyboard tap, so
-// no Input Monitoring prompt). Idempotent — safe to call at launch (onboarded), from Act 2, and from
+// no Input Monitoring prompt). Idempotent — safe to call at launch (onboarded), from HEARING, and from
 // finish_onboarding.
 pub(crate) fn spawn_ptt(app: &tauri::AppHandle) {
     if PTT_SPAWNED.swap(true, Ordering::SeqCst) {
@@ -503,8 +503,8 @@ pub(crate) fn spawn_ptt(app: &tauri::AppHandle) {
     spawn_ptt_poll(tx);
 }
 
-/// Start the ⌥⌃ push-to-talk tap on demand (idempotent). Act 2 calls this AFTER priming Input
-/// Monitoring, so the Keystroke-Receiving prompt appears in Act 2 — not at launch. The tap retries
+/// Start the ⌥⌃ push-to-talk tap on demand (idempotent). HEARING calls this AFTER priming Input
+/// Monitoring, so the Keystroke-Receiving prompt appears in HEARING — not at launch. The tap retries
 /// until the grant lands, so ⌥⌃ goes live the moment the user allows it.
 #[tauri::command]
 pub(crate) fn start_ptt(app: tauri::AppHandle) {

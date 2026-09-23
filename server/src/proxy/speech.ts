@@ -5,7 +5,7 @@ import { providers } from '../config/providers';
 import { enabledTtsProviders } from '../config/env';
 import { requireAuth } from '../plugins/auth-verify';
 import { requireCredits } from '../plugins/require-credits';
-import { consume } from '../lib/budget';
+import { chargeAccount } from '../plugins/account-limits';
 import { streamPassthrough } from './stream';
 import {
   SARVAM_STT_LANGUAGE_CODE,
@@ -39,6 +39,7 @@ export async function speechRoutes(app: FastifyInstance) {
   // names a provider). Defaults are filled in here so an old client that omits them still gets
   // language auto-detect rather than Sarvam's own default.
   app.post('/v1/stt', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
+    await chargeAccount(req, 'stt');
     const p = providers.sarvam;
     if (!p.key) return reply.status(502).send({ error: 'provider_error', code: 'provider_error' });
 
@@ -70,6 +71,7 @@ export async function speechRoutes(app: FastifyInstance) {
   // TTS buffered — the fallback path when streaming is unavailable. Normalized to one shape
   // regardless of engine, so the desktop holds no vendor knowledge.
   app.post('/v1/tts', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
+    await chargeAccount(req, 'tts');
     const parsed = SpeakBody.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: 'bad_text', code: 'bad_request' });
     const prefs = await readPreferences(req.userId!);
@@ -82,6 +84,7 @@ export async function speechRoutes(app: FastifyInstance) {
   // TTS streaming (raw 24kHz PCM) — pipe straight through, low latency. Both engines stream;
   // picking ElevenLabs must not silently downgrade to the buffered path.
   app.post('/v1/tts/stream', { preHandler: [requireAuth, requireCredits] }, async (req, reply) => {
+    await chargeAccount(req, 'tts');
     const parsed = SpeakBody.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: 'bad_text', code: 'bad_request' });
     const prefs = await readPreferences(req.userId!);
@@ -145,9 +148,7 @@ export async function speechRoutes(app: FastifyInstance) {
   app.post('/v1/voices/preview', { preHandler: requireAuth }, async (req, reply) => {
     const parsed = PreviewBody.safeParse(req.body);
     if (!parsed.success) return reply.status(400).send({ error: 'bad_request', code: 'bad_request' });
-    if (!(await consume(`preview:${req.userId}`, 30, 60_000))) {
-      return reply.status(429).send({ error: 'rate_limited', code: 'bad_request' });
-    }
+    await chargeAccount(req, 'voice-preview');
 
     const provider = parsed.data.provider as VoicesResponse['provider'];
     if (!enabledTtsProviders.includes(provider)) {

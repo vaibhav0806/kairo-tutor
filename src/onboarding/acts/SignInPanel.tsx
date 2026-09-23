@@ -1,26 +1,34 @@
 import { useEffect, useState } from 'react';
 import { klog } from '../../core/logger';
 import { useCoach } from '../useCoach';
-import { ACT5_SIGNIN } from '../copy';
 import { getAuthStatus, onAuthChanged, onAuthRejected, startGoogleAuth } from '../authClient';
 import { syncUserName } from '../userName';
-import { TempPanel } from './TempPanel';
-import { KairoLockup } from '../../components/KairoMark';
 import { InlineNotice } from '../../components/InlineNotice';
 
 /**
- * Act 5a — sign in (master spec §4). The Google button opens the system browser; on the deep-link
- * return the orchestrator window regains focus (already built). Once signed in we pull the user's
- * name from `/v1/me` (Google profile → account) and cache it, then advance — the resolved name is
- * held by the orchestrator for the warm ending + the account save.
+ * The front door's third panel: sign in, before anything in the product costs money.
+ *
+ * Deliberately part of the same card as the hero and the colour step rather than an act of its own.
+ * Those three beats are one continuous first impression, and dropping a separate credential card
+ * into the middle of the flow read as an interruption. The card collapses into the pet only once
+ * this succeeds, so Kairo's first spoken line lands on a real account.
+ *
+ * Silent by design. Everything else in onboarding speaks; being talked at while reaching for a
+ * password reads as pushy, so this panel says what it needs in text. There is no cached audio.
+ *
+ * The Google button opens the system browser; on the deep-link return the orchestrator window
+ * regains focus. Once signed in we pull the user's name from `/v1/me` and cache it, then hand it
+ * back for the warm ending and the account save.
  */
-export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void }) {
-  const { say, clear, bridge } = useCoach('');
+export function SignInPanel({ onSignedIn }: { onSignedIn: (name: string) => void }) {
+  const { clear, bridge } = useCoach('');
   const [signedIn, setSignedIn] = useState(false);
   const [rejected, setRejected] = useState<string | null>(null);
 
   useEffect(() => {
-    void say(ACT5_SIGNIN); // caption == the spoken line
+    // No `say` here: this act is silent. Clear whatever the colour step left on the caption so the
+    // card is not competing with a stale line.
+    void clear();
     let un = () => {};
     let unRejected = () => {};
     void getAuthStatus().then((s) => s.signed_in && setSignedIn(true));
@@ -48,7 +56,7 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
   useEffect(() => {
     if (!signedIn) return;
     void syncUserName().then((name) => {
-      klog('onboarding', 'info', 'act5 signed in', { name_len: name.length });
+      klog('onboarding', 'info', 'front door: signed in', { name_len: name.length });
       // Pull focus back to Kairo from the OAuth browser BEFORE the next step starts talking.
       void bridge.focusOnboarding();
       void clear();
@@ -58,14 +66,13 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
   }, [signedIn]);
 
   return (
-    <TempPanel>
-      <div className="ob-signin">
-        <KairoLockup className="ob-signin-mark" />
+    <div className="ob-signin">
         {signedIn ? (
           <span className="ob-signin-done">Signed in — one sec…</span>
         ) : (
           <>
-            <span className="ob-signin-sub">Sign in to save your setup</span>
+            <span className="ob-signin-title">First, make it yours.</span>
+            <span className="ob-signin-sub">Sign in with Google to save your setup.</span>
             {/* Official "Sign in with Google" — Light theme (white) per Google's branding guidelines;
                 the crisp white button + neutral stroke sits cleanly on the light card. */}
             {rejected ? <InlineNotice>{rejected}</InlineNotice> : null}
@@ -86,8 +93,7 @@ export function Act5SignIn({ onSignedIn }: { onSignedIn: (name: string) => void 
               <span>Continue with Google</span>
             </button>
           </>
-        )}
-      </div>
-    </TempPanel>
+      )}
+    </div>
   );
 }

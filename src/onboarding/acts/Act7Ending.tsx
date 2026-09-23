@@ -7,12 +7,12 @@ import { getBackendJwt } from '../authClient';
 import { saveOnboarding } from '../backendClient';
 
 /**
- * Act 6 — warm ending (master spec §4, §9 peak-END). Speaks a name-personalized sign-off in the
+ * ENDING — warm ending (master spec §4, §9 peak-END). Speaks a name-personalized sign-off in the
  * real notch, persists name + accent + source to the account, caches the name natively (so the live
  * product knows it — §12), then finishes (the pet retreats naturally via the product's normal
  * post-turn backoff; no special graduation choreography).
  */
-export function Act6Ending({
+export function Act7Ending({
   name,
   source,
   onComplete

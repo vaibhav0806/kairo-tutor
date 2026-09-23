@@ -1,0 +1,144 @@
+# Running a fresh onboarding test
+
+Onboarding state lives in **three** places. Clearing only one gives a test that looks fresh and
+isn't — the usual symptom is the flow skipping sign-in, or Kairo remembering your voice, name or
+accent colour from the last run.
+
+Do all three, in this order, against the **dev** Neon branch. Never against production.
+
+## 1. Delete the account from the dev database
+
+Deleting the user is better than nulling columns: the foreign keys cascade, so it also removes the
+things that are easy to forget.
+
+| Table | What it holds |
+| --- | --- |
+| `profile` | name, source, accent, `onboarding_completed_at` |
+| `user_preference` | **saved TTS voice and provider** — the usual "why is my voice still set?" |
+| `usage_counter` | free requests used, tutorial vision budget |
+| `subscription` | Pro entitlement (delete it, or you cannot test the free paywall) |
+| `usage_event` | metering ledger |
+| `session`, `account`, `oauth_code` | Google link and live sessions |
+
+Run this from `server/`, with `EMAIL` set to the exact test account. The database guard checks
+Neon's connected endpoint before the transaction can delete anything.
+
+```bash
+node --import tsx --input-type=module - <<'JS'
+import { pool } from './src/db/client.ts';
+import { assertDatabaseTarget } from './src/db/environment.ts';
+
+const EMAIL = 'you@example.com';
+const client = await pool.connect();
+try {
+  await client.query('BEGIN');
+  const target = await assertDatabaseTarget(client);
+  if (target.kind !== 'neon' || target.target !== 'local' ||
+      target.endpoint !== 'ep-damp-bar-as9g9rwj') {
+    throw new Error('Refusing to reset an account outside the dev Neon branch');
+  }
+  const user = await client.query('SELECT id FROM "user" WHERE email = $1 FOR UPDATE', [EMAIL]);
+  if (user.rowCount !== 1) throw new Error(`Expected one account, found ${user.rowCount}`);
+  await client.query('DELETE FROM "user" WHERE id = $1', [user.rows[0].id]);
+  const invite = await client.query(
+    'UPDATE access_invite SET redeemed_at = NULL WHERE email = $1', [EMAIL]);
+  if (invite.rowCount !== 1) throw new Error('Expected one retained invite');
+  await client.query('COMMIT');
+  console.log('Test account reset; invite retained');
+} catch (error) {
+  await client.query('ROLLBACK');
+  throw error;
+} finally {
+  client.release();
+  await pool.end();
+}
+JS
+```
+
+Keep the `access_invite` row. Without it, sign-in is refused and you never reach the rest of the
+flow — which is a different test.
+`rate_counter` contains shared route and daily budgets, so do not clear it for one account.
+
+## 2. Clear this machine's app state
+
+```bash
+osascript -e 'tell application "Kairo Tutor" to quit'
+rm -f ~/Library/Application\ Support/com.kairo.tutor/*
+```
+
+That directory holds `onboarded` (skips onboarding entirely), `onboarding_step` (the resume
+marker), `session.token` (**leave it and sign-in auto-skips**), plus the cached `accent` and
+`user_name`.
+
+## 3. Reset the macOS permission grants
+
+```bash
+for s in ScreenCapture Accessibility Microphone ListenEvent; do
+  tccutil reset $s com.kairo.tutor
+done
+```
+
+`ListenEvent` is Input Monitoring. Resetting it here is app-scoped and safe;
+`npm run local -- --reset-input-monitoring` clears it **globally**, so every other app you have
+granted it to needs re-granting. Only use the global form when you specifically want to rehearse
+the Input Monitoring primer.
+
+## 4. Rebuild and launch
+
+```bash
+npm run local -- --reset
+```
+
+Starts the server against the dev branch, waits for `/healthz`, then builds, signs, verifies and
+launches the packaged app pointed at `http://localhost:8787`. `--reset` also re-clears app-scoped
+TCC and the state directory, so step 3 is belt-and-braces.
+
+Apply migrations first if the branch adds any: `npm run db:migrate`.
+
+If this Mac lacks the `Kairo Tutor Local Dev` signing identity, build the local-backend unsigned
+app with `KAIRO_BACKEND_TARGET=local npm run app:build:unsigned`. Before testing a permission
+relaunch, move any older `/Applications/Kairo Tutor.app` aside as a backup and install that exact
+new bundle at `/Applications/Kairo Tutor.app`. Launch it there, then verify the running executable
+path with the command below. An unsigned build has a different macOS permission identity from the
+previously signed app, so grant permissions to the installed test build on this fresh run.
+
+## Gotcha: only ever have ONE copy of the app
+
+macOS reopens an app by **bundle id**, not by path. Granting Screen Recording force-quits and
+reopens Kairo, and LaunchServices resolves `com.kairo.tutor` to whatever copy it knows about — so a
+leftover `/Applications/Kairo Tutor.app` from a release build will win, and the relaunch runs THAT
+binary instead of the one you just built.
+
+The symptom is nasty because it looks like a logic bug: the first launch behaves correctly, then
+after the permission restart the app behaves like an older version and appears to ignore your
+fixes. `npm run local` now installs to `/Applications` and launches from there, so there is exactly
+one copy. If you ever launch a build by hand, check which binary is actually running:
+
+```bash
+ps -o comm= -p $(pgrep -x kairo-tutor)
+```
+
+## 5. Confirm the environment before testing
+
+```bash
+# Deleted routes must be gone, authed routes must refuse anonymous callers.
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8787/v1/onboarding/vision   # 404
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8787/v1/vision/tutor        # 401
+tail -F ~/Library/Logs/Kairo/kairo-latest.log
+```
+
+Two logs, and you want both. `kairo-latest.log` is the app — Rust and every WebView.
+`kairo-server-latest.log` is the local server, teed there by `npm run local`. Only the second one
+can answer "did the request reach the server at all", which is what separates a client-side hang
+from a server-side one. Both are dated and appended, so a previous run's evidence survives the
+next one.
+
+## What a correct run looks like
+
+1. Hero → colour → **sign-in, all in one card**. No spoken line on the sign-in panel.
+2. The card collapses into the pet, and only then does Kairo speak
+   *"Hey — I'm Kairo. See that notch at the top of your screen?"*
+3. Hearing → permissions → point → circle → source → ending.
+4. Granting Screen Recording force-quits and reopens the app. It must return to **permissions**,
+   not the hero, and there must be no white flash on relaunch.
+5. No `/v1/onboarding/*` line appears in the server log at any point.

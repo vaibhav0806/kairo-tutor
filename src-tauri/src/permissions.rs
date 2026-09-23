@@ -194,9 +194,9 @@ pub(crate) fn request_required_permissions(app: tauri::AppHandle) -> PermissionS
     }
 }
 
-/// Fire ONLY the Screen Recording OS prompt (Act 3a). Registers Kairo in the Screen Recording list
+/// Fire ONLY the Screen Recording OS prompt (PERMISSIONS, first half). Registers Kairo in the Screen Recording list
 /// and shows the system dialog. macOS forces a quit+reopen once granted — the onboarding resume
-/// marker lands us back in Act 3 on relaunch. Screen-capture auth is cached per-process, so
+/// marker lands us back in PERMISSIONS on relaunch. Screen-capture auth is cached per-process, so
 /// `get_permission_status` may keep reading NotDetermined in THIS process until that relaunch.
 ///
 /// CRITICAL: `CGRequestScreenCaptureAccess()` MUST run on the main thread. Fired from a Tauri worker
@@ -212,7 +212,7 @@ pub(crate) fn request_screen_recording(app: tauri::AppHandle) -> PermissionState
         // Fire-and-forget on the MAIN thread: this REGISTERS Kairo in the Screen Recording list and,
         // on a fresh install, shows the one-time OS prompt. We do NOT block on it — the caller opens
         // System Settings right after (the reliable path to the toggle, since the prompt only ever
-        // fires once per install), and the real grant is detected by the Act 3 status poll after the
+        // fires once per install), and the real grant is detected by the PERMISSIONS status poll after the
         // relaunch. Blocking here previously stalled the main thread and froze the next notch caption.
         let _ = app.run_on_main_thread(|| {
             let _ = unsafe { CGRequestScreenCaptureAccess() };
@@ -220,7 +220,7 @@ pub(crate) fn request_screen_recording(app: tauri::AppHandle) -> PermissionState
         crate::klog!(
             app,
             info,
-            "act3: requested screen recording (fire-and-forget)"
+            "permissions: requested screen recording (fire-and-forget)"
         );
         return PermissionState::NotDetermined;
     }
@@ -231,14 +231,14 @@ pub(crate) fn request_screen_recording(app: tauri::AppHandle) -> PermissionState
     }
 }
 
-/// Fire ONLY the Accessibility OS prompt (Act 3b). Crucially this ALSO registers Kairo in the
+/// Fire ONLY the Accessibility OS prompt (PERMISSIONS, second half). Crucially this ALSO registers Kairo in the
 /// Accessibility list, so there is a toggle for the pet to point at.
 #[tauri::command]
 pub(crate) fn request_accessibility() -> PermissionState {
     #[cfg(target_os = "macos")]
     {
         let state = request_accessibility_permission();
-        crate::klog!(app, info, state = ?state, "act3: requested accessibility");
+        crate::klog!(app, info, state = ?state, "permissions: requested accessibility");
         return state;
     }
     #[cfg(not(target_os = "macos"))]
@@ -277,8 +277,8 @@ pub(crate) fn open_permission_settings(permission: String) -> Result<(), String>
     }
 }
 
-/// Prompt for Microphone ONLY (Act 2). Deliberately does NOT request Screen Recording — that
-/// grant forces macOS to quit+reopen the app and belongs to Act 3. Returns the full status with
+/// Prompt for Microphone ONLY (HEARING). Deliberately does NOT request Screen Recording — that
+/// grant forces macOS to quit+reopen the app and belongs to PERMISSIONS. Returns the full status with
 /// a freshly-requested microphone state.
 #[tauri::command]
 pub(crate) fn request_microphone(app: tauri::AppHandle) -> PermissionStatus {
@@ -325,7 +325,7 @@ pub(crate) fn input_monitoring_raw() -> u32 {
     unsafe { IOHIDCheckAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT) }
 }
 
-/// "granted" / "not_determined" / "unknown" — lets Act 2 poll the Input-Monitoring grant.
+/// "granted" / "not_determined" / "unknown" — lets HEARING poll the Input-Monitoring grant.
 #[tauri::command]
 pub(crate) fn get_input_monitoring_status() -> String {
     #[cfg(target_os = "macos")]

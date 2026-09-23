@@ -9,10 +9,10 @@ import { playRecordingCue } from '../core/sound';
 import type { TimedPoint } from '../notch/gestureSegmenter';
 import { useCoach } from './useCoach';
 
-// Act 4 — the two practice beats, and ONLY those. Each runs the REAL Kairo pipeline (demoController):
+// PRACTICE — the two practice beats, and ONLY those. Each runs the REAL Kairo pipeline (demoController):
 //   • point  — the user asks Kairo to point at something (gate → vision → pet points at it)
 //   • circle — the user draws around something (gesture → vision → Kairo describes it)
-// Notch-driven, exactly like Act 2's say-hi drill: this renders nothing. The notch caption + the
+// Notch-driven, exactly like HEARING's say-hi drill: this renders nothing. The notch caption + the
 // live pet ARE the UI. The ⌥⌃ chord is the only Next; a beat auto-advances when Kairo lands the
 // answer, and speaks a retry on a miss. The notch caption tracks every spoken line, so it is never
 // stale — the whole reason this act moved onto useCoach.
@@ -109,7 +109,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           klog('onboarding', 'info', 'practice beat done', { mode: m });
           if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
           advanceTimerRef.current = setTimeout(() => {
-            // Last beat → hand back to the orchestrator (Act 5); else the next beat.
+            // Last beat → hand back to the orchestrator (SOURCE); else the next beat.
             if (indexRef.current >= STEPS.length - 1) onComplete();
             else go(1);
           }, 1400);
@@ -132,8 +132,8 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     demoDoneRef.current = false;
     gestureBufferRef.current = [];
     recordingRef.current = false;
-    // Ensure the ⌥⌃ tap is live. Act 2's primer normally starts it, but a relaunch can resume STRAIGHT
-    // to this act (Screen-Recording grant → quit+reopen), skipping Act 2 — then the tap was never
+    // Ensure the ⌥⌃ tap is live. HEARING's primer normally starts it, but a relaunch can resume STRAIGHT
+    // to this act (Screen-Recording grant → quit+reopen), skipping HEARING — then the tap was never
     // spawned and holding the chord does nothing. startPtt is idempotent, so this is safe either way.
     void bridge.startPtt().catch(() => {});
     void invoke('set_onboarding_ptt', { active: true }).catch(() => {});
@@ -184,5 +184,5 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step.id]);
 
-  return null; // notch caption + the live pet are the whole UI (like Act 2's drill)
+  return null; // notch caption + the live pet are the whole UI (like HEARING's drill)
 }
