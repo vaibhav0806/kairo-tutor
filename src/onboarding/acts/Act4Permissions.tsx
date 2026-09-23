@@ -21,6 +21,7 @@ export function Act4Permissions({ name, onAdvance }: ActProps) {
   const [sub, setSub] = useState<Act3SubStep | null>(null);
   const spoke = useRef<Record<string, boolean>>({});
   const advanced = useRef(false);
+  const lastStatus = useRef('');
 
   // The resume marker is written by the orchestrator for EVERY act, not here for this one — a
   // relaunch during any act must resume where it happened, not just this one.
@@ -31,6 +32,14 @@ export function Act4Permissions({ name, onAdvance }: ActProps) {
     const tick = async () => {
       const status = await bridge.getPermissionStatus();
       if (cancelled) return;
+      const snapshot = `${status.screenRecording}/${status.accessibility}`;
+      if (snapshot !== lastStatus.current) {
+        lastStatus.current = snapshot;
+        klog('onboarding', 'info', 'permissions observed', {
+          screenRecording: status.screenRecording,
+          accessibility: status.accessibility
+        });
+      }
       const next = nextPermissionStep(status);
       if (next === 'done') {
         if (!advanced.current) {

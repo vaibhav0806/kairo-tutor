@@ -95,6 +95,13 @@ TCC and the state directory, so step 3 is belt-and-braces.
 
 Apply migrations first if the branch adds any: `npm run db:migrate`.
 
+If this Mac lacks the `Kairo Tutor Local Dev` signing identity, build the local-backend unsigned
+app with `KAIRO_BACKEND_TARGET=local npm run app:build:unsigned`. Before testing a permission
+relaunch, move any older `/Applications/Kairo Tutor.app` aside as a backup and install that exact
+new bundle at `/Applications/Kairo Tutor.app`. Launch it there, then verify the running executable
+path with the command below. An unsigned build has a different macOS permission identity from the
+previously signed app, so grant permissions to the installed test build on this fresh run.
+
 ## Gotcha: only ever have ONE copy of the app
 
 macOS reopens an app by **bundle id**, not by path. Granting Screen Recording force-quits and

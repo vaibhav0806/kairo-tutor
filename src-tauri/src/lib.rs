@@ -846,6 +846,14 @@ pub fn run() {
             None,
         ))
         .setup(|app| {
+            // A Screen Recording grant forces macOS to relaunch by bundle ID. When a developer
+            // launches a build from target/ beside an older /Applications copy, that restart can
+            // select the older binary and its different TCC identity. Log only the location class,
+            // never a home-directory path, so this is diagnosable without exposing local paths.
+            let installed_binary = std::env::current_exe()
+                .map(|path| path.starts_with("/Applications/Kairo Tutor.app"))
+                .unwrap_or(false);
+            klog!(app, info, installed_binary, "startup executable location");
             let show_setup = should_show_setup_window(&get_permission_status());
             let need_onboarding = !crate::onboarding::is_onboarded(app.handle());
             // Diagnostic: Input Monitoring raw access at launch (0=granted 1=denied 2=unknown). A
