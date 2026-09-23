@@ -25,7 +25,7 @@ const KNOWN_CHAT_MODELS = new Set([
 ]);
 
 /** Single-call answer+box models (`TUTOR_VISION_MODEL`, `OPENAI_TUTOR_MODEL`). */
-const KNOWN_VISION_MODELS = new Set(['claude-opus-4-8', 'gpt-5.6-sol']);
+const KNOWN_VISION_MODELS = new Set(['claude-opus-4-8', 'gpt-5.6-sol', 'gpt-6-sol']);
 
 /**
  * Token ceilings. The product's own vision turn asks for `ANTHROPIC_VISION_MAX_TOKENS` (3000), and

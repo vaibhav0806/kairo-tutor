@@ -80,5 +80,6 @@ describe('cost-per-request is clamped even for authenticated callers', () => {
 
     expect(clampAuthedChat({ model: CHAT_MODEL }).knownModel).toBe(true);
     expect(clampAuthedVision({ model: VISION_MODEL }).knownModel).toBe(true);
+    expect(clampAuthedVision({ model: 'gpt-6-sol' }).knownModel).toBe(true);
   });
 });

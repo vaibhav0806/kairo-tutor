@@ -446,7 +446,7 @@ async fn run_tutor_turn_inner(
             input.screen.image_base64.as_ref(),
             input.screen.display_bounds.as_ref(),
         ) {
-            // Which model returns the answer+box this turn: "openai" → gpt-5.6-sol
+            // Which model returns the answer+box this turn: "openai" → gpt-6-sol
             // (OpenAI Responses), otherwise Anthropic Fable. Both return the SAME
             // { steps:[{say, box?}] } JSON, so the clean/ground/return below is
             // IDENTICAL for both — only the model call differs.

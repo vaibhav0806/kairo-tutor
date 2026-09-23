@@ -34,7 +34,7 @@ pub(crate) const USE_BACKEND_PROXY: bool = true;
 // Which model runs the single-call answer+box turn (the one that returns the spoken
 // answer AND the pointer box together).
 //   "anthropic" = claude-opus-4-8 (Anthropic Messages).
-//   "openai"    = gpt-5.6-sol (OpenAI Responses API).
+//   "openai"    = gpt-6-sol (OpenAI Responses API).
 // Both return the SAME { steps:[{say, box?}] } JSON, so only the model call differs.
 // This is a DIFFERENT knob from POINTING_PROVIDER (that splits narration + pointing).
 // Runtime-overridable via KAIRO_TUTOR_VISION_PROVIDER (no rebuild).
@@ -91,15 +91,14 @@ pub(crate) const ANTHROPIC_VISION_EFFORT: &str = "low";
 // execute the click — the AI points, the user acts. Key = OPENAI_API_KEY in .env.
 // Model/base are overridable via the env var of the same name (default = these).
 pub(crate) const OPENAI_BASE_URL: &str = "https://api.openai.com";
-// gpt-5.6-sol is now available on our account (no longer 404s), so both the OpenAI
-// computer-use pointing path and the single-call tutor vision path use it.
+// The alternate computer-use pointing path is independent of the tutor vision model.
 pub(crate) const OPENAI_COMPUTER_USE_MODEL: &str = "gpt-5.6-sol";
 // The single-call answer+box model when TUTOR_VISION_PROVIDER="openai" (OpenAI
 // Responses API). Overridable at runtime via OPENAI_TUTOR_MODEL.
-pub(crate) const OPENAI_TUTOR_MODEL: &str = "gpt-5.6-sol";
+pub(crate) const OPENAI_TUTOR_MODEL: &str = "gpt-6-sol";
 // Reasoning effort for the OpenAI vision paths (pointing + single-call tutor).
-// Sent as OpenAI's `reasoning.effort`; gpt-5.6-sol accepts none | low | medium | high |
-// xhigh | max (NOT "minimal"), and defaults to medium when omitted. Raised low -> medium:
+// Sent as OpenAI's `reasoning.effort`; gpt-6-sol accepts none | low | medium | high |
+// xhigh | max (NOT "minimal"). Raised low -> medium on the previous model:
 // at "low" the model was skipping boxes on steps that clearly had an on-screen target.
 // Decoupled from the Claude knob. Overridable at runtime via OPENAI_VISION_EFFORT.
 pub(crate) const OPENAI_VISION_EFFORT: &str = "medium";
