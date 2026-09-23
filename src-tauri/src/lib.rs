@@ -877,7 +877,6 @@ pub fn run() {
             }
             if let Some(window) = app.get_webview_window("main") {
                 log_window_startup(&window);
-                let _ = window.set_size(LogicalSize::new(1180.0, 820.0));
                 let _ = window.center();
                 // Red close / ⌘W on the home window HIDES it — the app keeps running (Dock + menu bar
                 // remain). A Regular Mac app conventionally survives its last window closing; ⌘Q (app

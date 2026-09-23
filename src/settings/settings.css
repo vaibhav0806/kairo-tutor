@@ -44,6 +44,15 @@
   cursor: default;
 }
 
+.s-permission-alert {
+  border: 1px solid var(--hairline);
+  padding: 12px;
+  background: var(--surface-soft);
+}
+.s-permission-alert p {
+  margin: 6px 0 10px;
+}
+
 .settings-head {
   display: flex;
   align-items: baseline;

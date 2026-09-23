@@ -20,26 +20,44 @@ things that are easy to forget.
 | `usage_event` | metering ledger |
 | `session`, `account`, `oauth_code` | Google link and live sessions |
 
+Run this from `server/`, with `EMAIL` set to the exact test account. The database guard checks
+Neon's connected endpoint before the transaction can delete anything.
+
 ```bash
-cd server && node -e '
-require("dotenv").config();
-const { Pool } = require("pg");
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const EMAIL = "you@example.com";
-(async () => {
-  const u = await pool.query(`select id from "user" where email = $1`, [EMAIL]);
-  if (u.rowCount) await pool.query(`delete from "user" where id = $1`, [u.rows[0].id]);
-  await pool.query("delete from rate_counter");
-  // Keep the invite (sign-in is gated on it) but make it look untouched.
-  await pool.query("update access_invite set redeemed_at = null where email = $1", [EMAIL]);
-  console.log("account deleted");
+node --import tsx --input-type=module - <<'JS'
+import { pool } from './src/db/client.ts';
+import { assertDatabaseTarget } from './src/db/environment.ts';
+
+const EMAIL = 'you@example.com';
+const client = await pool.connect();
+try {
+  await client.query('BEGIN');
+  const target = await assertDatabaseTarget(client);
+  if (target.kind !== 'neon' || target.target !== 'local' ||
+      target.endpoint !== 'ep-damp-bar-as9g9rwj') {
+    throw new Error('Refusing to reset an account outside the dev Neon branch');
+  }
+  const user = await client.query('SELECT id FROM "user" WHERE email = $1 FOR UPDATE', [EMAIL]);
+  if (user.rowCount !== 1) throw new Error(`Expected one account, found ${user.rowCount}`);
+  await client.query('DELETE FROM "user" WHERE id = $1', [user.rows[0].id]);
+  const invite = await client.query(
+    'UPDATE access_invite SET redeemed_at = NULL WHERE email = $1', [EMAIL]);
+  if (invite.rowCount !== 1) throw new Error('Expected one retained invite');
+  await client.query('COMMIT');
+  console.log('Test account reset; invite retained');
+} catch (error) {
+  await client.query('ROLLBACK');
+  throw error;
+} finally {
+  client.release();
   await pool.end();
-})();
-'
+}
+JS
 ```
 
 Keep the `access_invite` row. Without it, sign-in is refused and you never reach the rest of the
 flow — which is a different test.
+`rate_counter` contains shared route and daily budgets, so do not clear it for one account.
 
 ## 2. Clear this machine's app state
 
