@@ -9,6 +9,10 @@ workers_dev = false # cron-only; no public HTTP endpoint
 [triggers]
 crons = ["*/5 * * * *"]
 
+[[kv_namespaces]]
+binding = "ALERT_STATE"
+id = "874cd1e38f67412fa548b6f979f80b19"
+
 # Send-email binding — restricted to the verified Email Routing destination.
 [[send_email]]
 name = "SEB"
