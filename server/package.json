@@ -15,26 +15,26 @@
     "invite": "tsx scripts/invite.mjs"
   },
   "dependencies": {
-    "@fastify/cors": "^11.3.0",
-    "@fastify/multipart": "^10.1.0",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/multipart": "^10.1.4",
     "@kairo/shared": "*",
-    "better-auth": "^1.6.23",
-    "dodopayments": "^2.42.2",
+    "better-auth": "^1.7.10",
+    "dodopayments": "^2.55.0",
     "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.45.2",
-    "fastify": "^5.10.0",
-    "fastify-plugin": "^6.0.0",
-    "jose": "^6.2.3",
-    "pg": "^8.22.0",
-    "pino": "^10.3.1",
-    "standardwebhooks": "^1.0.0",
-    "undici": "^8.7.0",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "^5.12.7",
+    "fastify-plugin": "^6.0.1",
+    "jose": "^6.2.12",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "standardwebhooks": "^1.1.1",
+    "undici": "^8.12.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/pg": "^8.20.0",
-    "drizzle-kit": "^0.31.10",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
     "tsup": "^8.5.1",
-    "tsx": "^4.23.1"
+    "tsx": "^4.23.15"
   }
 }
