@@ -62,7 +62,7 @@
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@uiw/react-color-shade-slider": "^2.10.3",
     "@uiw/react-color-wheel": "^2.10.3",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.0.4",
     "framer-motion": "^12.42.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
